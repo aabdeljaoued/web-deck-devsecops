@@ -38,7 +38,11 @@ h1 {
     margin: 0;
     font-size: 16px;
     font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
 }
+h1 img { border-radius: 5px; }
 
 #crumbs { flex: 1; color: var(--muted); font-size: 14px; }
 #crumbs button {
@@ -70,7 +74,8 @@ main {
 #deck {
     padding: 8px 16px;
     border-bottom: 1px solid var(--border);
-    background: var(--panel);
+    /* Fond généré avec Draw Things (Qwen Image), étiré sur toute la barre */
+    background: var(--panel) url("/img/deck-bar.jpg") center / 100% 100% no-repeat;
 }
 
 .grid {
@@ -117,6 +122,13 @@ main {
     white-space: nowrap;
 }
 .key .sym.ascii { font-family: Consolas, Menlo, monospace; }
+.key .sym.logo {
+    width: 28px;
+    height: 28px;
+    background: currentColor;
+    -webkit-mask: var(--logo) center / contain no-repeat;
+    mask: var(--logo) center / contain no-repeat;
+}
 .key .label {
     font-size: 11px;
     font-weight: 700;

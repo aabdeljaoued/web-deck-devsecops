@@ -44,9 +44,13 @@ function run(label, sym, command, color = C.tool, tool) {
     return { type: "run", label, sym, color, tool, command: cmd };
 }
 
-function folder(label, sym, page, color) {
-    return { type: "folder", label, sym, color, page };
+/** icon : nom d'un logo de simple-icons (servi par /icons/<nom>.svg), affiché à la place de sym. */
+function folder(label, sym, page, color, icon) {
+    return { type: "folder", label, sym, color, page, ...(icon ? { icon } : {}) };
 }
+
+/** Logos utilisés par le catalogue : le serveur ne sert que ceux-là. */
+export const ICONS = new Set();
 
 function back() {
     return { type: "back", label: "Retour", sym: "↩", color: "#212121" };
@@ -105,7 +109,7 @@ function buildCatalog(ctx) {
             text("diagnostic", "ℹ", "code --status", true, C.vscode),
             text("éditer ssh config", "⚙", sshConfig, true, C.tool)
         ]},
-        git: { label: "Git", sym: "git", color: C.git, terminal: true, keys: [
+        git: { label: "Git", sym: "git", icon: "git", color: C.git, terminal: true, keys: [
             text("status", "git", "git status", true, C.git),
             text("pull rebase", "⬇", "git pull --rebase", true, C.git),
             text("log graph", "log", "git log --oneline --graph --decorate -20", true, C.git),
@@ -120,7 +124,7 @@ function buildCatalog(ctx) {
             text("restore", "↺", "git restore ", false, C.danger),
             text("amend", "✎", "git commit --amend", false, C.danger)
         ]},
-        k8s: { label: "K8s / OCP", sym: "☸", color: C.k8s, terminal: true, keys: [
+        k8s: { label: "K8s / OCP", sym: "☸", icon: "kubernetes", color: C.k8s, terminal: true, keys: [
             text("contexts", "ctx", "kubectl config get-contexts", true, C.k8s),
             text("pods -A", "pod", "kubectl get pods -A", true, C.k8s),
             text("events", "⚡", "kubectl get events -A --sort-by=.lastTimestamp", true, C.k8s),
@@ -158,7 +162,7 @@ function buildCatalog(ctx) {
             web("CISA KEV", "KEV", "https://www.cisa.gov/known-exploited-vulnerabilities-catalog"),
             lock()
         ]},
-        terraform: { label: "Terraform", sym: "TF", color: C.terraform, terminal: true, keys: [
+        terraform: { label: "Terraform", sym: "TF", icon: "terraform", color: C.terraform, terminal: true, keys: [
             text("init", "init", "terraform init", true, C.terraform),
             text("fmt", "fmt", "terraform fmt -recursive", true, C.terraform),
             text("validate", "✔", "terraform validate", true, C.terraform),
@@ -173,7 +177,7 @@ function buildCatalog(ctx) {
             text("Checkov TF", "✔", "checkov -d . --framework terraform", true, C.sec),
             text("destroy", "💣", "terraform destroy", false, C.danger)
         ]},
-        vault: { label: "Vault", sym: "🔐", color: C.vault, terminal: true, keys: [
+        vault: { label: "Vault", sym: "🔐", icon: "vault", color: C.vault, terminal: true, keys: [
             text("status", "🔐", "vault status", true, C.vault),
             text("login OIDC", "🔑", "vault login -method=oidc", false, C.vault),
             text("token lookup", "🎫", "vault token lookup", true, C.vault),
@@ -188,7 +192,7 @@ function buildCatalog(ctx) {
             lock()
         ]},
         // Gestionnaire de paquets sans droits admin : Homebrew (macOS / Linux), Scoop (Windows)
-        brew: { label: { windows: "Scoop", mac: "Brew", linux: "Brew" }, sym: { windows: "🍨", mac: "🍺", linux: "🍺" }, color: C.brew, terminal: true, keys: [
+        brew: { label: { windows: "Scoop", mac: "Brew", linux: "Brew" }, sym: { windows: "🍨", mac: "🍺", linux: "🍺" }, icon: { mac: "homebrew", linux: "homebrew" }, color: C.brew, terminal: true, keys: [
             text("update", "⟳", { windows: "scoop update", mac: "brew update", linux: "brew update" }, true, C.brew),
             text("outdated", "⏰", { windows: "scoop status", mac: "brew outdated", linux: "brew outdated" }, true, C.brew),
             text("upgrade tout", "⬆", { windows: "scoop update *", mac: "brew upgrade", linux: "brew upgrade" }, false, C.brew),
@@ -204,7 +208,7 @@ function buildCatalog(ctx) {
             text("uninstall", "🗑", { windows: "scoop uninstall ", mac: "brew uninstall ", linux: "brew uninstall " }, false, C.danger)
         ]},
         // Ansible ne tourne pas nativement sous Windows (WSL seulement) : rubrique masquée sous Windows
-        ansible: { label: "Ansible", sym: "A", color: C.ansible, terminal: true, keys: [
+        ansible: { label: "Ansible", sym: "A", icon: "ansible", color: C.ansible, terminal: true, keys: [
             text("version", "ver", { mac: "ansible --version", linux: "ansible --version" }, true, C.ansible),
             text("ping all", "📡", { mac: "ansible all -m ping", linux: "ansible all -m ping" }, true, C.ansible),
             text("inventaire", "🗂", { mac: "ansible-inventory --graph", linux: "ansible-inventory --graph" }, true, C.ansible),
@@ -226,7 +230,7 @@ function buildCatalog(ctx) {
             web("CERT-FR", "FR", "https://www.cert.ssi.gouv.fr/"),
             web("CISA KEV", "KEV", "https://www.cisa.gov/known-exploited-vulnerabilities-catalog")
         ]},
-        docker: { label: "Docker", sym: "🐳", color: C.docker, terminal: true, keys: [
+        docker: { label: "Docker", sym: "🐳", icon: "docker", color: C.docker, terminal: true, keys: [
             text("ps", "ps", "docker ps", true, C.docker),
             text("ps -a", "ps-a", "docker ps -a", true, C.docker),
             text("images", "🖼", "docker images", true, C.docker),
@@ -241,7 +245,7 @@ function buildCatalog(ctx) {
             text("stats", "📊", "docker stats --no-stream", true, C.docker),
             text("prune", "🧹", "docker system prune", false, C.danger)
         ]},
-        helm: { label: "Helm", sym: "⎈", color: C.helm, terminal: true, keys: [
+        helm: { label: "Helm", sym: "⎈", icon: "helm", color: C.helm, terminal: true, keys: [
             text("list -A", "⎈", "helm list -A", true, C.helm),
             text("repo update", "⟳", "helm repo update", true, C.helm),
             text("search repo", "🔍", "helm search repo ", false, C.helm),
@@ -364,7 +368,9 @@ export function buildDeck(ctx) {
     const titles = { root: "Accueil" };
     for (const s of sections) {
         const def = { ...SECTIONS[s], label: pick(SECTIONS[s].label), sym: pick(SECTIONS[s].sym) };
-        rootKeys.push(folder(def.label, def.sym, s, def.color));
+        const icon = pick(def.icon);
+        if (icon) ICONS.add(icon);
+        rootKeys.push(folder(def.label, def.sym, s, def.color, icon));
         titles[s] = def.label;
         const keys = def.keys.filter(allowed);
         if (cfg.clearKey && def.terminal) keys.push(clear);

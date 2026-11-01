@@ -133,9 +133,15 @@ function keyElement(key) {
     el.title = (key.type === "text" ? commandFor(key) : key.url) ?? key.label;
 
     const sym = document.createElement("span");
-    sym.className = `sym${/^[\x20-\x7E]+$/.test(key.sym) ? " ascii" : ""}`;
-    sym.textContent = key.sym;
-    if (key.sym.length > 3) sym.style.fontSize = `${Math.max(14, 26 - (key.sym.length - 3) * 4)}px`;
+    if (key.icon) {
+        // Logo SVG monochrome, peint dans la couleur du texte de la touche (masque CSS)
+        sym.className = "sym logo";
+        sym.style.setProperty("--logo", `url("/icons/${key.icon}.svg")`);
+    } else {
+        sym.className = `sym${/^[\x20-\x7E]+$/.test(key.sym) ? " ascii" : ""}`;
+        sym.textContent = key.sym;
+        if (key.sym.length > 3) sym.style.fontSize = `${Math.max(14, 26 - (key.sym.length - 3) * 4)}px`;
+    }
     const label = document.createElement("span");
     label.className = "label";
     label.textContent = key.label;

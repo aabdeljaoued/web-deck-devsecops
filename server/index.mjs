@@ -9,7 +9,7 @@ import http from "node:http";
 import path from "node:path";
 import { WebSocketServer } from "ws";
 
-import { buildDeck } from "./catalog.mjs";
+import { buildDeck, ICONS } from "./catalog.mjs";
 import { loadConfig, ROOT } from "./config.mjs";
 import { launch, openBrowser, windowsPty } from "./platform.mjs";
 import { StatusHub } from "./status.mjs";
@@ -54,6 +54,9 @@ const STATIC = {
     "/": [path.join(ROOT, "public", "index.html"), "text/html; charset=utf-8"],
     "/app.js": [path.join(ROOT, "public", "app.js"), "text/javascript; charset=utf-8"],
     "/style.css": [path.join(ROOT, "public", "style.css"), "text/css; charset=utf-8"],
+    "/img/deck-bar.jpg": [path.join(ROOT, "public", "img", "deck-bar.jpg"), "image/jpeg"],
+    "/img/icon-64.png": [path.join(ROOT, "public", "img", "icon-64.png"), "image/png"],
+    "/img/icon-180.png": [path.join(ROOT, "public", "img", "icon-180.png"), "image/png"],
     "/vendor/xterm.mjs": [nm("@xterm/xterm/lib/xterm.mjs"), "text/javascript; charset=utf-8"],
     "/vendor/xterm.css": [nm("@xterm/xterm/css/xterm.css"), "text/css; charset=utf-8"],
     "/vendor/addon-fit.mjs": [nm("@xterm/addon-fit/lib/addon-fit.mjs"), "text/javascript; charset=utf-8"],
@@ -87,6 +90,11 @@ const server = http.createServer((req, res) => {
     }
     if (!sameToken(cookieToken(req))) {
         return send(res, 401, `Accès refusé : ouvre l'adresse affichée par le serveur au démarrage (avec ?token=...).`);
+    }
+    // Logos des rubriques (simple-icons, CC0) : seulement ceux du catalogue
+    const logo = /^\/icons\/([a-z0-9]+)\.svg$/.exec(url.pathname);
+    if (req.method === "GET" && logo && ICONS.has(logo[1])) {
+        return send(res, 200, readFileSync(nm(`simple-icons/icons/${logo[1]}.svg`)), "image/svg+xml");
     }
     const entry = req.method === "GET" && STATIC[url.pathname];
     if (!entry) return send(res, 404, "Introuvable");

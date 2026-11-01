@@ -17,6 +17,32 @@ const isPlatformMap = (v) => v !== null && typeof v === "object" && !Array.isArr
 const pick = (v) => (isPlatformMap(v) ? v[platform] : v);
 
 /**
+ * Icône dessinée à la place de l'emoji des touches (le sym reste en secours) :
+ * "lucide-<nom>" = jeu d'icônes Lucide (ISC), "<nom>" = public/icons ou logo simple-icons.
+ */
+const SYM_ICONS = {
+    "▶": "lucide-play", "🖥": "lucide-monitor", "🐙": "github", "⚔": "lucide-swords",
+    "📂": "lucide-folder-open", "➕": "lucide-plus", "↩": "lucide-undo-2", "📄": "lucide-file-text",
+    "±": "lucide-diff", "📁": "lucide-folder-plus", "🧩": "lucide-puzzle", "⬇": "lucide-download",
+    "ℹ": "lucide-info", "⚙": "lucide-settings", "⟳": "lucide-refresh-cw", "✍": "lucide-signature",
+    "⬆": "lucide-upload", "📥": "lucide-archive", "📤": "lucide-archive-restore", "↺": "lucide-rotate-ccw",
+    "✎": "lucide-pencil", "⚡": "lucide-zap", "▦": "lucide-server", "📜": "lucide-scroll-text",
+    "🔍": "lucide-search", "🛂": "lucide-user-check", "🧱": "lucide-brick-wall", "📊": "lucide-chart-column",
+    "🔎": "lucide-scan-search", "🐳": "lucide-container", "🔑": "lucide-key-round", "✔": "lucide-badge-check",
+    "☸": "lucide-ship-wheel", "📦": "lucide-package", "📘": "lucide-book-open", "⚠": "lucide-triangle-alert",
+    "📝": "lucide-file-pen-line", "👁": "lucide-eye", "🚀": "lucide-rocket", "🗂": "lucide-folder-tree",
+    "⇥": "lucide-arrow-right-to-line", "🔌": "lucide-plug", "💣": "lucide-bomb", "🔐": "lucide-lock-keyhole",
+    "🎫": "lucide-ticket", "🧰": "lucide-vault", "👥": "lucide-users", "🌐": "lucide-globe",
+    "🧪": "lucide-flask-conical", "⛔": "lucide-ban", "⏰": "lucide-alarm-clock", "📋": "lucide-clipboard",
+    "🍃": "lucide-leaf", "🩺": "lucide-stethoscope", "♻": "lucide-recycle", "🗑": "lucide-trash-2",
+    "📡": "lucide-radio-tower", "🖼": "lucide-image", "🔨": "lucide-hammer", "🧹": "lucide-brush-cleaning",
+    "⎈": "helm", "🕘": "lucide-history", "🗝": "lucide-key", "⇄": "lucide-arrow-left-right",
+    "✖": "lucide-x", "📅": "lucide-calendar", "⛓": "lucide-link", "🎲": "lucide-dices",
+    "🔒": "lock", "🛡": "lucide-shield"
+};
+const withIcon = (key) => (key && SYM_ICONS[key.sym] && !key.icon ? { ...key, icon: SYM_ICONS[key.sym] } : key);
+
+/**
  * Variantes par famille de shell : posix (zsh, bash, Git Bash), powershell, cmd.
  * Une variante absente (undefined) : touche indisponible dans ce shell.
  */
@@ -30,18 +56,18 @@ function text(label, sym, command, enter, color) {
     const cmd = pick(command);
     if (cmd == null) return null;
     const first = typeof cmd === "string" ? cmd : Object.values(cmd)[0];
-    return { type: "text", label, sym, color, tool: first.split(" ")[0], badge: enter ? "run" : "type", text: cmd, enter };
+    return withIcon({ type: "text", label, sym, color, tool: first.split(" ")[0], badge: enter ? "run" : "type", text: cmd, enter });
 }
 
 function web(label, sym, url, color = C.web) {
-    return { type: "web", label, sym, color, url };
+    return withIcon({ type: "web", label, sym, color, url });
 }
 
 /** Lance un programme sur la machine (la commande reste côté serveur). */
 function run(label, sym, command, color = C.tool, tool) {
     const cmd = pick(command);
     if (!cmd || cmd.some((part) => !part)) return null;
-    return { type: "run", label, sym, color, tool, command: cmd };
+    return withIcon({ type: "run", label, sym, color, tool, command: cmd });
 }
 
 /**
@@ -56,7 +82,7 @@ function folder(label, sym, page, color, icon) {
 export const ICONS = new Set();
 
 function back() {
-    return { type: "back", label: "Retour", sym: "↩", color: "#212121" };
+    return { type: "back", label: "Retour", sym: "↩", icon: "lucide-arrow-left", color: "#212121" };
 }
 
 /** Voyant mis à jour en direct par le serveur (server/status.mjs). */
@@ -142,7 +168,7 @@ function buildCatalog(ctx) {
             shortcuts["crc-console"],
             text("top pods", "📊", "kubectl top pods -A", true, C.k8s)
         ]},
-        sec: { label: "Sécurité", sym: "🛡", color: C.sec, terminal: true, keys: [
+        sec: { label: "Sécurité", sym: "🛡", icon: "lucide-shield", color: C.sec, terminal: true, keys: [
             text("Trivy repo", "🔎", "trivy fs --scanners vuln,secret,misconfig .", true, C.sec),
             text("Trivy image", "🐳", "trivy image ", false, C.sec),
             text("Gitleaks", "🔑", "gitleaks detect --source . -v", true, C.sec),
@@ -195,7 +221,7 @@ function buildCatalog(ctx) {
             lock()
         ]},
         // Gestionnaire de paquets sans droits admin : Homebrew (macOS / Linux), Scoop (Windows)
-        brew: { label: { windows: "Scoop", mac: "Brew", linux: "Brew" }, sym: { windows: "🍨", mac: "🍺", linux: "🍺" }, icon: { mac: "homebrew", linux: "homebrew" }, color: C.brew, terminal: true, keys: [
+        brew: { label: { windows: "Scoop", mac: "Brew", linux: "Brew" }, sym: { windows: "🍨", mac: "🍺", linux: "🍺" }, icon: { windows: "lucide-ice-cream-cone", mac: "homebrew", linux: "homebrew" }, color: C.brew, terminal: true, keys: [
             text("update", "⟳", { windows: "scoop update", mac: "brew update", linux: "brew update" }, true, C.brew),
             text("outdated", "⏰", { windows: "scoop status", mac: "brew outdated", linux: "brew outdated" }, true, C.brew),
             text("upgrade tout", "⬆", { windows: "scoop update *", mac: "brew upgrade", linux: "brew upgrade" }, false, C.brew),
@@ -323,7 +349,7 @@ function buildCatalog(ctx) {
     for (const s of Object.values(sections)) s.keys = s.keys.filter(Boolean);
 
     // Efface le terminal (Ctrl+L pour PowerShell, bash et zsh ; "cls" pour cmd) : tout à droite de la ligne
-    const clear = { type: "clear", label: "clear", sym: "🧹", color: C.tool, pin: "0,2" };
+    const clear = { type: "clear", label: "clear", sym: "🧹", icon: "lucide-brush-cleaning", color: C.tool, pin: "0,2" };
 
     return { shortcuts, sections, clear };
 }

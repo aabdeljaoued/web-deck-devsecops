@@ -91,11 +91,15 @@ const server = http.createServer((req, res) => {
     if (!sameToken(cookieToken(req))) {
         return send(res, 401, `Accès refusé : ouvre l'adresse affichée par le serveur au démarrage (avec ?token=...).`);
     }
-    // Logos des rubriques : seulement ceux du catalogue ; icônes du projet (public/icons) sinon simple-icons (CC0)
+    // Icônes des touches, seulement celles du catalogue : "lucide-<nom>" = Lucide (ISC),
+    // sinon icônes du projet (public/icons), sinon logos simple-icons (CC0)
     const logo = /^\/icons\/([a-z0-9-]+)\.svg$/.exec(url.pathname);
     if (req.method === "GET" && logo && ICONS.has(logo[1])) {
-        const own = path.join(ROOT, "public", "icons", `${logo[1]}.svg`);
-        return send(res, 200, readFileSync(existsSync(own) ? own : nm(`simple-icons/icons/${logo[1]}.svg`)), "image/svg+xml");
+        const name = logo[1];
+        const own = path.join(ROOT, "public", "icons", `${name}.svg`);
+        const file = name.startsWith("lucide-") ? nm(`lucide-static/icons/${name.slice(7)}.svg`)
+            : existsSync(own) ? own : nm(`simple-icons/icons/${name}.svg`);
+        return send(res, 200, readFileSync(file), "image/svg+xml");
     }
     const entry = req.method === "GET" && STATIC[url.pathname];
     if (!entry) return send(res, 404, "Introuvable");

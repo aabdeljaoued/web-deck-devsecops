@@ -11,11 +11,15 @@ const state = {
     titles: {},
     page: "root",
     status: {},
-    terms: new Map(),   // sid -> { term, fit, tab, screen, ended }
+    shells: [],         // [{ name, kind }] ; kind : posix, powershell ou cmd
+    windowsPty: null,   // serveur Windows : infos ConPTY pour xterm.js
+    terms: new Map(),   // sid -> { term, fit, tab, screen, ended, kind }
     active: null,
     pending: []         // textes à envoyer au prochain terminal ouvert par cette page
 };
 const requestId = crypto.randomUUID();
+// Navigateur sous macOS : Cmd+C / Cmd+V copient et collent déjà ; ailleurs, Ctrl+C / Ctrl+V sont gérés plus bas
+const macClient = /Mac|iPhone|iPad/.test(navigator.userAgentData?.platform ?? navigator.platform ?? navigator.userAgent);
 
 // ---------- Connexion ----------
 
@@ -46,18 +50,19 @@ function handle(msg) {
             state.pages = msg.pages;
             state.titles = msg.titles;
             state.status = msg.status ?? {};
+            state.windowsPty = msg.windowsPty ?? null;
             if (!state.pages[state.page]) state.page = "root";
             fillShells(msg.shells);
             // Reconnexion ou rechargement : on repart des sessions du serveur, sortie rejouée
             for (const sid of [...state.terms.keys()]) removeTerm(sid);
-            for (const s of msg.sessions) addTerm(s.sid, s.name, s.replay);
+            for (const s of msg.sessions) addTerm(s.sid, s.name, s.kind, s.replay);
             if (msg.sessions.length) activate(msg.sessions.at(-1).sid);
             else openTerm();
             render();
             break;
         }
         case "opened":
-            if (!state.terms.has(msg.sid)) addTerm(msg.sid, msg.name);
+            if (!state.terms.has(msg.sid)) addTerm(msg.sid, msg.name, msg.kind);
             if (msg.by === requestId) {
                 activate(msg.sid);
                 for (const text of state.pending.splice(0)) send({ t: "in", sid: msg.sid, d: text });
@@ -92,14 +97,24 @@ function handle(msg) {
 
 function render() {
     const grid = $("#grid");
-    grid.replaceChildren(...state.pages[state.page].map((key) => (key ? keyElement(key) : slot())));
+    const { left, right } = rowOrder(state.pages[state.page]);
+    // L'espace extensible pousse Verrouiller et clear contre le bord droit de la fenêtre
+    const spacer = Object.assign(document.createElement("div"), { className: "spacer" });
+    grid.replaceChildren(...left.map(keyElement), spacer, ...right.map(keyElement));
     renderCrumbs();
 }
 
-function slot() {
-    const el = document.createElement("div");
-    el.className = "slot";
-    return el;
+/**
+ * Grille 5 x 3 du serveur -> une ligne : à gauche Retour puis les touches dans l'ordre,
+ * à droite (alignés sur le bord) Verrouiller puis clear. Les cases vides disparaissent.
+ */
+function rowOrder(keys) {
+    const present = keys.filter(Boolean);
+    const first = present.filter((k) => k.type === "back");
+    const lock = present.filter((k) => k.pin === "4,2");   // touche épinglée en bas à droite : Verrouiller
+    const last = [...lock, ...present.filter((k) => k.type === "clear")];
+    const middle = present.filter((k) => !first.includes(k) && !last.includes(k));
+    return { left: [...first, ...middle], right: last };
 }
 
 /** Texte clair sur fond foncé, foncé sur fond clair. */
@@ -115,12 +130,12 @@ function keyElement(key) {
     el.dataset.id = key.id;
     el.style.setProperty("--c", key.color);
     if (isLight(key.color)) el.classList.add("light");
-    el.title = key.text ?? key.url ?? key.label;
+    el.title = (key.type === "text" ? commandFor(key) : key.url) ?? key.label;
 
     const sym = document.createElement("span");
     sym.className = `sym${/^[\x20-\x7E]+$/.test(key.sym) ? " ascii" : ""}`;
     sym.textContent = key.sym;
-    if (key.sym.length > 3) sym.style.fontSize = `${Math.max(18, 34 - (key.sym.length - 3) * 5)}px`;
+    if (key.sym.length > 3) sym.style.fontSize = `${Math.max(14, 26 - (key.sym.length - 3) * 4)}px`;
     const label = document.createElement("span");
     label.className = "label";
     label.textContent = key.label;
@@ -185,11 +200,16 @@ function press(key, el) {
         case "back": return go("root");
         case "web": return window.open(key.url, "_blank", "noopener,noreferrer");
         case "run": return send({ t: "run", id: key.id });
-        case "text": return typeInTerminal(key.text + (key.enter ? "\r" : ""));
+        case "text": {
+            const command = commandFor(key);
+            if (command == null) return toast(`« ${key.label} » n'existe pas pour le shell ${activeKind()}`);
+            return typeInTerminal(command + (key.enter ? "\r" : ""));
+        }
         case "clear": {
             const t = state.terms.get(state.active);
             t?.term.clear();
-            return typeInTerminal("\x0c");   // Ctrl+L : efface aussi côté shell
+            // Ctrl+L efface aussi côté shell (PowerShell, bash, zsh) ; cmd ne connaît que "cls"
+            return typeInTerminal(activeKind() === "cmd" ? "cls\r" : "\x0c");
         }
     }
 }
@@ -216,14 +236,27 @@ function toast(text) {
     toastTimer = setTimeout(() => el.classList.remove("show"), 4000);
 }
 
+/** Famille du shell qui recevra la commande : onglet actif, sinon celui qu'ouvrira la page. */
+function activeKind() {
+    const t = state.terms.get(state.active);
+    if (t && !t.ended) return t.kind;
+    return state.shells[Number($("#shell").value || 0)]?.kind ?? "posix";
+}
+
+/** Commande d'une touche "text" pour le shell actif (chaîne commune ou variante par shell) ; null si absente. */
+function commandFor(key) {
+    return typeof key.text === "string" ? key.text : key.text?.[activeKind()] ?? null;
+}
+
 // ---------- Terminaux ----------
 
-function fillShells(names) {
+function fillShells(shells) {
+    state.shells = shells;
     const select = $("#shell");
     const current = select.value;
-    select.replaceChildren(...names.map((name, i) => new Option(name, String(i))));
-    if (current && Number(current) < names.length) select.value = current;
-    select.hidden = names.length < 2;
+    select.replaceChildren(...shells.map((s, i) => new Option(s.name, String(i))));
+    if (current && Number(current) < shells.length) select.value = current;
+    select.hidden = shells.length < 2;
 }
 
 function openTerm() {
@@ -237,14 +270,16 @@ function estimateSize() {
     return { cols: Math.max(20, Math.floor((box.width - 12) / 9)), rows: Math.max(5, Math.floor((box.height - 12) / 17)) };
 }
 
-function addTerm(sid, name, replay = "") {
+function addTerm(sid, name, kind = "posix", replay = "") {
     const term = new Terminal({
         cursorBlink: true,
-        fontFamily: "'Cascadia Mono', Consolas, Menlo, monospace",
+        fontFamily: "'Cascadia Mono', Consolas, 'SF Mono', Menlo, Monaco, 'DejaVu Sans Mono', monospace",
         fontSize: 14,
         scrollback: 5000,
-        theme: { background: "#000000" }
+        theme: { background: "#000000" },
+        ...(state.windowsPty ? { windowsPty: state.windowsPty } : {})
     });
+    clipboardKeys(term);
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.loadAddon(new WebLinksAddon((ev, uri) => window.open(uri, "_blank", "noopener,noreferrer")));
@@ -269,7 +304,28 @@ function addTerm(sid, name, replay = "") {
     tab.addEventListener("click", () => activate(sid));
     $("#tabs").append(tab);
 
-    state.terms.set(sid, { term, fit, tab, screen, ended: false });
+    state.terms.set(sid, { term, fit, tab, screen, ended: false, kind });
+}
+
+/**
+ * Hors macOS : Ctrl+C copie s'il y a une sélection (sinon interrompt la commande), Ctrl+Shift+C copie,
+ * Ctrl+V et Ctrl+Shift+V collent (comme Windows Terminal). Sous macOS, Cmd+C / Cmd+V suffisent.
+ */
+function clipboardKeys(term) {
+    if (macClient) return;
+    term.attachCustomKeyEventHandler((ev) => {
+        if (ev.type !== "keydown" || !ev.ctrlKey || ev.altKey || ev.metaKey) return true;
+        const key = ev.key.toLowerCase();
+        if (key === "c" && (ev.shiftKey || term.hasSelection())) {
+            ev.preventDefault();
+            if (term.hasSelection()) navigator.clipboard?.writeText(term.getSelection()).catch(() => toast("copie refusée par le navigateur"));
+            term.clearSelection();
+            return false;
+        }
+        // Laisse le navigateur déclencher l'événement "paste", que xterm.js transmet au shell
+        if (key === "v") return false;
+        return true;
+    });
 }
 
 function activate(sid) {

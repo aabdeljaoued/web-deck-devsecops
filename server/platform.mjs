@@ -1,7 +1,7 @@
 // Tout ce qui diffère entre Windows et macOS : variables, PATH, shells, lancement de programmes.
 import { execFileSync, spawn } from "node:child_process";
 import { existsSync, statSync } from "node:fs";
-import { homedir } from "node:os";
+import { homedir, release } from "node:os";
 import path from "node:path";
 
 export const isWindows = process.platform === "win32";
@@ -30,7 +30,13 @@ export function refreshPath() {
             if (value) extra.push(...expand(value).split(";"));
         }
     } else {
-        extra.push("/opt/homebrew/bin", "/usr/local/bin", path.join(homedir(), ".local", "bin"));
+        // Lancé depuis le Finder ou un IDE, le PATH ne contient pas Homebrew ni les CLI de Docker Desktop / Rancher
+        const home = homedir();
+        extra.push(...[
+            "/opt/homebrew/bin", "/opt/homebrew/sbin", "/usr/local/bin", "/usr/local/sbin",
+            path.join(home, ".local", "bin"), path.join(home, ".docker", "bin"), path.join(home, ".rd", "bin"),
+            "/Applications/Docker.app/Contents/Resources/bin"
+        ].filter((dir) => existsSync(dir)));
     }
     const current = (process.env.PATH ?? "").split(path.delimiter);
     process.env.PATH = [...new Set([...current, ...extra].filter(Boolean))].join(path.delimiter);
@@ -44,7 +50,9 @@ export function resolveExe(name) {
     const names = isWindows && !path.extname(name)
         ? (process.env.PATHEXT ?? ".EXE;.CMD;.BAT").split(";").map((ext) => name + ext.toLowerCase())
         : [name];
-    for (const dir of (process.env.PATH ?? "").split(path.delimiter)) {
+    for (const raw of (process.env.PATH ?? "").split(path.delimiter)) {
+        const dir = raw.replace(/^"(.*)"$/, "$1");   // Windows : entrées du PATH parfois entre guillemets
+        if (!dir) continue;
         for (const n of names) {
             const candidate = path.join(dir, n);
             if (existsSync(candidate) && statSync(candidate).isFile()) return candidate;
@@ -65,6 +73,24 @@ export function launch([exe, ...args]) {
         });
         child.once("error", reject);
     });
+}
+
+/**
+ * Famille du shell, pour choisir la variante d'une commande :
+ * "powershell" (pwsh, powershell), "cmd", ou "posix" (zsh, bash, Git Bash...).
+ */
+export function shellKind(exe) {
+    const base = path.basename(exe).toLowerCase().replace(/\.exe$/, "");
+    if (base === "pwsh" || base === "powershell") return "powershell";
+    if (base === "cmd") return "cmd";
+    return "posix";
+}
+
+/** Windows : informations ConPTY pour xterm.js (meilleur redimensionnement) ; null ailleurs. */
+export function windowsPty() {
+    if (!isWindows) return null;
+    const build = Number(release().split(".")[2]);
+    return { backend: "conpty", ...(build ? { buildNumber: build } : {}) };
 }
 
 /** Ouvre une URL dans le navigateur par défaut. */

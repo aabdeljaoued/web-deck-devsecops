@@ -11,7 +11,7 @@ import { WebSocketServer } from "ws";
 
 import { buildDeck } from "./catalog.mjs";
 import { loadConfig, ROOT } from "./config.mjs";
-import { launch, openBrowser } from "./platform.mjs";
+import { launch, openBrowser, windowsPty } from "./platform.mjs";
 import { StatusHub } from "./status.mjs";
 import { Terminals } from "./terminal.mjs";
 
@@ -123,7 +123,8 @@ wss.on("connection", (ws) => {
         t: "hello",
         pages: deck.pages,
         titles: deck.titles,
-        shells: ctx.shells.map((s) => s.name),
+        shells: ctx.shells.map(({ name, kind }) => ({ name, kind })),
+        windowsPty: windowsPty(),
         sessions: terminals.list(),
         status: status.states
     }));
@@ -190,3 +191,5 @@ function shutdown() {
 }
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
+// Windows : fermeture de la fenêtre console (SIGHUP) ; sinon les shells resteraient orphelins
+process.on("SIGHUP", shutdown);

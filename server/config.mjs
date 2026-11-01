@@ -1,11 +1,12 @@
 // Lecture de config.jsonc (QUOI afficher) et paths.json (OÙ sont les logiciels).
+import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir, hostname } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse as parseJsonc, printParseErrorCode } from "jsonc-parser";
 
-import { expand, platform, refreshPath, resolveExe } from "./platform.mjs";
+import { expand, isMac, platform, refreshPath, resolveExe, shellKind } from "./platform.mjs";
 
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -44,10 +45,14 @@ export function loadConfig() {
     const machineFile = path.join(ROOT, `paths.${machine}.json`);
     let paths = readJsonc(path.join(ROOT, "paths.json"));
     if (existsSync(machineFile)) paths = merge(paths, readJsonc(machineFile));
-    const P = paths[platform] ?? {};
+    // Linux : pas de bloc dédié obligatoire, on reprend celui de macOS (shells et outils Unix)
+    const P = paths[platform] ?? (platform === "linux" ? paths.mac : null) ?? {};
 
     const workspace = expand(P.workspace ?? "~");
     const apps = Object.fromEntries(Object.entries(P.apps ?? {}).map(([name, value]) => [name, resolveApp(value)]));
+    // macOS sans outils de ligne de commande Xcode : /usr/bin/git n'est qu'un leurre qui ouvre
+    // une fenêtre d'installation à chaque appel (le voyant Git en ferait une toutes les 5 s)
+    if (isMac && apps.git === "/usr/bin/git" && !hasXcodeTools()) apps.git = null;
 
     // Shells : un seul par nom (le premier trouvé)
     const shells = [];
@@ -55,7 +60,7 @@ export function loadConfig() {
         if (shells.some((s) => s.name === shell.name)) continue;
         const [exe, ...args] = shell.command;
         const found = resolveExe(expand(exe));
-        if (found) shells.push({ name: shell.name, command: [found, ...args.map(expand)] });
+        if (found) shells.push({ name: shell.name, kind: shell.kind ?? shellKind(found), command: [found, ...args.map(expand)] });
     }
 
     const [cliExe, ...cliArgs] = P.containerCli ?? ["docker"];
@@ -71,4 +76,13 @@ export function loadConfig() {
         shells,
         apps
     };
+}
+
+function hasXcodeTools() {
+    try {
+        execFileSync("xcode-select", ["-p"], { stdio: "ignore" });
+        return true;
+    } catch {
+        return false;
+    }
 }

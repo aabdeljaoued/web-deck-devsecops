@@ -6,8 +6,9 @@
     --muted: #8b93a1;
     --run: #2ecc71;
     --type: #ffb300;
-    --key: 104px;
-    --gap: 10px;
+    --gap: 6px;
+    /* 15 touches sur une ligne : 80 px au plus, plus petites si la fenêtre est étroite */
+    --key: min(80px, calc((100vw - 32px - 14 * var(--gap)) / 15));
     font-family: "Segoe UI", -apple-system, "Helvetica Neue", Arial, sans-serif;
 }
 
@@ -56,31 +57,33 @@ h1 {
 .conn.ok { color: var(--run); }
 .conn.ko { color: #ef5350; }
 
+/* Touches au-dessus, terminal en dessous sur toute la largeur */
 main {
     flex: 1;
     display: flex;
+    flex-direction: column;
     min-height: 0;
 }
 
 /* ---------- Grille de touches ---------- */
 
 #deck {
-    padding: 16px;
-    border-right: 1px solid var(--border);
+    padding: 8px 16px;
+    border-bottom: 1px solid var(--border);
     background: var(--panel);
 }
 
 .grid {
-    display: grid;
-    grid-template-columns: repeat(5, var(--key));
-    grid-auto-rows: var(--key);
+    display: flex;
     gap: var(--gap);
 }
+.grid .key { flex: none; }
+.grid .spacer { flex: 1; }
 
 .key, .slot {
     width: var(--key);
     height: var(--key);
-    border-radius: 12px;
+    border-radius: 10px;
 }
 
 .slot { background: #15171b; }
@@ -91,8 +94,8 @@ main {
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 6px;
-    padding: 6px;
+    gap: 4px;
+    padding: 4px;
     border: none;
     color: #fff;
     background: linear-gradient(180deg, var(--c), color-mix(in srgb, var(--c) 45%, #000));
@@ -108,14 +111,14 @@ main {
 .key.light { color: #191919; }
 
 .key .sym {
-    font-size: 34px;
+    font-size: 26px;
     line-height: 1;
     font-weight: 700;
     white-space: nowrap;
 }
 .key .sym.ascii { font-family: Consolas, Menlo, monospace; }
 .key .label {
-    font-size: 13px;
+    font-size: 11px;
     font-weight: 700;
     line-height: 1.1;
     text-align: center;
@@ -125,18 +128,18 @@ main {
 .key.folder::after {
     content: "›";
     position: absolute;
-    top: 2px;
-    right: 9px;
-    font-size: 22px;
+    top: 1px;
+    right: 7px;
+    font-size: 18px;
     font-weight: 700;
 }
 
 .key .badge {
     position: absolute;
-    top: 7px;
-    right: 7px;
-    width: 11px;
-    height: 11px;
+    top: 5px;
+    right: 5px;
+    width: 9px;
+    height: 9px;
     border-radius: 50%;
     border: 2px solid rgba(0, 0, 0, .6);
 }
@@ -144,11 +147,11 @@ main {
 .badge.type, .dot.type { background: var(--type); }
 
 /* Voyants */
-.key.status { gap: 2px; justify-content: space-between; padding: 8px 6px; }
-.key.status .title { font-size: 12px; font-weight: 600; opacity: .9; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.key.status { gap: 2px; justify-content: space-between; padding: 6px 4px; }
+.key.status .title { font-size: 10px; font-weight: 600; opacity: .9; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .key.status .lines { display: flex; flex-direction: column; align-items: center; max-width: 100%; }
 .key.status .line {
-    font-size: 14px;
+    font-size: 12px;
     font-weight: 700;
     max-width: 100%;
     text-align: center;
@@ -158,8 +161,8 @@ main {
     -webkit-box-orient: vertical;
     overflow: hidden;
 }
-.key.status .line.big { font-size: 30px; }
-.key.status .footer { font-size: 11px; font-weight: 600; opacity: .9; white-space: nowrap; }
+.key.status .line.big { font-size: 24px; }
+.key.status .footer { font-size: 9px; font-weight: 600; opacity: .9; white-space: nowrap; }
 
 .key.ok { animation: flash-ok .6s; }
 .key.ko { animation: flash-ko .8s; }
@@ -167,8 +170,8 @@ main {
 @keyframes flash-ko { 0%, 60% { box-shadow: inset 0 0 0 4px #ef5350; } }
 
 .legend {
-    margin: 14px 0 0;
-    font-size: 12px;
+    margin: 0;
+    font-size: 11px;
     color: var(--muted);
     display: flex;
     align-items: center;
@@ -184,6 +187,7 @@ main {
     display: flex;
     flex-direction: column;
     min-width: 0;
+    min-height: 200px;
 }
 
 .tabs {
@@ -248,10 +252,12 @@ main {
 }
 #toast.show { opacity: 1; }
 
-/* Écran étroit : grille au-dessus du terminal */
-@media (max-width: 1000px) {
-    main { flex-direction: column; }
-    #deck { border-right: none; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; align-items: center; }
-    #term { min-height: 50vh; }
-    :root { --key: 84px; }
+/* Touches réduites (fenêtre étroite ou basse) */
+@media (max-width: 1250px), (max-height: 700px) {
+    .key .sym { font-size: 21px; }
+    .key .label { font-size: 10px; }
+    .key.status .line.big { font-size: 20px; }
+}
+@media (max-height: 700px) {
+    :root { --key: min(64px, calc((100vw - 32px - 14 * var(--gap)) / 15)); }
 }

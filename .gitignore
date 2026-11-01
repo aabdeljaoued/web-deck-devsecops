@@ -2,3 +2,5 @@ node_modules/
 .deck-token
 paths.*.json
 !paths.json
+.DS_Store
+Thumbs.db

@@ -45,7 +45,7 @@ export class Terminals extends EventEmitter {
             useConpty: isWindows ? true : undefined
         });
         const sid = String(++this.counter);
-        const session = { sid, name: shell.name, proc, buffer: "" };
+        const session = { sid, name: shell.name, kind: shell.kind, proc, buffer: "" };
         this.sessions.set(sid, session);
 
         proc.onData((data) => {
@@ -60,7 +60,7 @@ export class Terminals extends EventEmitter {
     }
 
     describe(session) {
-        return { sid: session.sid, name: session.name };
+        return { sid: session.sid, name: session.name, kind: session.kind };
     }
 
     list() {

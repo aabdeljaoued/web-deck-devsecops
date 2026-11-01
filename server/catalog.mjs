@@ -1,17 +1,26 @@
 // Catalogue des touches : raccourcis de la page d'accueil et rubriques (dossiers), puis mise en page.
 //
-// Une commande peut être une chaîne (identique partout) ou { windows: "...", mac: "..." }.
+// Une commande peut être une chaîne (identique partout) ou { windows: ..., mac: ... } (variante par système).
 // Une touche dont la variante n'existe pas pour le système courant est ignorée.
-import { isMac, platform } from "./platform.mjs";
+// Pour les touches qui tapent dans le terminal, une variante peut encore dépendre du shell :
+// sh(posix, powershell, cmd) ; la page choisit selon le shell de l'onglet actif.
+import { platform } from "./platform.mjs";
 
 export const COLORS = {
     git: "#F05032", k8s: "#326CE5", sec: "#C62828", iac: "#7B42BC", vault: "#FFC107",
-    ssh: "#2E7D32", openssl: "#AD1457", docker: "#0898C8", helm: "#0F1689", vscode: "#007ACC",
-    tool: "#37474F", web: "#00897B", danger: "#B71C1C"
+    ssh: "#2E7D32", openssl: "#AD1457", docker: "#0898C8", helm: "#5C6BC0", vscode: "#007ACC",
+    tool: "#37474F", web: "#00897B", danger: "#B71C1C", brew: "#FBB040"
 };
 const C = COLORS;
 
-const pick = (v) => (v !== null && typeof v === "object" && !Array.isArray(v) ? v[platform] : v);
+const isPlatformMap = (v) => v !== null && typeof v === "object" && !Array.isArray(v) && ("windows" in v || "mac" in v || "linux" in v);
+const pick = (v) => (isPlatformMap(v) ? v[platform] : v);
+
+/**
+ * Variantes par famille de shell : posix (zsh, bash, Git Bash), powershell, cmd.
+ * Une variante absente (undefined) : touche indisponible dans ce shell.
+ */
+const sh = (posix, powershell, cmd) => Object.fromEntries(Object.entries({ posix, powershell, cmd }).filter(([, v]) => v != null));
 
 // ---------- Types de touches ----------
 // tool = outil utilisé par la touche, filtrable via excludeTools dans la config.
@@ -20,7 +29,8 @@ const pick = (v) => (v !== null && typeof v === "object" && !Array.isArray(v) ? 
 function text(label, sym, command, enter, color) {
     const cmd = pick(command);
     if (cmd == null) return null;
-    return { type: "text", label, sym, color, tool: cmd.split(" ")[0], badge: enter ? "run" : "type", text: cmd, enter };
+    const first = typeof cmd === "string" ? cmd : Object.values(cmd)[0];
+    return { type: "text", label, sym, color, tool: first.split(" ")[0], badge: enter ? "run" : "type", text: cmd, enter };
 }
 
 function web(label, sym, url, color = C.web) {
@@ -60,6 +70,8 @@ function buildCatalog(ctx) {
         return key && { ...key, pin: "4,2" };
     };
     const openWorkspace = [apps.vscode, workspace];
+    const sshConfig = sh("code $HOME/.ssh/config", "code $HOME/.ssh/config", "code %USERPROFILE%\\.ssh\\config");
+    const selfSigned = 'openssl req -x509 -newkey rsa:4096 -sha256 -days 365 -nodes -keyout key.pem -out cert.pem -subj "/CN=localhost"';
 
     const shortcuts = {
         "vscode":      run("VS Code", "</>", openWorkspace, C.vscode, "code"),
@@ -91,7 +103,7 @@ function buildCatalog(ctx) {
             text("extensions", "🧩", "code --list-extensions --show-versions", true, C.vscode),
             text("installer extension", "⬇", "code --install-extension ", false, C.vscode),
             text("diagnostic", "ℹ", "code --status", true, C.vscode),
-            text("éditer ssh config", "⚙", "code $HOME/.ssh/config", true, C.tool)
+            text("éditer ssh config", "⚙", sshConfig, true, C.tool)
         ]},
         git: { label: "Git", sym: "git", color: C.git, terminal: true, keys: [
             text("status", "git", "git status", true, C.git),
@@ -118,7 +130,7 @@ function buildCatalog(ctx) {
             text("describe", "🔍", "kubectl describe pod ", false, C.k8s),
             text("RBAC can-i", "🛂", "kubectl auth can-i --list", true, C.sec),
             text("NetPol", "🧱", "kubectl get networkpolicies -A", true, C.sec),
-            text("oc whoami", "oc", "oc whoami; oc project", true, C.k8s),
+            text("oc whoami", "oc", sh("oc whoami; oc project", "oc whoami; oc project", "oc whoami & oc project"), true, C.k8s),
             text("crc status", "crc", "crc status", true, C.k8s),
             shortcuts["crc-console"],
             text("top pods", "📊", "kubectl top pods -A", true, C.k8s)
@@ -131,9 +143,15 @@ function buildCatalog(ctx) {
             text("Semgrep SAST", "SAST", "semgrep scan --config auto", true, C.sec),
             text("Trivy K8s", "☸", "trivy k8s --report summary", true, C.sec),
             text("SBOM", "📦", "trivy fs --format cyclonedx -o sbom.json .", true, C.sec),
+            // Installations utilisateur, sans droits admin : Scoop sous Windows, Homebrew sous macOS
             text("install outils", "⬇", {
-                windows: "scoop install trivy gitleaks; pip install --user checkov semgrep",
-                mac: "brew install trivy gitleaks; pip3 install checkov semgrep"
+                windows: sh(
+                    "scoop install trivy gitleaks; pip install --user checkov semgrep",
+                    "scoop install trivy gitleaks; pip install --user checkov semgrep",
+                    "scoop install trivy gitleaks & pip install --user checkov semgrep"
+                ),
+                mac: "brew install trivy gitleaks checkov semgrep",
+                linux: "brew install trivy gitleaks checkov semgrep"
             }, false, C.tool),
             web("Cheat Sheets", "📘", "https://cheatsheetseries.owasp.org"),
             web("GH Advisories", "⚠", "https://github.com/advisories"),
@@ -163,14 +181,27 @@ function buildCatalog(ctx) {
             text("kv get", "📄", "vault kv get secret/", false, C.vault),
             text("secrets list", "🧰", "vault secrets list", true, C.vault),
             text("auth list", "👥", "vault auth list", true, C.vault),
-            text("VAULT_ADDR", "🌐", {
-                windows: '$env:VAULT_ADDR="http://127.0.0.1:8200"',
-                mac: 'export VAULT_ADDR="http://127.0.0.1:8200"'
-            }, false, C.tool),
+            text("VAULT_ADDR", "🌐", sh('export VAULT_ADDR="http://127.0.0.1:8200"', '$env:VAULT_ADDR="http://127.0.0.1:8200"', "set VAULT_ADDR=http://127.0.0.1:8200"), false, C.tool),
             text("server -dev", "🧪", "vault server -dev", false, C.tool),
             web("Vault UI", "UI", "http://127.0.0.1:8200/ui"),
             text("revoke token", "⛔", "vault token revoke -self", false, C.danger),
             lock()
+        ]},
+        // Gestionnaire de paquets sans droits admin : Homebrew (macOS / Linux), Scoop (Windows)
+        brew: { label: { windows: "Scoop", mac: "Brew", linux: "Brew" }, sym: { windows: "🍨", mac: "🍺", linux: "🍺" }, color: C.brew, terminal: true, keys: [
+            text("update", "⟳", { windows: "scoop update", mac: "brew update", linux: "brew update" }, true, C.brew),
+            text("outdated", "⏰", { windows: "scoop status", mac: "brew outdated", linux: "brew outdated" }, true, C.brew),
+            text("upgrade tout", "⬆", { windows: "scoop update *", mac: "brew upgrade", linux: "brew upgrade" }, false, C.brew),
+            text("install", "➕", { windows: "scoop install ", mac: "brew install ", linux: "brew install " }, false, C.brew),
+            text("search", "🔍", { windows: "scoop search ", mac: "brew search ", linux: "brew search " }, false, C.brew),
+            text("info", "ℹ", { windows: "scoop info ", mac: "brew info ", linux: "brew info " }, false, C.brew),
+            text("list", "📋", { windows: "scoop list", mac: "brew list", linux: "brew list" }, true, C.brew),
+            text("leaves", "🍃", { mac: "brew leaves", linux: "brew leaves" }, true, C.brew),
+            text("services", "⚙", { mac: "brew services list", linux: "brew services list" }, true, C.brew),
+            text("doctor", "🩺", { windows: "scoop checkup", mac: "brew doctor", linux: "brew doctor" }, true, C.brew),
+            text("Brewfile", "📦", { mac: "brew bundle dump --file=$HOME/Brewfile --force", linux: "brew bundle dump --file=$HOME/Brewfile --force" }, false, C.brew),
+            text("cleanup", "♻", { windows: "scoop cleanup *", mac: "brew cleanup", linux: "brew cleanup" }, false, C.brew),
+            text("uninstall", "🗑", { windows: "scoop uninstall ", mac: "brew uninstall ", linux: "brew uninstall " }, false, C.danger)
         ]},
         veille: { label: "Veille sécu", sym: "📚", color: C.web, keys: [
             shortcuts.owasp,
@@ -209,23 +240,38 @@ function buildCatalog(ctx) {
             text("uninstall", "🗑", "helm uninstall ", false, C.danger),
             web("Artifact Hub", "🔎", "https://artifacthub.io")
         ]},
-        // Les chemins utilisent $HOME : fonctionne dans PowerShell, Git Bash et zsh
+        // $HOME fonctionne dans PowerShell, Git Bash et zsh ; cmd utilise %USERPROFILE%
         ssh: { label: "SSH", sym: "ssh", color: C.ssh, terminal: true, keys: [
-            text("mes clés", "🗝", "ls $HOME/.ssh", true, C.ssh),
+            text("mes clés", "🗝", sh("ls $HOME/.ssh", "ls $HOME/.ssh", "dir %USERPROFILE%\\.ssh"), true, C.ssh),
             text("keygen ed25519", "➕", 'ssh-keygen -t ed25519 -a 100 -C "', false, C.ssh),
             text("copier clé pub", "📋", {
-                windows: "cat $HOME/.ssh/id_ed25519.pub | clip",
-                mac: "pbcopy < $HOME/.ssh/id_ed25519.pub"
+                windows: sh(
+                    "clip < $HOME/.ssh/id_ed25519.pub",
+                    "Get-Content $HOME/.ssh/id_ed25519.pub | Set-Clipboard",
+                    "clip < %USERPROFILE%\\.ssh\\id_ed25519.pub"
+                ),
+                mac: "pbcopy < $HOME/.ssh/id_ed25519.pub",
+                linux: "xclip -selection clipboard < $HOME/.ssh/id_ed25519.pub"
             }, true, C.ssh),
-            text("fingerprint", "#", "ssh-keygen -lf $HOME/.ssh/id_ed25519.pub", true, C.ssh),
+            text("fingerprint", "#", sh("ssh-keygen -lf $HOME/.ssh/id_ed25519.pub", "ssh-keygen -lf $HOME/.ssh/id_ed25519.pub", "ssh-keygen -lf %USERPROFILE%\\.ssh\\id_ed25519.pub"), true, C.ssh),
             text("agent: clés", "ag", "ssh-add -l", true, C.ssh),
-            text("agent: ajouter", "ag+", isMac ? "ssh-add --apple-use-keychain $HOME/.ssh/id_ed25519" : "ssh-add $HOME/.ssh/id_ed25519", true, C.ssh),
+            // macOS : agent launchd + trousseau. Windows : Git Bash démarre son propre agent si besoin ;
+            // PowerShell / cmd utilisent le service « OpenSSH Authentication Agent » de Windows.
+            text("agent: ajouter", "ag+", {
+                windows: sh(
+                    '[ -n "$SSH_AUTH_SOCK" ] || eval "$(ssh-agent -s)"; ssh-add $HOME/.ssh/id_ed25519',
+                    "ssh-add $HOME/.ssh/id_ed25519",
+                    "ssh-add %USERPROFILE%\\.ssh\\id_ed25519"
+                ),
+                mac: "ssh-add --apple-use-keychain $HOME/.ssh/id_ed25519",
+                linux: "ssh-add $HOME/.ssh/id_ed25519"
+            }, true, C.ssh),
             text("test GitHub", "🐙", "ssh -T git@github.com", true, C.ssh),
             text("ssh verbose", "-v", "ssh -v ", false, C.ssh),
             text("tunnel -L", "⇄", "ssh -N -L 8080:localhost:80 ", false, C.ssh),
             text("keyscan", "📡", "ssh-keyscan -t ed25519 ", false, C.ssh),
             text("oublier hôte", "✖", "ssh-keygen -R ", false, C.danger),
-            text("éditer config", "⚙", "code $HOME/.ssh/config", true, C.tool),
+            text("éditer config", "⚙", sshConfig, true, C.tool),
             text("ssh-audit", "🔎", "ssh-audit ", false, C.sec)
         ]},
         openssl: { label: "OpenSSL", sym: "🔏", color: C.openssl, terminal: true, keys: [
@@ -234,7 +280,12 @@ function buildCatalog(ctx) {
             text("clé EC P-256", "EC", "openssl ecparam -genkey -name prime256v1 -noout -out ec.key", false, C.openssl),
             text("CSR", "CSR", "openssl req -new -key key.pem -out req.csr", false, C.openssl),
             text("lire CSR", "📄", "openssl req -in req.csr -noout -text", false, C.openssl),
-            text("auto-signé", "📜", 'openssl req -x509 -newkey rsa:4096 -sha256 -days 365 -nodes -keyout key.pem -out cert.pem -subj "/CN=localhost"', false, C.openssl),
+            // Git Bash convertit "/CN=..." en chemin Windows : MSYS_NO_PATHCONV=1 l'en empêche
+            text("auto-signé", "📜", {
+                windows: sh(`MSYS_NO_PATHCONV=1 ${selfSigned}`, selfSigned, selfSigned),
+                mac: selfSigned,
+                linux: selfSigned
+            }, false, C.openssl),
             text("lire cert", "🔍", "openssl x509 -in cert.pem -noout -text", false, C.openssl),
             text("dates cert", "📅", "openssl x509 -in cert.pem -noout -subject -issuer -dates", false, C.openssl),
             text("TLS distant", "🌐", "openssl s_client -showcerts -connect ", false, C.openssl),
@@ -248,7 +299,7 @@ function buildCatalog(ctx) {
     // Retire les touches non disponibles sur ce système
     for (const s of Object.values(sections)) s.keys = s.keys.filter(Boolean);
 
-    // Efface le terminal (Ctrl+L, compris par PowerShell, bash et zsh) : en bas à gauche
+    // Efface le terminal (Ctrl+L pour PowerShell, bash et zsh ; "cls" pour cmd) : tout à droite de la ligne
     const clear = { type: "clear", label: "clear", sym: "🧹", color: C.tool, pin: "0,2" };
 
     return { shortcuts, sections, clear };
@@ -290,7 +341,7 @@ export function buildDeck(ctx) {
     const rootKeys = [];
     const titles = { root: "Accueil" };
     for (const s of cfg.sections ?? []) {
-        const def = SECTIONS[s];
+        const def = { ...SECTIONS[s], label: pick(SECTIONS[s].label), sym: pick(SECTIONS[s].sym) };
         rootKeys.push(folder(def.label, def.sym, s, def.color));
         titles[s] = def.label;
         const keys = def.keys.filter(allowed);
@@ -310,7 +361,7 @@ export function buildDeck(ctx) {
             if (!key) return null;
             const id = `${name}/${pos}`;
             index.set(id, key);
-            const { command, tool, pin, ...visible } = key;
+            const { command, tool, ...visible } = key;   // pin reste visible : la page aligne à droite les touches épinglées
             return { id, ...visible };
         });
     }

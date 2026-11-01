@@ -1,0 +1,49 @@
+{
+  "_doc": "OÙ sont les logiciels, par système. Variables développées : %VAR% (Windows), $VAR et ~ (macOS). Pour une machine précise, crée paths.<nom-de-la-machine>.json avec seulement les valeurs à changer, dans la même structure : il est fusionné par-dessus ce fichier.",
+
+  "windows": {
+    "workspace": "%USERPROFILE%\\workspace",
+    "gitRoots": ["%USERPROFILE%\\workspace"],
+
+    "_containerCli": "Moteur de conteneurs (exécutable puis arguments) : [\"docker\"], [\"podman\"]...",
+    "containerCli": ["docker"],
+    "containerLabel": "DOCKER",
+
+    "_shells": "Shells proposés dans le terminal, le premier trouvé est celui par défaut. Ceux introuvables sont ignorés.",
+    "shells": [
+      { "name": "PowerShell", "command": ["pwsh.exe", "-NoLogo"] },
+      { "name": "PowerShell", "command": ["powershell.exe", "-NoLogo"] },
+      { "name": "Git Bash", "command": ["%ProgramFiles%\\Git\\bin\\bash.exe", "--login", "-i"] },
+      { "name": "Git Bash", "command": ["%LOCALAPPDATA%\\Programs\\Git\\bin\\bash.exe", "--login", "-i"] },
+      { "name": "cmd", "command": ["cmd.exe"] }
+    ],
+
+    "_apps": "Un nom seul (ex. \"kubectl\") est cherché dans le PATH au démarrage. Une liste : le premier trouvé.",
+    "apps": {
+      "vscode": ["%LOCALAPPDATA%\\Programs\\Microsoft VS Code\\Code.exe", "%ProgramFiles%\\Microsoft VS Code\\Code.exe", "code"],
+      "crc": "crc",
+      "kubectl": "kubectl",
+      "git": "git"
+    }
+  },
+
+  "mac": {
+    "workspace": "~/workspace",
+    "gitRoots": ["~/workspace"],
+
+    "containerCli": ["docker"],
+    "containerLabel": "DOCKER",
+
+    "shells": [
+      { "name": "zsh", "command": ["/bin/zsh", "-l"] },
+      { "name": "bash", "command": ["/bin/bash", "-l"] }
+    ],
+
+    "apps": {
+      "vscode": ["code", "/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code"],
+      "crc": "crc",
+      "kubectl": "kubectl",
+      "git": "git"
+    }
+  }
+}

@@ -1,0 +1,318 @@
+// Catalogue des touches : raccourcis de la page d'accueil et rubriques (dossiers), puis mise en page.
+//
+// Une commande peut être une chaîne (identique partout) ou { windows: "...", mac: "..." }.
+// Une touche dont la variante n'existe pas pour le système courant est ignorée.
+import { isMac, platform } from "./platform.mjs";
+
+export const COLORS = {
+    git: "#F05032", k8s: "#326CE5", sec: "#C62828", iac: "#7B42BC", vault: "#FFC107",
+    ssh: "#2E7D32", openssl: "#AD1457", docker: "#0898C8", helm: "#0F1689", vscode: "#007ACC",
+    tool: "#37474F", web: "#00897B", danger: "#B71C1C"
+};
+const C = COLORS;
+
+const pick = (v) => (v !== null && typeof v === "object" && !Array.isArray(v) ? v[platform] : v);
+
+// ---------- Types de touches ----------
+// tool = outil utilisé par la touche, filtrable via excludeTools dans la config.
+
+/** Tape une commande dans le terminal ; enter = l'exécute aussi (pastille verte). */
+function text(label, sym, command, enter, color) {
+    const cmd = pick(command);
+    if (cmd == null) return null;
+    return { type: "text", label, sym, color, tool: cmd.split(" ")[0], badge: enter ? "run" : "type", text: cmd, enter };
+}
+
+function web(label, sym, url, color = C.web) {
+    return { type: "web", label, sym, color, url };
+}
+
+/** Lance un programme sur la machine (la commande reste côté serveur). */
+function run(label, sym, command, color = C.tool, tool) {
+    const cmd = pick(command);
+    if (!cmd || cmd.some((part) => !part)) return null;
+    return { type: "run", label, sym, color, tool, command: cmd };
+}
+
+function folder(label, sym, page, color) {
+    return { type: "folder", label, sym, color, page };
+}
+
+function back() {
+    return { type: "back", label: "Retour", sym: "↩", color: "#212121" };
+}
+
+/** Voyant mis à jour en direct par le serveur (server/status.mjs). */
+function status(id, label, sym, color, tool) {
+    return { type: "status", label, sym, color, tool, status: id };
+}
+
+/**
+ * Construit le catalogue pour la machine courante.
+ * @param ctx résultat de loadConfig()
+ */
+function buildCatalog(ctx) {
+    const { apps, workspace } = ctx;
+
+    // Verrouillage du poste : toujours en bas à droite (pin), sur l'accueil comme dans les dossiers
+    const lock = () => {
+        const key = run("Verrouiller", "🔒", { windows: ["rundll32.exe", "user32.dll,LockWorkStation"], mac: ["pmset", "displaysleepnow"] }, C.danger);
+        return key && { ...key, pin: "4,2" };
+    };
+    const openWorkspace = [apps.vscode, workspace];
+
+    const shortcuts = {
+        "vscode":      run("VS Code", "</>", openWorkspace, C.vscode, "code"),
+        "crc-start":   text("CRC start", "▶", "crc start", true, C.k8s),
+        "crc-console": run("OCP console", "🖥", [apps.crc, "console"], C.k8s, "crc"),
+        "github":      web("GitHub", "🐙", "https://github.com"),
+        "owasp":       web("OWASP Top 10", "10", "https://owasp.org/Top10/"),
+        "nvd":         web("NVD / CVE", "CVE", "https://nvd.nist.gov/vuln/search"),
+        "mitre":       web("MITRE ATT&CK", "⚔", "https://attack.mitre.org"),
+        "lock":        lock(),
+        // Voyants
+        "kube-status":      status("kube", "kubectl", "☸", C.k8s, "kubectl"),
+        "git-status":       status("git", "branche", "git", C.git, "git"),
+        "container-status": status("containers", "conteneurs", "🐳", C.docker)
+    };
+
+    // Rubriques : 14 touches max, placées dans l'ordre après "Retour".
+    // terminal: true -> rubrique qui tape dans le terminal (reçoit la touche "clear").
+    const sections = {
+        // Un navigateur ne peut pas envoyer de raccourcis clavier à VS Code : on passe par sa CLI
+        vscode: { label: "VS Code", sym: "</>", color: C.vscode, terminal: true, keys: [
+            run("Ouvrir workspace", "📂", openWorkspace, C.vscode, "code"),
+            text("ici", "</>", "code .", true, C.vscode),
+            text("nouvelle fenêtre", "➕", "code -n .", true, C.vscode),
+            text("même fenêtre", "↩", "code -r .", true, C.vscode),
+            text("aller à fichier:ligne", "📄", "code -g ", false, C.vscode),
+            text("diff", "±", "code --diff ", false, C.vscode),
+            text("ajouter au workspace", "📁", "code -a .", true, C.vscode),
+            text("extensions", "🧩", "code --list-extensions --show-versions", true, C.vscode),
+            text("installer extension", "⬇", "code --install-extension ", false, C.vscode),
+            text("diagnostic", "ℹ", "code --status", true, C.vscode),
+            text("éditer ssh config", "⚙", "code $HOME/.ssh/config", true, C.tool)
+        ]},
+        git: { label: "Git", sym: "git", color: C.git, terminal: true, keys: [
+            text("status", "git", "git status", true, C.git),
+            text("pull rebase", "⬇", "git pull --rebase", true, C.git),
+            text("log graph", "log", "git log --oneline --graph --decorate -20", true, C.git),
+            text("diff stat", "±", "git diff --stat", true, C.git),
+            text("fetch prune", "⟳", "git fetch --all --prune", true, C.git),
+            text("commit signé", "✍", 'git commit -S -m "', false, C.git),
+            text("push", "⬆", "git push", false, C.git),
+            text("branches", "br", "git branch -vv", true, C.git),
+            text("stash", "📥", "git stash", true, C.git),
+            text("stash pop", "📤", "git stash pop", true, C.git),
+            text("nouvelle branche", "➕", "git switch -c ", false, C.git),
+            text("restore", "↺", "git restore ", false, C.danger),
+            text("amend", "✎", "git commit --amend", false, C.danger)
+        ]},
+        k8s: { label: "K8s / OCP", sym: "☸", color: C.k8s, terminal: true, keys: [
+            text("contexts", "ctx", "kubectl config get-contexts", true, C.k8s),
+            text("pods -A", "pod", "kubectl get pods -A", true, C.k8s),
+            text("events", "⚡", "kubectl get events -A --sort-by=.lastTimestamp", true, C.k8s),
+            text("nodes", "▦", "kubectl get nodes -o wide", true, C.k8s),
+            text("svc / ingress", "svc", "kubectl get svc,ingress -A", true, C.k8s),
+            text("logs -f", "📜", "kubectl logs -f ", false, C.k8s),
+            text("describe", "🔍", "kubectl describe pod ", false, C.k8s),
+            text("RBAC can-i", "🛂", "kubectl auth can-i --list", true, C.sec),
+            text("NetPol", "🧱", "kubectl get networkpolicies -A", true, C.sec),
+            text("oc whoami", "oc", "oc whoami; oc project", true, C.k8s),
+            text("crc status", "crc", "crc status", true, C.k8s),
+            shortcuts["crc-console"],
+            text("top pods", "📊", "kubectl top pods -A", true, C.k8s)
+        ]},
+        sec: { label: "Sécurité", sym: "🛡", color: C.sec, terminal: true, keys: [
+            text("Trivy repo", "🔎", "trivy fs --scanners vuln,secret,misconfig .", true, C.sec),
+            text("Trivy image", "🐳", "trivy image ", false, C.sec),
+            text("Gitleaks", "🔑", "gitleaks detect --source . -v", true, C.sec),
+            text("Checkov", "✔", "checkov -d .", true, C.sec),
+            text("Semgrep SAST", "SAST", "semgrep scan --config auto", true, C.sec),
+            text("Trivy K8s", "☸", "trivy k8s --report summary", true, C.sec),
+            text("SBOM", "📦", "trivy fs --format cyclonedx -o sbom.json .", true, C.sec),
+            text("install outils", "⬇", {
+                windows: "scoop install trivy gitleaks; pip install --user checkov semgrep",
+                mac: "brew install trivy gitleaks; pip3 install checkov semgrep"
+            }, false, C.tool),
+            web("Cheat Sheets", "📘", "https://cheatsheetseries.owasp.org"),
+            web("GH Advisories", "⚠", "https://github.com/advisories"),
+            web("CISA KEV", "KEV", "https://www.cisa.gov/known-exploited-vulnerabilities-catalog"),
+            lock()
+        ]},
+        iac: { label: "IaC", sym: "TF", color: C.iac, terminal: true, keys: [
+            text("init", "init", "terraform init", true, C.iac),
+            text("fmt", "fmt", "terraform fmt -recursive", true, C.iac),
+            text("validate", "✔", "terraform validate", true, C.iac),
+            text("plan", "📝", "terraform plan -out=tfplan", true, C.iac),
+            text("apply plan", "🚀", "terraform apply tfplan", false, C.danger),
+            text("state list", "🗂", "terraform state list", true, C.iac),
+            text("output", "⇥", "terraform output", true, C.iac),
+            text("Trivy IaC", "🔎", "trivy config .", true, C.sec),
+            text("Checkov TF", "✔", "checkov -d . --framework terraform", true, C.sec),
+            text("helm lint", "⎈", "helm lint .", true, C.k8s),
+            text("helm template", "⎈", "helm template .", true, C.k8s),
+            text("destroy", "💣", "terraform destroy", false, C.danger),
+            text("workspaces", "ws", "terraform workspace list", true, C.iac)
+        ]},
+        vault: { label: "Vault", sym: "🔐", color: C.vault, terminal: true, keys: [
+            text("status", "🔐", "vault status", true, C.vault),
+            text("login OIDC", "🔑", "vault login -method=oidc", false, C.vault),
+            text("token lookup", "🎫", "vault token lookup", true, C.vault),
+            text("kv list", "🗂", "vault kv list secret/", true, C.vault),
+            text("kv get", "📄", "vault kv get secret/", false, C.vault),
+            text("secrets list", "🧰", "vault secrets list", true, C.vault),
+            text("auth list", "👥", "vault auth list", true, C.vault),
+            text("VAULT_ADDR", "🌐", {
+                windows: '$env:VAULT_ADDR="http://127.0.0.1:8200"',
+                mac: 'export VAULT_ADDR="http://127.0.0.1:8200"'
+            }, false, C.tool),
+            text("server -dev", "🧪", "vault server -dev", false, C.tool),
+            web("Vault UI", "UI", "http://127.0.0.1:8200/ui"),
+            text("revoke token", "⛔", "vault token revoke -self", false, C.danger),
+            lock()
+        ]},
+        veille: { label: "Veille sécu", sym: "📚", color: C.web, keys: [
+            shortcuts.owasp,
+            shortcuts.nvd,
+            shortcuts.mitre,
+            web("CERT-FR", "FR", "https://www.cert.ssi.gouv.fr/"),
+            web("CISA KEV", "KEV", "https://www.cisa.gov/known-exploited-vulnerabilities-catalog")
+        ]},
+        docker: { label: "Docker", sym: "🐳", color: C.docker, terminal: true, keys: [
+            text("ps", "ps", "docker ps", true, C.docker),
+            text("ps -a", "ps-a", "docker ps -a", true, C.docker),
+            text("images", "🖼", "docker images", true, C.docker),
+            text("logs -f", "📜", "docker logs -f ", false, C.docker),
+            text("exec -it", ">_", "docker exec -it ", false, C.docker),
+            text("build", "🔨", "docker build -t ", false, C.docker),
+            text("run --rm", "▶", "docker run --rm -it ", false, C.docker),
+            text("inspect", "🔍", "docker inspect ", false, C.docker),
+            text("compose up", "⬆", "docker compose up -d", true, C.docker),
+            text("compose logs", "📜", "docker compose logs -f", true, C.docker),
+            text("compose down", "⬇", "docker compose down", false, C.docker),
+            text("stats", "📊", "docker stats --no-stream", true, C.docker),
+            text("prune", "🧹", "docker system prune", false, C.danger)
+        ]},
+        helm: { label: "Helm", sym: "⎈", color: C.helm, terminal: true, keys: [
+            text("list -A", "⎈", "helm list -A", true, C.helm),
+            text("repo update", "⟳", "helm repo update", true, C.helm),
+            text("search repo", "🔍", "helm search repo ", false, C.helm),
+            text("upgrade -i", "⬆", "helm upgrade --install ", false, C.helm),
+            text("status", "ℹ", "helm status ", false, C.helm),
+            text("history", "🕘", "helm history ", false, C.helm),
+            text("get values", "📄", "helm get values ", false, C.helm),
+            text("show values", "📋", "helm show values ", false, C.helm),
+            text("lint", "✔", "helm lint .", true, C.helm),
+            text("template", "🧩", "helm template .", true, C.helm),
+            text("rollback", "↩", "helm rollback ", false, C.danger),
+            text("uninstall", "🗑", "helm uninstall ", false, C.danger),
+            web("Artifact Hub", "🔎", "https://artifacthub.io")
+        ]},
+        // Les chemins utilisent $HOME : fonctionne dans PowerShell, Git Bash et zsh
+        ssh: { label: "SSH", sym: "ssh", color: C.ssh, terminal: true, keys: [
+            text("mes clés", "🗝", "ls $HOME/.ssh", true, C.ssh),
+            text("keygen ed25519", "➕", 'ssh-keygen -t ed25519 -a 100 -C "', false, C.ssh),
+            text("copier clé pub", "📋", {
+                windows: "cat $HOME/.ssh/id_ed25519.pub | clip",
+                mac: "pbcopy < $HOME/.ssh/id_ed25519.pub"
+            }, true, C.ssh),
+            text("fingerprint", "#", "ssh-keygen -lf $HOME/.ssh/id_ed25519.pub", true, C.ssh),
+            text("agent: clés", "ag", "ssh-add -l", true, C.ssh),
+            text("agent: ajouter", "ag+", isMac ? "ssh-add --apple-use-keychain $HOME/.ssh/id_ed25519" : "ssh-add $HOME/.ssh/id_ed25519", true, C.ssh),
+            text("test GitHub", "🐙", "ssh -T git@github.com", true, C.ssh),
+            text("ssh verbose", "-v", "ssh -v ", false, C.ssh),
+            text("tunnel -L", "⇄", "ssh -N -L 8080:localhost:80 ", false, C.ssh),
+            text("keyscan", "📡", "ssh-keyscan -t ed25519 ", false, C.ssh),
+            text("oublier hôte", "✖", "ssh-keygen -R ", false, C.danger),
+            text("éditer config", "⚙", "code $HOME/.ssh/config", true, C.tool),
+            text("ssh-audit", "🔎", "ssh-audit ", false, C.sec)
+        ]},
+        openssl: { label: "OpenSSL", sym: "🔏", color: C.openssl, terminal: true, keys: [
+            text("version", "ver", "openssl version -a", true, C.openssl),
+            text("clé RSA 4096", "RSA", "openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:4096 -out key.pem", false, C.openssl),
+            text("clé EC P-256", "EC", "openssl ecparam -genkey -name prime256v1 -noout -out ec.key", false, C.openssl),
+            text("CSR", "CSR", "openssl req -new -key key.pem -out req.csr", false, C.openssl),
+            text("lire CSR", "📄", "openssl req -in req.csr -noout -text", false, C.openssl),
+            text("auto-signé", "📜", 'openssl req -x509 -newkey rsa:4096 -sha256 -days 365 -nodes -keyout key.pem -out cert.pem -subj "/CN=localhost"', false, C.openssl),
+            text("lire cert", "🔍", "openssl x509 -in cert.pem -noout -text", false, C.openssl),
+            text("dates cert", "📅", "openssl x509 -in cert.pem -noout -subject -issuer -dates", false, C.openssl),
+            text("TLS distant", "🌐", "openssl s_client -showcerts -connect ", false, C.openssl),
+            text("vérifier chaîne", "⛓", "openssl verify -CAfile ca.pem cert.pem", false, C.openssl),
+            text("PKCS#12", "p12", "openssl pkcs12 -export -out bundle.p12 -inkey key.pem -in cert.pem", false, C.openssl),
+            text("SHA-256", "#", "openssl dgst -sha256 ", false, C.openssl),
+            text("secret aléa", "🎲", "openssl rand -base64 32", true, C.tool)
+        ]}
+    };
+
+    // Retire les touches non disponibles sur ce système
+    for (const s of Object.values(sections)) s.keys = s.keys.filter(Boolean);
+
+    // Efface le terminal (Ctrl+L, compris par PowerShell, bash et zsh) : en bas à gauche
+    const clear = { type: "clear", label: "clear", sym: "🧹", color: C.tool, pin: "0,2" };
+
+    return { shortcuts, sections, clear };
+}
+
+// ---------- Mise en page ----------
+
+const POSITIONS = [0, 1, 2].flatMap((r) => [0, 1, 2, 3, 4].map((c) => `${c},${r}`));   // ordre de lecture
+
+/** Place les touches à position fixe (pin) puis remplit les cases libres dans l'ordre. */
+function layout(keys, page = {}) {
+    for (const k of keys.filter((k) => k.pin)) page[k.pin] = k;
+    const free = POSITIONS.filter((p) => !(p in page));
+    keys.filter((k) => !k.pin).forEach((k, i) => { page[free[i]] = k; });
+    return page;
+}
+
+/**
+ * Pages du deck : { root: [15 touches ou null], <rubrique>: [...] }, et l'index des touches par id
+ * (le serveur ne lance que des commandes "run" de ce catalogue, jamais une commande venue du navigateur).
+ */
+export function buildDeck(ctx) {
+    const { cfg } = ctx;
+    const { shortcuts: SHORTCUTS, sections: SECTIONS, clear } = buildCatalog(ctx);
+
+    const unknownSections = (cfg.sections ?? []).filter((s) => !SECTIONS[s]);
+    if (unknownSections.length) throw new Error(`rubrique(s) inconnue(s) : ${unknownSections.join(", ")}. Disponibles : ${Object.keys(SECTIONS).join(", ")}`);
+    const unknownShortcuts = (cfg.shortcuts ?? []).filter((s) => !(s in SHORTCUTS));
+    if (unknownShortcuts.length) throw new Error(`raccourci(s) inconnu(s) : ${unknownShortcuts.join(", ")}. Disponibles : ${Object.keys(SHORTCUTS).join(", ")}`);
+
+    const exclude = new Set(cfg.excludeTools ?? []);
+    const allowed = (key) => key && !(key.tool && exclude.has(key.tool));
+    const skipped = (cfg.shortcuts ?? []).filter((s) => !SHORTCUTS[s]);
+    const shortcuts = (cfg.shortcuts ?? []).filter((s) => allowed(SHORTCUTS[s]));
+    const total = (cfg.sections ?? []).length + shortcuts.length;
+    if (total > 15) throw new Error(`${total} touches demandées sur la page d'accueil (max 15). Retire des rubriques ou des raccourcis.`);
+
+    const layouts = {};
+    const rootKeys = [];
+    const titles = { root: "Accueil" };
+    for (const s of cfg.sections ?? []) {
+        const def = SECTIONS[s];
+        rootKeys.push(folder(def.label, def.sym, s, def.color));
+        titles[s] = def.label;
+        const keys = def.keys.filter(allowed);
+        if (cfg.clearKey && def.terminal) keys.push(clear);
+        if (keys.length > 14) throw new Error(`la rubrique "${s}" a ${keys.length} touches (max 14).`);
+        layouts[s] = layout(keys, { "0,0": back() });
+    }
+    for (const s of shortcuts) rootKeys.push(SHORTCUTS[s]);
+    layouts.root = layout(rootKeys);
+
+    // Identifiants stables "page/colonne,ligne" ; la commande des touches "run" n'est pas envoyée au navigateur
+    const index = new Map();
+    const pages = {};
+    for (const [name, page] of Object.entries(layouts)) {
+        pages[name] = POSITIONS.map((pos) => {
+            const key = page[pos];
+            if (!key) return null;
+            const id = `${name}/${pos}`;
+            index.set(id, key);
+            const { command, tool, pin, ...visible } = key;
+            return { id, ...visible };
+        });
+    }
+    return { pages, titles, index, skipped };
+}

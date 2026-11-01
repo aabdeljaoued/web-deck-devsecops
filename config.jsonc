@@ -1,0 +1,46 @@
+// QUOI afficher sur le deck. Même fichier pour Windows et macOS :
+// une touche qui n'existe pas sur le système courant est simplement ignorée.
+{
+    // Port local (le serveur n'écoute que sur 127.0.0.1)
+    "port": 7777,
+
+    // Rubriques (dossiers) de la page d'accueil, dans l'ordre d'affichage.
+    // Disponibles : vscode, git, k8s, docker, helm, sec, iac, vault, ssh, openssl, veille
+    "sections": [
+        "vscode",
+        "git",
+        "k8s",
+        "docker",
+        "helm",
+        "ssh",
+        "openssl",
+        "veille"
+        // "sec",
+        // "iac",
+        // "vault"
+    ],
+
+    // Raccourcis de la page d'accueil, placés après les dossiers (15 touches au total).
+    // Disponibles : vscode, crc-start, crc-console, github, owasp, nvd, mitre, lock,
+    //               kube-status, git-status, container-status (voyants)
+    "shortcuts": [
+        "kube-status",
+        "git-status",
+        "container-status",
+        "vscode",
+        "lock"
+    ],
+
+    // Voyant kubectl : passe en rouge si le contexte ou le namespace
+    // correspond à cette expression régulière (insensible à la casse)
+    "prodPattern": "prod|prd",
+
+    // Ajoute une touche "clear" (bas gauche) dans les rubriques qui tapent dans le terminal
+    "clearKey": true,
+
+    // Outils à masquer partout (rubriques + raccourcis). Une touche est retirée si
+    // sa commande commence par cet outil, ex. "crc" retire "crc status", "CRC start"...
+    "excludeTools": [
+        "crc"
+    ]
+}

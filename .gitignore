@@ -1,0 +1,4 @@
+node_modules/
+.deck-token
+paths.*.json
+!paths.json

@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Deck DevSecOps</title>
+    <link rel="stylesheet" href="/vendor/xterm.css">
+    <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+    <header>
+        <h1>Deck DevSecOps</h1>
+        <nav id="crumbs" aria-label="Rubrique"></nav>
+        <span id="conn" class="conn" title="Connexion au serveur">connexion…</span>
+    </header>
+
+    <main>
+        <section id="deck" aria-label="Touches">
+            <div id="grid" class="grid"></div>
+            <p class="legend">
+                <span class="dot run"></span> exécutée
+                <span class="dot type"></span> tapée, à compléter
+            </p>
+        </section>
+
+        <section id="term" aria-label="Terminal">
+            <div class="tabs">
+                <div id="tabs" role="tablist"></div>
+                <button id="new-tab" class="tab-add" title="Nouveau terminal">+</button>
+                <select id="shell" title="Shell des nouveaux terminaux"></select>
+            </div>
+            <div id="screens"></div>
+        </section>
+    </main>
+
+    <div id="toast" role="status" aria-live="polite"></div>
+    <script type="module" src="/app.js"></script>
+</body>
+</html>

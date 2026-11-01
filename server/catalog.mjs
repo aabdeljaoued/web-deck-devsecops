@@ -44,7 +44,10 @@ function run(label, sym, command, color = C.tool, tool) {
     return { type: "run", label, sym, color, tool, command: cmd };
 }
 
-/** icon : nom d'un logo de simple-icons (servi par /icons/<nom>.svg), affiché à la place de sym. */
+/**
+ * icon : nom d'un logo affiché à la place de sym, servi par /icons/<nom>.svg :
+ * public/icons/<nom>.svg (icônes du projet) sinon simple-icons.
+ */
 function folder(label, sym, page, color, icon) {
     return { type: "folder", label, sym, color, page, ...(icon ? { icon } : {}) };
 }
@@ -96,7 +99,7 @@ function buildCatalog(ctx) {
     // terminal: true -> rubrique qui tape dans le terminal (reçoit la touche "clear").
     const sections = {
         // Un navigateur ne peut pas envoyer de raccourcis clavier à VS Code : on passe par sa CLI
-        vscode: { label: "VS Code", sym: "</>", color: C.vscode, terminal: true, keys: [
+        vscode: { label: "VS Code", sym: "</>", icon: "code-editor", color: C.vscode, terminal: true, keys: [
             run("Ouvrir workspace", "📂", openWorkspace, C.vscode, "code"),
             text("ici", "</>", "code .", true, C.vscode),
             text("nouvelle fenêtre", "➕", "code -n .", true, C.vscode),

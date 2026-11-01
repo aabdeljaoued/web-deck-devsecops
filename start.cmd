@@ -7,9 +7,12 @@ where node >nul 2>nul || (
     pause
     exit /b 1
 )
-if not exist node_modules (
+rem Premiere fois, ou dependances modifiees depuis la derniere installation (git pull)
+node server\needs-install.mjs
+if not errorlevel 1 (
     echo Installation des dependances...
     call npm install --omit=dev || (pause & exit /b 1)
+    node server\needs-install.mjs --done
 )
 node server\index.mjs %*
 if errorlevel 1 pause

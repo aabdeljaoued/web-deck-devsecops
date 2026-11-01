@@ -18,7 +18,7 @@ start.sh       lanceur macOS / Linux en ligne de commande
    - **portable** : télécharger le zip « Windows Binary (.zip) » x64 sur [nodejs.org](https://nodejs.org/en/download), l'extraire dans un dossier `node` **à la racine du projet** (`node\node.exe`). `start.cmd` l'utilise automatiquement ;
    - ou `winget install OpenJS.NodeJS.LTS --scope user` si winget est autorisé ;
    - ou via [Scoop](https://scoop.sh) (installation utilisateur) : `scoop install nodejs-lts`.
-2. **Récupérer le projet** (git clone ou zip), puis double-cliquer sur **`start.cmd`**. Au premier lancement, il installe les dépendances (`npm install`), démarre le serveur et ouvre le navigateur.
+2. **Récupérer le projet** (git clone ou zip), puis double-cliquer sur **`start.cmd`**. Au premier lancement, et après une mise à jour qui change les dépendances, il installe les dépendances (`npm install`), démarre le serveur et ouvre le navigateur.
 
 Aucune compilation n'est nécessaire : `node-pty` embarque ses binaires pour Windows (x64, ARM64) et macOS (Intel, Apple Silicon).
 

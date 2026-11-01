@@ -91,10 +91,11 @@ const server = http.createServer((req, res) => {
     if (!sameToken(cookieToken(req))) {
         return send(res, 401, `Accès refusé : ouvre l'adresse affichée par le serveur au démarrage (avec ?token=...).`);
     }
-    // Logos des rubriques (simple-icons, CC0) : seulement ceux du catalogue
-    const logo = /^\/icons\/([a-z0-9]+)\.svg$/.exec(url.pathname);
+    // Logos des rubriques : seulement ceux du catalogue ; icônes du projet (public/icons) sinon simple-icons (CC0)
+    const logo = /^\/icons\/([a-z0-9-]+)\.svg$/.exec(url.pathname);
     if (req.method === "GET" && logo && ICONS.has(logo[1])) {
-        return send(res, 200, readFileSync(nm(`simple-icons/icons/${logo[1]}.svg`)), "image/svg+xml");
+        const own = path.join(ROOT, "public", "icons", `${logo[1]}.svg`);
+        return send(res, 200, readFileSync(existsSync(own) ? own : nm(`simple-icons/icons/${logo[1]}.svg`)), "image/svg+xml");
     }
     const entry = req.method === "GET" && STATIC[url.pathname];
     if (!entry) return send(res, 404, "Introuvable");

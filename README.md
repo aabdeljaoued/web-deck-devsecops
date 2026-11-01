@@ -1,6 +1,6 @@
 # Web Deck DevSecOps
 
-Le deck DevSecOps dans le navigateur, **sans Stream Deck ni droits administrateur** : une grille de touches (Git, Kubernetes, Docker, Helm, Brew / Scoop, SSH, OpenSSL, veille sécurité…), des voyants en direct (contexte kubectl, branche Git, conteneurs) et un **vrai terminal intégré** (PowerShell, Git Bash, cmd ou zsh) dans lequel les touches tapent leurs commandes.
+Le deck DevSecOps dans le navigateur, **sans Stream Deck ni droits administrateur** : une grille de touches (Git, Kubernetes, Docker, Helm, Terraform, Brew / Scoop, SSH, OpenSSL, veille sécurité…), des voyants en direct (contexte kubectl, branche Git, conteneurs) et un **vrai terminal intégré** (PowerShell, Git Bash, cmd ou zsh) dans lequel les touches tapent leurs commandes.
 
 ```
 config.jsonc   QUOI afficher : rubriques, raccourcis, outils exclus, port

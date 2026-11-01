@@ -7,7 +7,7 @@
 import { platform } from "./platform.mjs";
 
 export const COLORS = {
-    git: "#F05032", k8s: "#326CE5", sec: "#C62828", iac: "#7B42BC", vault: "#FFC107",
+    git: "#F05032", k8s: "#326CE5", sec: "#C62828", terraform: "#7B42BC", vault: "#FFC107",
     ssh: "#2E7D32", openssl: "#AD1457", docker: "#0898C8", helm: "#5C6BC0", vscode: "#007ACC",
     tool: "#37474F", web: "#00897B", danger: "#B71C1C", brew: "#FBB040"
 };
@@ -158,20 +158,20 @@ function buildCatalog(ctx) {
             web("CISA KEV", "KEV", "https://www.cisa.gov/known-exploited-vulnerabilities-catalog"),
             lock()
         ]},
-        iac: { label: "IaC", sym: "TF", color: C.iac, terminal: true, keys: [
-            text("init", "init", "terraform init", true, C.iac),
-            text("fmt", "fmt", "terraform fmt -recursive", true, C.iac),
-            text("validate", "✔", "terraform validate", true, C.iac),
-            text("plan", "📝", "terraform plan -out=tfplan", true, C.iac),
+        terraform: { label: "Terraform", sym: "TF", color: C.terraform, terminal: true, keys: [
+            text("init", "init", "terraform init", true, C.terraform),
+            text("fmt", "fmt", "terraform fmt -recursive", true, C.terraform),
+            text("validate", "✔", "terraform validate", true, C.terraform),
+            text("plan", "📝", "terraform plan -out=tfplan", true, C.terraform),
+            text("show plan", "👁", "terraform show tfplan", true, C.terraform),
             text("apply plan", "🚀", "terraform apply tfplan", false, C.danger),
-            text("state list", "🗂", "terraform state list", true, C.iac),
-            text("output", "⇥", "terraform output", true, C.iac),
+            text("state list", "🗂", "terraform state list", true, C.terraform),
+            text("output", "⇥", "terraform output", true, C.terraform),
+            text("workspaces", "ws", "terraform workspace list", true, C.terraform),
+            text("providers", "🔌", "terraform providers", true, C.terraform),
             text("Trivy IaC", "🔎", "trivy config .", true, C.sec),
             text("Checkov TF", "✔", "checkov -d . --framework terraform", true, C.sec),
-            text("helm lint", "⎈", "helm lint .", true, C.k8s),
-            text("helm template", "⎈", "helm template .", true, C.k8s),
-            text("destroy", "💣", "terraform destroy", false, C.danger),
-            text("workspaces", "ws", "terraform workspace list", true, C.iac)
+            text("destroy", "💣", "terraform destroy", false, C.danger)
         ]},
         vault: { label: "Vault", sym: "🔐", color: C.vault, terminal: true, keys: [
             text("status", "🔐", "vault status", true, C.vault),

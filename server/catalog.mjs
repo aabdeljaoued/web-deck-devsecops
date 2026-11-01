@@ -264,7 +264,7 @@ function buildCatalog(ctx) {
             web("Artifact Hub", "🔎", "https://artifacthub.io")
         ]},
         // $HOME fonctionne dans PowerShell, Git Bash et zsh ; cmd utilise %USERPROFILE%
-        ssh: { label: "SSH", sym: "ssh", color: C.ssh, terminal: true, keys: [
+        ssh: { label: "SSH", sym: "ssh", icon: "ssh-key", color: C.ssh, terminal: true, keys: [
             text("mes clés", "🗝", sh("ls $HOME/.ssh", "ls $HOME/.ssh", "dir %USERPROFILE%\\.ssh"), true, C.ssh),
             text("keygen ed25519", "➕", 'ssh-keygen -t ed25519 -a 100 -C "', false, C.ssh),
             text("copier clé pub", "📋", {

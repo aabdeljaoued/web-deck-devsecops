@@ -6,7 +6,7 @@
     --muted: #8b93a1;
     --run: #2ecc71;
     --type: #ffb300;
-    --gap: 6px;
+    --gap: 10px;
     /* 15 touches sur une ligne : 80 px au plus, plus petites si la fenêtre est étroite */
     --key: min(80px, calc((100vw - 32px - 14 * var(--gap)) / 15));
     font-family: "Segoe UI", -apple-system, "Helvetica Neue", Arial, sans-serif;
@@ -72,7 +72,7 @@ main {
 /* ---------- Grille de touches ---------- */
 
 #deck {
-    padding: 8px 16px;
+    padding: 12px 18px;
     border-bottom: 1px solid var(--border);
     /* Fond généré avec Draw Things (Qwen Image), étiré sur toute la barre */
     background: var(--panel) url("/img/deck-bar.jpg") center / 100% 100% no-repeat;
@@ -85,16 +85,14 @@ main {
 .grid .key { flex: none; }
 .grid .spacer { flex: 1; }
 
-.key, .slot {
-    width: var(--key);
-    height: var(--key);
-    border-radius: 10px;
-}
-
-.slot { background: #15171b; }
+/* ---------- Touches façon Stream Deck : écran noir sous vitre, icône lumineuse, halo coloré ---------- */
 
 .key {
+    /* --c : couleur de la touche ; --tint : version claire et lumineuse pour l'icône et le halo */
+    --tint: color-mix(in srgb, var(--c) 55%, #fff);
     position: relative;
+    width: var(--key);
+    height: var(--key);
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -102,48 +100,91 @@ main {
     gap: 4px;
     padding: 4px;
     border: none;
-    color: #fff;
-    background: linear-gradient(180deg, var(--c), color-mix(in srgb, var(--c) 45%, #000));
+    border-radius: 13px;
+    color: #eef1f6;
+    /* Écran : halo de la couleur de la touche qui monte du bas, sur un fond presque noir */
+    background:
+        radial-gradient(140% 95% at 50% 118%, color-mix(in srgb, var(--c) 80%, #fff) 0%, var(--c) 22%, color-mix(in srgb, var(--c) 60%, transparent) 50%, transparent 85%),
+        radial-gradient(85% 60% at 50% 40%, color-mix(in srgb, var(--c) 35%, transparent), transparent 75%),
+        linear-gradient(180deg, #161a22, #07080b);
     cursor: pointer;
     font: inherit;
-    box-shadow: 0 2px 0 rgba(0, 0, 0, .5);
-    transition: transform .06s, filter .1s;
+    /* Cadre : bord noir en relief autour de l'écran */
+    box-shadow:
+        inset 0 0 0 1px rgba(255, 255, 255, .07),
+        inset 0 -6px 12px rgba(0, 0, 0, .55),
+        0 0 0 3px #050608,
+        0 0 0 4px rgba(255, 255, 255, .06),
+        0 4px 8px rgba(0, 0, 0, .7),
+        0 6px 18px -4px color-mix(in srgb, var(--c) 55%, transparent);
+    transition: transform .06s, filter .15s;
     overflow: hidden;
 }
-.key:hover { filter: brightness(1.15); }
-.key:active, .key.pressed { transform: translateY(2px) scale(.97); box-shadow: none; }
-.key:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
-.key.light { color: #191919; }
+/* Vitre : reflet brillant en diagonale et liseré de lumière en haut */
+.key::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background:
+        linear-gradient(135deg, rgba(255, 255, 255, .30) 0%, rgba(255, 255, 255, .10) 34%, transparent 35%, transparent 100%),
+        linear-gradient(180deg, rgba(255, 255, 255, .16), transparent 16%),
+        radial-gradient(60% 40% at 30% 0%, rgba(255, 255, 255, .12), transparent 70%);
+    pointer-events: none;
+}
+.key:hover { filter: brightness(1.25) saturate(1.1); }
+.key:active, .key.pressed { transform: translateY(2px) scale(.97); }
+.key:focus-visible { outline: 2px solid var(--tint); outline-offset: 4px; }
+
+.slot {
+    width: var(--key);
+    height: var(--key);
+    border-radius: 13px;
+    background: #0a0b0e;
+}
 
 .key .sym {
     font-size: 26px;
     line-height: 1;
     font-weight: 700;
     white-space: nowrap;
+    color: var(--tint);
+    filter: drop-shadow(0 0 10px var(--c)) drop-shadow(0 0 3px color-mix(in srgb, var(--c) 80%, transparent));
 }
 .key .sym.ascii { font-family: Consolas, Menlo, monospace; }
 .key .sym.logo {
-    width: 28px;
-    height: 28px;
-    background: currentColor;
+    width: 30px;
+    height: 30px;
+    background: var(--tint);
     -webkit-mask: var(--logo) center / contain no-repeat;
     mask: var(--logo) center / contain no-repeat;
 }
 .key .label {
-    font-size: 11px;
-    font-weight: 700;
+    font-size: 10px;
+    font-weight: 600;
     line-height: 1.1;
     text-align: center;
+    color: rgba(238, 241, 246, .82);
 }
 
-.key.folder { box-shadow: inset 0 0 0 3px currentColor, 0 2px 0 rgba(0, 0, 0, .5); }
+/* Rubrique : liseré de la couleur de la touche et chevron */
+.key.folder {
+    box-shadow:
+        inset 0 0 0 1.5px color-mix(in srgb, var(--tint) 55%, transparent),
+        inset 0 -6px 12px rgba(0, 0, 0, .55),
+        0 0 0 3px #050608,
+        0 0 0 4px rgba(255, 255, 255, .06),
+        0 4px 8px rgba(0, 0, 0, .7),
+        0 6px 18px -4px color-mix(in srgb, var(--c) 55%, transparent);
+}
 .key.folder::after {
     content: "›";
     position: absolute;
     top: 1px;
     right: 7px;
-    font-size: 18px;
+    font-size: 17px;
     font-weight: 700;
+    color: var(--tint);
 }
 
 .key .badge {
@@ -173,13 +214,13 @@ main {
     -webkit-box-orient: vertical;
     overflow: hidden;
 }
-.key.status .line.big { font-size: 24px; }
+.key.status .line.big { font-size: 24px; color: var(--tint); text-shadow: 0 0 8px color-mix(in srgb, var(--c) 70%, transparent); }
 .key.status .footer { font-size: 9px; font-weight: 600; opacity: .9; white-space: nowrap; }
 
 .key.ok { animation: flash-ok .6s; }
 .key.ko { animation: flash-ko .8s; }
-@keyframes flash-ok { 0%, 60% { box-shadow: inset 0 0 0 4px var(--run); } }
-@keyframes flash-ko { 0%, 60% { box-shadow: inset 0 0 0 4px #ef5350; } }
+@keyframes flash-ok { 0%, 60% { box-shadow: inset 0 0 0 3px var(--run), 0 0 0 3px #050608; } }
+@keyframes flash-ko { 0%, 60% { box-shadow: inset 0 0 0 3px #ef5350, 0 0 0 3px #050608; } }
 
 .legend {
     margin: 0;
@@ -267,7 +308,7 @@ main {
 /* Touches réduites (fenêtre étroite ou basse) */
 @media (max-width: 1250px), (max-height: 700px) {
     .key .sym { font-size: 21px; }
-    .key .label { font-size: 10px; }
+    .key .label { font-size: 9px; }
     .key.status .line.big { font-size: 20px; }
 }
 @media (max-height: 700px) {

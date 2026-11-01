@@ -74,7 +74,7 @@ function buildCatalog(ctx) {
     // Verrouillage du poste : toujours en bas à droite (pin), sur l'accueil comme dans les dossiers
     const lock = () => {
         const key = run("Verrouiller", "🔒", { windows: ["rundll32.exe", "user32.dll,LockWorkStation"], mac: ["pmset", "displaysleepnow"] }, C.danger);
-        return key && { ...key, pin: "4,2" };
+        return key && { ...key, pin: "4,2", icon: "lock" };
     };
     const openWorkspace = [apps.vscode, workspace];
     const sshConfig = sh("code $HOME/.ssh/config", "code $HOME/.ssh/config", "code %USERPROFILE%\\.ssh\\config");
@@ -371,9 +371,7 @@ export function buildDeck(ctx) {
     const titles = { root: "Accueil" };
     for (const s of sections) {
         const def = { ...SECTIONS[s], label: pick(SECTIONS[s].label), sym: pick(SECTIONS[s].sym) };
-        const icon = pick(def.icon);
-        if (icon) ICONS.add(icon);
-        rootKeys.push(folder(def.label, def.sym, s, def.color, icon));
+        rootKeys.push(folder(def.label, def.sym, s, def.color, pick(def.icon)));
         titles[s] = def.label;
         const keys = def.keys.filter(allowed);
         if (cfg.clearKey && def.terminal) keys.push(clear);
@@ -392,6 +390,7 @@ export function buildDeck(ctx) {
             if (!key) return null;
             const id = `${name}/${pos}`;
             index.set(id, key);
+            if (key.icon) ICONS.add(key.icon);
             const { command, tool, ...visible } = key;   // pin reste visible : la page aligne à droite les touches épinglées
             return { id, ...visible };
         });

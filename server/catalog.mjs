@@ -38,9 +38,23 @@ const SYM_ICONS = {
     "📡": "lucide-radio-tower", "🖼": "lucide-image", "🔨": "lucide-hammer", "🧹": "lucide-brush-cleaning",
     "⎈": "helm", "🕘": "lucide-history", "🗝": "lucide-key", "⇄": "lucide-arrow-left-right",
     "✖": "lucide-x", "📅": "lucide-calendar", "⛓": "lucide-link", "🎲": "lucide-dices",
-    "🔒": "lock", "🛡": "lucide-shield"
+    "🔒": "lock", "🛡": "lucide-shield",
+    // Symboles texte
+    "10": "owasp", "</>": "code-editor", "CVE": "lucide-bug", "git": "lucide-list-checks",
+    "log": "lucide-git-graph", "br": "lucide-git-branch", "ctx": "lucide-layers", "pod": "lucide-boxes",
+    "svc": "lucide-network", "oc": "lucide-circle-user", "crc": "lucide-activity", "SAST": "lucide-file-search",
+    "KEV": "lucide-shield-alert", "init": "lucide-power", "fmt": "lucide-wand-sparkles", "ws": "lucide-layout-grid",
+    "UI": "lucide-app-window", "ver": "lucide-tag", ">_": "lucide-square-terminal", "FR": "lucide-flag",
+    "ps": "lucide-circle-play", "ps-a": "lucide-list", "#": "lucide-hash", "ag": "lucide-key-square",
+    "ag+": "lucide-square-plus", "-v": "lucide-text-search", "RSA": "lucide-file-key", "EC": "lucide-file-key-2",
+    "CSR": "lucide-file-signature", "p12": "lucide-file-archive"
 };
-const withIcon = (key) => (key && SYM_ICONS[key.sym] && !key.icon ? { ...key, icon: SYM_ICONS[key.sym] } : key);
+/** Même symbole, sens différent selon la touche : l'icône est choisie d'après le libellé. */
+const LABEL_ICONS = { "ici": "lucide-folder-code", "fingerprint": "lucide-fingerprint" };
+const withIcon = (key) => {
+    const icon = key && !key.icon && (LABEL_ICONS[key.label] ?? SYM_ICONS[key.sym]);
+    return icon ? { ...key, icon } : key;
+};
 
 /**
  * Variantes par famille de shell : posix (zsh, bash, Git Bash), powershell, cmd.

@@ -5,8 +5,8 @@
     "port": 7777,
 
     // Rubriques (dossiers) de la page d'accueil, dans l'ordre d'affichage.
-    // Disponibles : vscode, git, k8s, docker, helm, terraform, brew, sec, vault, ssh, openssl, veille
-    // (brew = Homebrew sous macOS, Scoop sous Windows)
+    // Disponibles : vscode, git, k8s, docker, helm, terraform, ansible, brew, sec, vault, ssh, openssl, veille
+    // (brew = Homebrew sous macOS, Scoop sous Windows ; ansible masquée sous Windows)
     "sections": [
         "vscode",
         "git",
@@ -14,6 +14,7 @@
         "docker",
         "helm",
         "terraform",
+        "ansible",
         "brew",
         "ssh",
         "openssl",

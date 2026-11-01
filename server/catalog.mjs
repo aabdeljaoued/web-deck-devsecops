@@ -9,7 +9,7 @@ import { platform } from "./platform.mjs";
 export const COLORS = {
     git: "#F05032", k8s: "#326CE5", sec: "#C62828", terraform: "#7B42BC", vault: "#FFC107",
     ssh: "#2E7D32", openssl: "#AD1457", docker: "#0898C8", helm: "#5C6BC0", vscode: "#007ACC",
-    tool: "#37474F", web: "#00897B", danger: "#B71C1C", brew: "#FBB040"
+    tool: "#37474F", web: "#00897B", danger: "#B71C1C", brew: "#FBB040", ansible: "#5BBDBF"
 };
 const C = COLORS;
 
@@ -203,6 +203,22 @@ function buildCatalog(ctx) {
             text("cleanup", "♻", { windows: "scoop cleanup *", mac: "brew cleanup", linux: "brew cleanup" }, false, C.brew),
             text("uninstall", "🗑", { windows: "scoop uninstall ", mac: "brew uninstall ", linux: "brew uninstall " }, false, C.danger)
         ]},
+        // Ansible ne tourne pas nativement sous Windows (WSL seulement) : rubrique masquée sous Windows
+        ansible: { label: "Ansible", sym: "A", color: C.ansible, terminal: true, keys: [
+            text("version", "ver", { mac: "ansible --version", linux: "ansible --version" }, true, C.ansible),
+            text("ping all", "📡", { mac: "ansible all -m ping", linux: "ansible all -m ping" }, true, C.ansible),
+            text("inventaire", "🗂", { mac: "ansible-inventory --graph", linux: "ansible-inventory --graph" }, true, C.ansible),
+            text("playbook", "▶", { mac: "ansible-playbook ", linux: "ansible-playbook " }, false, C.ansible),
+            text("check --diff", "🔍", { mac: "ansible-playbook --check --diff ", linux: "ansible-playbook --check --diff " }, false, C.ansible),
+            text("syntax check", "✔", { mac: "ansible-playbook --syntax-check ", linux: "ansible-playbook --syntax-check " }, false, C.ansible),
+            text("list tasks", "📋", { mac: "ansible-playbook --list-tasks ", linux: "ansible-playbook --list-tasks " }, false, C.ansible),
+            text("ad-hoc shell", ">_", { mac: "ansible all -m shell -a \"", linux: "ansible all -m shell -a \"" }, false, C.ansible),
+            text("ansible-lint", "🔎", { mac: "ansible-lint", linux: "ansible-lint" }, true, C.sec),
+            text("galaxy install", "⬇", { mac: "ansible-galaxy install -r requirements.yml", linux: "ansible-galaxy install -r requirements.yml" }, false, C.ansible),
+            text("vault encrypt", "🔒", { mac: "ansible-vault encrypt ", linux: "ansible-vault encrypt " }, false, C.vault),
+            text("vault view", "👁", { mac: "ansible-vault view ", linux: "ansible-vault view " }, false, C.vault),
+            text("doc module", "📘", { mac: "ansible-doc ", linux: "ansible-doc " }, false, C.ansible)
+        ]},
         veille: { label: "Veille sécu", sym: "📚", color: C.web, keys: [
             shortcuts.owasp,
             shortcuts.nvd,
@@ -334,13 +350,19 @@ export function buildDeck(ctx) {
     const allowed = (key) => key && !(key.tool && exclude.has(key.tool));
     const skipped = (cfg.shortcuts ?? []).filter((s) => !SHORTCUTS[s]);
     const shortcuts = (cfg.shortcuts ?? []).filter((s) => allowed(SHORTCUTS[s]));
-    const total = (cfg.sections ?? []).length + shortcuts.length;
+    // Rubrique sans aucune touche sur ce système (ex. Ansible sous Windows) : pas de dossier vide
+    const sections = (cfg.sections ?? []).filter((s) => {
+        const empty = !SECTIONS[s].keys.some(allowed);
+        if (empty) skipped.push(s);
+        return !empty;
+    });
+    const total = sections.length + shortcuts.length;
     if (total > 15) throw new Error(`${total} touches demandées sur la page d'accueil (max 15). Retire des rubriques ou des raccourcis.`);
 
     const layouts = {};
     const rootKeys = [];
     const titles = { root: "Accueil" };
-    for (const s of cfg.sections ?? []) {
+    for (const s of sections) {
         const def = { ...SECTIONS[s], label: pick(SECTIONS[s].label), sym: pick(SECTIONS[s].sym) };
         rootKeys.push(folder(def.label, def.sym, s, def.color));
         titles[s] = def.label;

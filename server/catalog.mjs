@@ -226,7 +226,7 @@ function buildCatalog(ctx) {
             text("vault view", "👁", { mac: "ansible-vault view ", linux: "ansible-vault view " }, false, C.vault),
             text("doc module", "📘", { mac: "ansible-doc ", linux: "ansible-doc " }, false, C.ansible)
         ]},
-        veille: { label: "Veille sécu", sym: "📚", color: C.web, keys: [
+        veille: { label: "Veille sécu", sym: "📚", icon: "radar", color: C.web, keys: [
             shortcuts.owasp,
             shortcuts.nvd,
             shortcuts.mitre,
@@ -297,7 +297,7 @@ function buildCatalog(ctx) {
             text("éditer config", "⚙", sshConfig, true, C.tool),
             text("ssh-audit", "🔎", "ssh-audit ", false, C.sec)
         ]},
-        openssl: { label: "OpenSSL", sym: "🔏", color: C.openssl, terminal: true, keys: [
+        openssl: { label: "OpenSSL", sym: "🔏", icon: "certificate", color: C.openssl, terminal: true, keys: [
             text("version", "ver", "openssl version -a", true, C.openssl),
             text("clé RSA 4096", "RSA", "openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:4096 -out key.pem", false, C.openssl),
             text("clé EC P-256", "EC", "openssl ecparam -genkey -name prime256v1 -noout -out ec.key", false, C.openssl),

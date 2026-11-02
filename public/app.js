@@ -14,10 +14,20 @@ const state = {
     shells: [],         // [{ name, kind }] ; kind : posix, powershell ou cmd
     windowsPty: null,   // serveur Windows : infos ConPTY pour xterm.js
     terms: new Map(),   // sid -> { term, fit, tab, screen, ended, kind }
+    grid: loadGrid(),   // affichage en grille 2 x 2 (4 terminaux visibles) au lieu des onglets
     active: null,
     pending: []         // textes à envoyer au prochain terminal ouvert par cette page
 };
 const requestId = crypto.randomUUID();
+const GRID_SIZE = 4;
+
+/** Mode grille mémorisé entre deux chargements (si le navigateur autorise le stockage local). */
+function loadGrid() {
+    try { return localStorage.getItem("deck-grid") === "1"; } catch { return false; }
+}
+function saveGrid() {
+    try { localStorage.setItem("deck-grid", state.grid ? "1" : "0"); } catch { /* stockage refusé */ }
+}
 // Navigateur sous macOS : Cmd+C / Cmd+V copient et collent déjà ; ailleurs, Ctrl+C / Ctrl+V sont gérés plus bas
 const macClient = /Mac|iPhone|iPad/.test(navigator.userAgentData?.platform ?? navigator.platform ?? navigator.userAgent);
 
@@ -57,12 +67,17 @@ function handle(msg) {
             for (const sid of [...state.terms.keys()]) removeTerm(sid);
             for (const s of msg.sessions) addTerm(s.sid, s.name, s.kind, s.replay);
             if (msg.sessions.length) activate(msg.sessions.at(-1).sid);
-            else openTerm();
+            layoutScreens();
+            if (state.grid) fillGrid();
+            else if (!msg.sessions.length) openTerm();
             render();
             break;
         }
         case "opened":
-            if (!state.terms.has(msg.sid)) addTerm(msg.sid, msg.name, msg.kind);
+            if (!state.terms.has(msg.sid)) {
+                addTerm(msg.sid, msg.name, msg.kind);
+                layoutScreens();
+            }
             if (msg.by === requestId) {
                 activate(msg.sid);
                 for (const text of state.pending.splice(0)) send({ t: "in", sid: msg.sid, d: text });
@@ -270,10 +285,11 @@ function openTerm() {
     send({ t: "open", shell: Number($("#shell").value || 0), cols, rows, req: requestId });
 }
 
-/** Taille du terminal avant sa création, d'après la zone disponible (cellule ~9 x 17 px). */
+/** Taille du terminal avant sa création, d'après la zone disponible (cellule ~9 x 17 px ; un quart en grille). */
 function estimateSize() {
     const box = $("#screens").getBoundingClientRect();
-    return { cols: Math.max(20, Math.floor((box.width - 12) / 9)), rows: Math.max(5, Math.floor((box.height - 12) / 17)) };
+    const div = state.grid ? 2 : 1;
+    return { cols: Math.max(20, Math.floor((box.width / div - 12) / 9)), rows: Math.max(5, Math.floor((box.height / div - 12) / 17)) };
 }
 
 function addTerm(sid, name, kind = "posix", replay = "") {
@@ -291,6 +307,9 @@ function addTerm(sid, name, kind = "posix", replay = "") {
     term.loadAddon(new WebLinksAddon((ev, uri) => window.open(uri, "_blank", "noopener,noreferrer")));
 
     const screen = Object.assign(document.createElement("div"), { className: "screen" });
+    screen.dataset.title = `${name} ${sid}`;
+    // Grille : un clic dans un terminal le rend actif (c'est lui qui reçoit les touches)
+    screen.addEventListener("mousedown", () => { if (state.active !== sid) activate(sid); });
     $("#screens").append(screen);
     term.open(screen);
     if (replay) term.write(replay);
@@ -342,10 +361,44 @@ function activate(sid) {
         other.tab.classList.toggle("active", id === sid);
         other.screen.classList.toggle("active", id === sid);
     }
-    requestAnimationFrame(() => {
-        t.fit.fit();
-        t.term.focus();
-    });
+    layoutScreens();
+    requestAnimationFrame(() => t.term.focus());
+}
+
+/** Terminaux affichés : l'actif en mode onglets ; en grille, les 4 premiers (l'actif remplace le 4e s'il est plus loin). */
+function visibleTerms() {
+    if (!state.grid) return state.active ? [state.active] : [];
+    const ids = [...state.terms.keys()];
+    const shown = ids.slice(0, GRID_SIZE);
+    if (state.active && !shown.includes(state.active)) shown.splice(GRID_SIZE - 1, 1, state.active);
+    return shown;
+}
+
+function layoutScreens() {
+    $("#screens").classList.toggle("grid", state.grid);
+    const btn = $("#grid-toggle");
+    btn.classList.toggle("on", state.grid);
+    btn.setAttribute("aria-pressed", String(state.grid));
+    const shown = visibleTerms();
+    for (const [id, t] of state.terms) t.screen.classList.toggle("shown", shown.includes(id));
+    requestAnimationFrame(fitVisible);
+}
+
+function fitVisible() {
+    for (const id of visibleTerms()) state.terms.get(id)?.fit.fit();
+}
+
+/** Bascule onglets / grille 2 x 2 ; ouvre les terminaux manquants pour remplir la grille. */
+function toggleGrid() {
+    state.grid = !state.grid;
+    saveGrid();
+    layoutScreens();
+    if (state.grid) fillGrid();
+}
+
+function fillGrid() {
+    const missing = GRID_SIZE - [...state.terms.values()].filter((t) => !t.ended).length;
+    for (let i = 0; i < missing; i++) openTerm();
 }
 
 function closeTerm(sid) {
@@ -365,6 +418,7 @@ function removeTerm(sid) {
     t.tab.remove();
     t.screen.remove();
     state.terms.delete(sid);
+    layoutScreens();
 }
 
 /** Envoie un texte au terminal actif (en ouvre un s'il n'y en a pas, ou s'il est fermé). */
@@ -380,6 +434,7 @@ function typeInTerminal(text) {
 }
 
 $("#new-tab").addEventListener("click", openTerm);
-new ResizeObserver(() => state.terms.get(state.active)?.fit.fit()).observe($("#screens"));
+$("#grid-toggle").addEventListener("click", toggleGrid);
+new ResizeObserver(fitVisible).observe($("#screens"));
 
 connect();

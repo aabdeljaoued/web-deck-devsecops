@@ -285,9 +285,51 @@ main {
 .tab-add { font-size: 16px; line-height: 1; }
 #shell { margin-left: auto; margin-bottom: 4px; background: var(--panel); }
 
-#screens { flex: 1; position: relative; background: #000; }
+#screens { flex: 1; position: relative; background: #000; min-height: 0; }
 .screen { position: absolute; inset: 6px; display: none; }
-.screen.active { display: block; }
+.screen.shown { display: block; }
+
+/* Grille 2 x 2 : 4 terminaux visibles, l'actif (qui reçoit les touches) est entouré */
+#screens.grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: 1fr 1fr;
+    gap: 6px;
+    padding: 6px;
+    background: #07080b;
+}
+#screens.grid .screen {
+    position: relative;
+    inset: auto;
+    min-width: 0;
+    min-height: 0;
+    box-sizing: content-box;   /* FitAddon mesure le contenu, hors bordure et marge intérieure */
+    padding: 4px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: #000;
+    overflow: hidden;
+}
+#screens.grid .screen.active {
+    border-color: #4da3ff;
+    box-shadow: 0 0 0 1px #4da3ff, 0 0 14px rgba(77, 163, 255, .35);
+}
+#screens.grid .screen::after {
+    content: attr(data-title);
+    position: absolute;
+    top: 4px;
+    right: 8px;
+    z-index: 5;
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 11px;
+    color: var(--muted);
+    background: rgba(26, 29, 35, .85);
+    pointer-events: none;
+}
+#screens.grid .screen.active::after { color: #fff; background: #1f4f80; }
+
+.tab-add.on { background: #1f4f80; border-color: #4da3ff; }
 
 #toast {
     position: fixed;

@@ -158,7 +158,10 @@ function keyElement(key) {
     el.dataset.id = key.id;
     el.style.setProperty("--c", key.color);
     if (isLight(key.color)) el.classList.add("light");
-    el.title = (key.type === "text" ? commandFor(key) : key.url) ?? key.label;
+    const cmd = key.type === "text" ? commandFor(key) : null;
+    el.title = cmd != null
+        ? (cmd.includes("{}") ? cmd.replace("{}", "‹sélection›") : cmd + (key.enter ? "" : "\n+ texte sélectionné dans le terminal"))
+        : key.url ?? key.label;
 
     const sym = document.createElement("span");
     if (key.icon) {
@@ -237,7 +240,9 @@ function press(key, el) {
         case "text": {
             const command = commandFor(key);
             if (command == null) return toast(`« ${key.label} » n'existe pas pour le shell ${activeKind()}`);
-            return typeInTerminal(command + (key.enter ? "\r" : ""));
+            if (key.enter) return typeInTerminal(command + "\r");
+            // Commande à compléter : le texte sélectionné dans le terminal est ajouté à la fin (sans Entrée)
+            return typeInTerminal(withSelection(command));
         }
         case "clear": {
             const t = state.terms.get(state.active);
@@ -268,6 +273,30 @@ function toast(text) {
     el.classList.add("show");
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => el.classList.remove("show"), 4000);
+}
+
+/**
+ * Ajoute à une commande à compléter le texte sélectionné dans le terminal (actif en priorité), puis efface la sélection.
+ * Retours à la ligne et caractères de contrôle deviennent des espaces : une sélection ne peut jamais lancer la commande.
+ */
+function withSelection(command) {
+    const terms = [state.terms.get(state.active), ...state.terms.values()].filter(Boolean);
+    const t = terms.find((x) => !x.ended && x.term.hasSelection());
+    let selected = "";
+    if (t) {
+        selected = t.term.getSelection().replace(/[\u0000-\u001f\u007f\s]+/g, " ").trim();
+        t.term.clearSelection();
+    }
+    // {} : la sélection va à cet endroit ; sans sélection, le curseur y est ramené (flèches gauche)
+    const slot = command.indexOf("{}");
+    if (slot >= 0) {
+        const before = command.slice(0, slot);
+        const after = command.slice(slot + 2);
+        return selected ? before + selected + after : before + after + "\x1b[D".repeat(after.length);
+    }
+    if (!selected) return command;
+    const sep = /[\s"'=:]$/.test(command) ? "" : " ";
+    return command + sep + selected;
 }
 
 /** Famille du shell qui recevra la commande : onglet actif, sinon celui qu'ouvrira la page. */

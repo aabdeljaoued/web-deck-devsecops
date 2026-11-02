@@ -1,6 +1,7 @@
 // Catalogue des touches : raccourcis de la page d'accueil et rubriques (dossiers), puis mise en page.
 //
 // Une commande peut être une chaîne (identique partout) ou { windows: ..., mac: ... } (variante par système).
+// Dans une commande à compléter, {} marque où va le texte sélectionné dans le terminal (sinon le curseur y est placé).
 // Une touche dont la variante n'existe pas pour le système courant est ignorée.
 // Pour les touches qui tapent dans le terminal, une variante peut encore dépendre du shell :
 // sh(posix, powershell, cmd) ; la page choisit selon le shell de l'onglet actif.
@@ -169,18 +170,19 @@ function buildCatalog(ctx) {
         ]},
         k8s: { label: "K8s / OCP", sym: "☸", icon: "kubernetes", color: C.k8s, terminal: true, keys: [
             text("contexts", "ctx", "kubectl config get-contexts", true, C.k8s),
-            text("pods -A", "pod", "kubectl get pods -A", true, C.k8s),
-            text("events", "⚡", "kubectl get events -A --sort-by=.lastTimestamp", true, C.k8s),
+            text("pods", "pod", "kubectl get pods", true, C.k8s),
+            text("events", "⚡", "kubectl get events --sort-by=.lastTimestamp", true, C.k8s),
             text("nodes", "▦", "kubectl get nodes -o wide", true, C.k8s),
-            text("svc / ingress", "svc", "kubectl get svc,ingress -A", true, C.k8s),
+            text("svc / ingress", "svc", "kubectl get svc,ingress", true, C.k8s),
             text("logs -f", "📜", "kubectl logs -f ", false, C.k8s),
             text("describe", "🔍", "kubectl describe pod ", false, C.k8s),
+            // {} = emplacement du pod : texte sélectionné, sinon position du curseur
+            text("exec -it", ">_", "kubectl exec -it {} -- sh", false, C.k8s),
             text("RBAC can-i", "🛂", "kubectl auth can-i --list", true, C.sec),
-            text("NetPol", "🧱", "kubectl get networkpolicies -A", true, C.sec),
+            text("NetPol", "🧱", "kubectl get networkpolicies", true, C.sec),
             text("oc whoami", "oc", sh("oc whoami; oc project", "oc whoami; oc project", "oc whoami & oc project"), true, C.k8s),
-            text("crc status", "crc", "crc status", true, C.k8s),
             shortcuts["crc-console"],
-            text("top pods", "📊", "kubectl top pods -A", true, C.k8s)
+            text("top pods", "📊", "kubectl top pods", true, C.k8s)
         ]},
         sec: { label: "Sécurité", sym: "🛡", icon: "lucide-shield", color: C.sec, terminal: true, keys: [
             text("Trivy repo", "🔎", "trivy fs --scanners vuln,secret,misconfig .", true, C.sec),
@@ -278,7 +280,7 @@ function buildCatalog(ctx) {
             text("ps -a", "ps-a", "docker ps -a", true, C.docker),
             text("images", "🖼", "docker images", true, C.docker),
             text("logs -f", "📜", "docker logs -f ", false, C.docker),
-            text("exec -it", ">_", "docker exec -it ", false, C.docker),
+            text("exec -it", ">_", "docker exec -it {} sh", false, C.docker),
             text("build", "🔨", "docker build -t ", false, C.docker),
             text("run --rm", "▶", "docker run --rm -it ", false, C.docker),
             text("inspect", "🔍", "docker inspect ", false, C.docker),

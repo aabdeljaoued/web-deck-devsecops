@@ -10,6 +10,7 @@ import path from "node:path";
 import { WebSocketServer } from "ws";
 
 import { buildDeck, ICONS } from "./catalog.mjs";
+import { iconFile } from "./icons.mjs";
 import { loadConfig, ROOT } from "./config.mjs";
 import { launch, openBrowser, windowsPty } from "./platform.mjs";
 import { StatusHub } from "./status.mjs";
@@ -60,7 +61,8 @@ const STATIC = {
     "/vendor/xterm.mjs": [nm("@xterm/xterm/lib/xterm.mjs"), "text/javascript; charset=utf-8"],
     "/vendor/xterm.css": [nm("@xterm/xterm/css/xterm.css"), "text/css; charset=utf-8"],
     "/vendor/addon-fit.mjs": [nm("@xterm/addon-fit/lib/addon-fit.mjs"), "text/javascript; charset=utf-8"],
-    "/vendor/addon-web-links.mjs": [nm("@xterm/addon-web-links/lib/addon-web-links.mjs"), "text/javascript; charset=utf-8"]
+    "/vendor/addon-web-links.mjs": [nm("@xterm/addon-web-links/lib/addon-web-links.mjs"), "text/javascript; charset=utf-8"],
+    "/vendor/addon-search.mjs": [nm("@xterm/addon-search/lib/addon-search.mjs"), "text/javascript; charset=utf-8"]
 };
 
 const SECURITY_HEADERS = {
@@ -91,16 +93,10 @@ const server = http.createServer((req, res) => {
     if (!sameToken(cookieToken(req))) {
         return send(res, 401, `Accès refusé : ouvre l'adresse affichée par le serveur au démarrage (avec ?token=...).`);
     }
-    // Icônes des touches, seulement celles du catalogue : "lucide-<nom>" = Lucide (ISC),
-    // sinon icônes du projet (public/icons), sinon logos simple-icons (CC0)
+    // Icônes des touches, seulement celles du catalogue (voir server/icons.mjs)
     const logo = /^\/icons\/([a-z0-9-]+)\.svg$/.exec(url.pathname);
-    if (req.method === "GET" && logo && ICONS.has(logo[1])) {
-        const name = logo[1];
-        const own = path.join(ROOT, "public", "icons", `${name}.svg`);
-        const file = name.startsWith("lucide-") ? nm(`lucide-static/icons/${name.slice(7)}.svg`)
-            : existsSync(own) ? own : nm(`simple-icons/icons/${name}.svg`);
-        return send(res, 200, readFileSync(file), "image/svg+xml");
-    }
+    const file = req.method === "GET" && logo && ICONS.has(logo[1]) && iconFile(logo[1]);
+    if (file) return send(res, 200, readFileSync(file), "image/svg+xml");
     const entry = req.method === "GET" && STATIC[url.pathname];
     if (!entry) return send(res, 404, "Introuvable");
     send(res, 200, readFileSync(entry[0]), entry[1]);
@@ -108,8 +104,9 @@ const server = http.createServer((req, res) => {
 
 // ---------- WebSocket : terminaux, voyants, lanceurs ----------
 
-const terminals = new Terminals(ctx);
+const terminals = new Terminals(ctx, path.join(ROOT, ".deck-sessions.json"));
 const status = new StatusHub(ctx);
+const restored = terminals.restore();
 const wss = new WebSocketServer({ noServer: true, maxPayload: 1024 * 1024 });
 
 server.on("upgrade", (req, socket, head) => {
@@ -148,7 +145,20 @@ wss.on("connection", (ws) => {
         const reply = (m) => ws.readyState === ws.OPEN && ws.send(JSON.stringify(m));
         try {
             switch (msg.t) {
-                case "open": broadcast({ t: "opened", ...terminals.open(msg.shell, msg.cols, msg.rows), by: msg.req }); break;
+                case "open": {
+                    // Dossier de départ demandé par la page : seulement un des dépôts Git connus
+                    let cwd;
+                    if (msg.cwd != null) {
+                        if (!status.findRepos().includes(String(msg.cwd))) throw new Error("dossier non autorisé");
+                        cwd = String(msg.cwd);
+                    }
+                    broadcast({ t: "opened", ...terminals.open(msg.shell, msg.cols, msg.rows, { cwd }), by: msg.req });
+                    break;
+                }
+                case "kube-list": reply({ t: "kube-list", ...(await status.listKube()) }); break;
+                case "kube-use": await status.useKube({ context: msg.context, namespace: msg.namespace }); reply({ t: "kube-used" }); break;
+                case "git-list": reply({ t: "git-list", ...status.listRepos() }); break;
+                case "git-select": await status.selectRepo(String(msg.repo)); break;
                 case "in": terminals.write(String(msg.sid), String(msg.d)); break;
                 case "resize": terminals.resize(String(msg.sid), msg.cols, msg.rows); break;
                 case "close": terminals.close(String(msg.sid)); break;
@@ -169,7 +179,7 @@ wss.on("connection", (ws) => {
                 }
             }
         } catch (err) {
-            reply({ t: msg.t === "run" ? "ran" : "error", id: msg.id, ok: false, error: err.message });
+            reply({ t: msg.t === "run" ? "ran" : "error", id: msg.id, ok: false, error: err.message.split("\n")[0] });
             console.warn(`  ${msg.t} : ${err.message}`);
         }
     });
@@ -196,6 +206,7 @@ server.listen(port, HOST, () => {
     console.log(`Deck DevSecOps (${ctx.machine}${ctx.machineFile ? `, ${ctx.machineFile}` : ""})`);
     console.log(`  Shells     : ${ctx.shells.map((s) => s.name).join(", ") || "aucun !"}`);
     console.log(`  Workspace  : ${ctx.workspace}`);
+    if (restored) console.log(`  Terminaux  : ${restored} rouvert(s) depuis la dernière fois`);
     const missing = Object.entries(ctx.apps).filter(([, v]) => !v).map(([k]) => k);
     if (missing.length) console.log(`  Introuvables : ${missing.join(", ")} (voir paths.json)`);
     if (deck.skipped.length) console.log(`  Non disponibles ici : ${deck.skipped.join(", ")}`);

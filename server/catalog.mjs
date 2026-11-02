@@ -5,6 +5,7 @@
 // Une touche dont la variante n'existe pas pour le système courant est ignorée.
 // Pour les touches qui tapent dans le terminal, une variante peut encore dépendre du shell :
 // sh(posix, powershell, cmd) ; la page choisit selon le shell de l'onglet actif.
+import { iconFile } from "./icons.mjs";
 import { platform } from "./platform.mjs";
 
 export const COLORS = {
@@ -386,9 +387,75 @@ function layout(keys, page = {}) {
  * Pages du deck : { root: [15 touches ou null], <rubrique>: [...] }, et l'index des touches par id
  * (le serveur ne lance que des commandes "run" de ce catalogue, jamais une commande venue du navigateur).
  */
+// ---------- Touches personnelles (config.jsonc : customSections, customShortcuts) ----------
+
+const ID = /^[a-z0-9][a-z0-9-]{0,30}$/;
+
+/**
+ * Touche définie dans la configuration :
+ *   { label, command | url, enter?, icon?, color? }
+ * command : chaîne, { windows, mac, linux } et/ou { posix, powershell, cmd } ; {} = emplacement de la sélection.
+ * enter : true = exécutée (pastille verte), sinon seulement tapée (orange). url : ouvre un onglet (http/https).
+ */
+function customKey(def, where) {
+    if (!def || typeof def !== "object") throw new Error(`${where} : touche invalide`);
+    const label = String(def.label ?? "").trim().slice(0, 30);
+    if (!label) throw new Error(`${where} : "label" manquant`);
+    const color = /^#[0-9a-f]{6}$/i.test(def.color ?? "") ? def.color : C.tool;
+    const sym = typeof def.sym === "string" && def.sym ? def.sym.slice(0, 4) : label.slice(0, 3);
+    let key;
+    if (def.url != null) {
+        if (!/^https?:\/\//i.test(String(def.url))) throw new Error(`${where} : "url" doit commencer par http:// ou https://`);
+        key = web(label, sym, String(def.url), color);
+    } else if (def.command != null) {
+        key = text(label, sym, def.command, def.enter === true, color);
+    } else {
+        throw new Error(`${where} : il faut "command" ou "url"`);
+    }
+    if (!key) return null;   // pas de variante pour ce système
+    if (def.icon != null) {
+        if (iconFile(def.icon)) key = { ...key, icon: def.icon };
+        else console.warn(`  ${where} : icône introuvable "${def.icon}" (ex. "lucide-rocket", "github")`);
+    }
+    return key;
+}
+
+function customCatalog(cfg) {
+    const sections = {};
+    for (const [id, def] of Object.entries(cfg.customSections ?? {})) {
+        if (!ID.test(id)) throw new Error(`customSections : identifiant invalide "${id}" (minuscules, chiffres, tirets)`);
+        if (!def || !Array.isArray(def.keys)) throw new Error(`customSections.${id} : "keys" doit être une liste`);
+        const color = /^#[0-9a-f]{6}$/i.test(def.color ?? "") ? def.color : C.tool;
+        const icon = def.icon != null && iconFile(def.icon) ? def.icon : undefined;
+        sections[id] = {
+            label: String(def.label ?? id).slice(0, 30),
+            sym: typeof def.sym === "string" && def.sym ? def.sym.slice(0, 4) : "★",
+            icon,
+            color,
+            terminal: true,
+            keys: def.keys.map((k, i) => customKey(k, `customSections.${id}.keys[${i}]`)).filter(Boolean)
+        };
+    }
+    const shortcuts = {};
+    for (const [id, def] of Object.entries(cfg.customShortcuts ?? {})) {
+        if (!ID.test(id)) throw new Error(`customShortcuts : identifiant invalide "${id}"`);
+        shortcuts[id] = customKey(def, `customShortcuts.${id}`);
+    }
+    return { sections, shortcuts };
+}
+
 export function buildDeck(ctx) {
     const { cfg } = ctx;
     const { shortcuts: SHORTCUTS, sections: SECTIONS, clear } = buildCatalog(ctx);
+    const custom = customCatalog(cfg);
+    for (const [id, def] of Object.entries(custom.sections)) {
+        if (SECTIONS[id]) throw new Error(`customSections : "${id}" existe déjà, choisis un autre identifiant`);
+        SECTIONS[id] = def;
+    }
+    for (const [id, key] of Object.entries(custom.shortcuts)) {
+        if (id in SHORTCUTS) throw new Error(`customShortcuts : "${id}" existe déjà, choisis un autre identifiant`);
+        SHORTCUTS[id] = key;
+    }
 
     const unknownSections = (cfg.sections ?? []).filter((s) => !SECTIONS[s]);
     if (unknownSections.length) throw new Error(`rubrique(s) inconnue(s) : ${unknownSections.join(", ")}. Disponibles : ${Object.keys(SECTIONS).join(", ")}`);
@@ -432,7 +499,7 @@ export function buildDeck(ctx) {
             if (!key) return null;
             const id = `${name}/${pos}`;
             index.set(id, key);
-            if (key.icon) ICONS.add(key.icon);
+            if (key.icon && iconFile(key.icon)) ICONS.add(key.icon);
             const { command, tool, ...visible } = key;   // pin reste visible : la page aligne à droite les touches épinglées
             return { id, ...visible };
         });

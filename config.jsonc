@@ -40,6 +40,31 @@
     // Ajoute une touche "clear" (bas gauche) dans les rubriques qui tapent dans le terminal
     "clearKey": true,
 
+    // Tes propres rubriques et touches, sans toucher au code. Une rubrique s'active en ajoutant son
+    // identifiant dans "sections", un raccourci dans "shortcuts". Pour chaque touche :
+    //   label   : texte affiché (obligatoire)
+    //   command : commande tapée dans le terminal ; {} = emplacement du texte sélectionné.
+    //             Variantes possibles : { "windows": "...", "mac": "..." } et/ou { "posix": "...", "powershell": "...", "cmd": "..." }
+    //   enter   : true = exécutée tout de suite (pastille verte) ; absent = tapée, à compléter (orange)
+    //   url     : à la place de command, ouvre un onglet (http:// ou https://)
+    //   icon    : "lucide-<nom>" (https://lucide.dev/icons) ou un logo (https://simpleicons.org, ex. "github")
+    //   color   : couleur "#rrggbb"
+    "customSections": {
+        // "perso": {
+        //     "label": "Perso",
+        //     "icon": "lucide-star",
+        //     "color": "#607D8B",
+        //     "keys": [
+        //         { "label": "mes alias", "icon": "lucide-list", "command": "alias", "enter": true },
+        //         { "label": "port-forward", "icon": "lucide-arrow-left-right", "command": "kubectl port-forward {} 8080:80" },
+        //         { "label": "Grafana", "icon": "grafana", "url": "https://grafana.example.com" }
+        //     ]
+        // }
+    },
+    "customShortcuts": {
+        // "backup": { "label": "backup", "icon": "lucide-save", "command": "./backup.sh", "enter": true }
+    },
+
     // Outils à masquer partout (rubriques + raccourcis). Une touche est retirée si
     // sa commande commence par cet outil, ex. "crc" retire "crc status", "CRC start"...
     "excludeTools": [

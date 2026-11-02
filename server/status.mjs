@@ -98,6 +98,47 @@ export class StatusHub extends EventEmitter {
         }
     }
 
+    /** Contextes et namespaces disponibles, pour le sélecteur du voyant K8s. */
+    async listKube() {
+        const kubectl = this.ctx.apps.kubectl;
+        if (!kubectl) throw new Error("kubectl introuvable");
+        const contexts = (await run(kubectl, ["config", "get-contexts", "-o", "name"])).split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+        const current = (await run(kubectl, ["config", "current-context"]).catch(() => "")).trim();
+        const namespace = (await run(kubectl, ["config", "view", "--minify", "-o", "jsonpath={..namespace}"]).catch(() => "")).trim() || "default";
+        // La liste des namespaces demande l'accès au cluster : vide si injoignable ou interdit
+        let namespaces = [];
+        let nsError = null;
+        try {
+            namespaces = (await run(kubectl, ["get", "namespaces", "-o", "jsonpath={.items[*].metadata.name}", "--request-timeout=5s"], 8000)).split(/\s+/).filter(Boolean);
+        } catch (err) {
+            nsError = err.message.split("\n")[0].slice(0, 160);
+        }
+        const prod = new RegExp(this.ctx.cfg.prodPattern || "prod", "i");
+        return {
+            contexts: contexts.map((name) => ({ name, prod: prod.test(name) })),
+            current,
+            namespaces: namespaces.map((name) => ({ name, prod: prod.test(name) })),
+            namespace,
+            nsError
+        };
+    }
+
+    /** Change de contexte ou de namespace (valeurs vérifiées : arguments passés sans shell). */
+    async useKube({ context, namespace }) {
+        const kubectl = this.ctx.apps.kubectl;
+        if (!kubectl) throw new Error("kubectl introuvable");
+        if (context != null) {
+            const contexts = (await run(kubectl, ["config", "get-contexts", "-o", "name"])).split(/\r?\n/).map((s) => s.trim());
+            if (!contexts.includes(String(context))) throw new Error(`contexte inconnu : ${context}`);
+            await run(kubectl, ["config", "use-context", String(context)]);
+        }
+        if (namespace != null) {
+            if (!/^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$/.test(String(namespace))) throw new Error(`namespace invalide : ${namespace}`);
+            await run(kubectl, ["config", "set-context", "--current", `--namespace=${namespace}`]);
+        }
+        await this.refreshKube();
+    }
+
     // ---------- Git ----------
 
     /** Dépôts Git trouvés dans les dossiers racines (la racine elle-même et ses sous-dossiers directs). */
@@ -112,6 +153,17 @@ export class StatusHub extends EventEmitter {
             }
         }
         return repos;
+    }
+
+    /** Dépôts connus et dépôt affiché, pour le sélecteur du voyant Git. */
+    listRepos() {
+        return { repos: this.findRepos().map((p) => ({ path: p, name: path.basename(p) })), current: this.repo ?? null };
+    }
+
+    async selectRepo(repo) {
+        if (!this.findRepos().includes(repo)) throw new Error("dépôt inconnu");
+        this.repo = repo;
+        await this.refreshGit();
     }
 
     async refreshGit() {

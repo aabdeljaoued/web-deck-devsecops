@@ -38,14 +38,34 @@ Linux fonctionne aussi (`./start.sh`) : sans bloc `linux` dans `paths.json`, cel
 
 ## Utilisation
 
+### Touches
+
 - **Pastille verte** : la commande est tapée **et exécutée** dans le terminal actif.
 - **Pastille orange** : la commande est seulement tapée, tu complètes ou valides toi-même (commandes à compléter ou risquées).
-- **Clear** est toujours en bas à gauche des rubriques, **Verrouiller** toujours en bas à droite.
-- **+** ouvre un nouvel onglet de terminal ; la liste à droite choisit le shell des nouveaux onglets.
+- **Texte sélectionné** : sur une touche orange, le texte sélectionné dans le terminal est ajouté à la commande (à l'emplacement `{}` s'il y en a un, ex. `kubectl exec -it {} -- sh`) ; sans sélection, le curseur est placé sur `{}`. Rien n'est jamais exécuté sans Entrée.
+- **Retour** à gauche ; **Verrouiller** et **clear** collés au bord droit.
 - Les touches tapent la variante adaptée au shell de l'onglet actif (ex. `$env:VAULT_ADDR=` dans PowerShell, `export VAULT_ADDR=` dans bash/zsh, `set VAULT_ADDR=` dans cmd). Une touche sans variante pour ce shell affiche un message.
+- **Palette de commandes** (`⌘K` / `Ctrl+K`, ou « Rechercher » en haut à droite) : tape quelques lettres (`exec`, `plan`, `logs`…) pour trouver et lancer n'importe quelle touche, sans passer par les rubriques.
+
+### Voyants
+
+- **K8s** : un clic ouvre la liste des **contextes** et des **namespaces** ; un clic bascule (`kubectl config use-context` / `set-context --current --namespace`). Les contextes et namespaces de production sont en rouge.
+- **Git** : un clic ouvre la liste des dépôts ; un clic l'affiche dans le voyant, `>_` ouvre un **nouveau terminal dans ce dépôt**.
+- **Conteneurs** : un clic rafraîchit. Tous les voyants se rafraîchissent aussi seuls.
+
+### Terminaux
+
+- **+** ouvre un terminal ; la liste à droite choisit le shell des nouveaux terminaux.
+- **Disposition** : 1 terminal (onglets), 2 côte à côte (2×1) ou grille 2×2. Un clic dans un terminal le rend actif (liseré bleu) : c'est lui qui reçoit les touches.
+- **Renommer** : double-clic sur le nom d'un onglet. **Déplacer** : glisser un onglet (la grille suit l'ordre des onglets).
+- **Activité** : point bleu sur l'onglet d'un terminal caché qui affiche quelque chose, point vert quand une commande longue (plus de 10 s) s'y termine.
+- **Notifications** (cloche) : notification du système quand une commande longue se termine dans un terminal caché ou quand la page n'est pas au premier plan.
+- **Diffusion** (flèches) : ce que tu tapes, et les touches du deck, partent dans **tous les terminaux visibles** (2×1 ou 2×2), entourés d'orange.
+- **Rechercher** (`⌘F` / `Ctrl+F`, loupe) dans la sortie du terminal actif ; Entrée / Maj+Entrée : suivant / précédent.
+- **Taille du texte** : `A−` / `A+`, ou `⌘−` / `⌘+` / `⌘0` (`Ctrl` sous Windows).
 - **Copier / coller** : `Cmd+C` / `Cmd+V` sous macOS ; sous Windows, `Ctrl+C` copie la sélection (sans sélection, il interrompt la commande), `Ctrl+V` colle, `Ctrl+Shift+C` / `Ctrl+Shift+V` aussi.
-- Les **voyants** se rafraîchissent seuls ; un clic les rafraîchit tout de suite (Git : dépôt suivant).
-- **Recharger la page** ne coupe pas les terminaux : la fin de leur sortie est rejouée. Les terminaux s'arrêtent avec le serveur (Ctrl+C dans sa fenêtre).
+- **Recharger la page** ne coupe pas les terminaux : la fin de leur sortie est rejouée.
+- **Redémarrage du serveur** : les terminaux sont rouverts avec leur shell, leur nom, leur ordre et leur dossier de départ (fichier `.deck-sessions.json`) ; les commandes qui tournaient, elles, sont arrêtées.
 - Relancer `start.cmd` alors que le deck tourne déjà ouvre simplement la page.
 
 Après une modification de `config.jsonc` ou `paths.json`, redémarrer le serveur.
@@ -79,7 +99,26 @@ Pour une machine précise, créer `paths.<nom-de-la-machine>.json` (nom affiché
 { "windows": { "workspace": "D:\\dev", "gitRoots": ["D:\\dev"] } }
 ```
 
-### Ajouter une rubrique ou une touche
+### Tes propres rubriques et touches (`config.jsonc`)
+
+Sans toucher au code : `customSections` (rubriques) et `customShortcuts` (raccourcis de l'accueil), puis ajouter leur identifiant dans `sections` / `shortcuts`.
+
+```jsonc
+"customSections": {
+    "perso": {
+        "label": "Perso", "icon": "lucide-star", "color": "#607D8B",
+        "keys": [
+            { "label": "mes alias", "icon": "lucide-list", "command": "alias", "enter": true },
+            { "label": "port-forward", "icon": "lucide-arrow-left-right", "command": "kubectl port-forward {} 8080:80" },
+            { "label": "Grafana", "icon": "grafana", "url": "https://grafana.example.com" }
+        ]
+    }
+}
+```
+
+`command` peut avoir des variantes par système (`{ "windows": …, "mac": … }`) et/ou par shell (`{ "posix": …, "powershell": …, "cmd": … }`). `enter: true` exécute (pastille verte), sinon la commande est seulement tapée. Icônes : `lucide-<nom>` ([lucide.dev/icons](https://lucide.dev/icons)) ou un logo ([simpleicons.org](https://simpleicons.org), ex. `github`). L'accueil a 15 cases au total.
+
+### Ajouter une rubrique ou une touche (dans le code)
 
 Dans `server/catalog.mjs`, ajouter un bloc à `sections` (14 touches max), puis l'activer dans `config.jsonc`. Une commande peut différer selon le système :
 

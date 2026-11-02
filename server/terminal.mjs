@@ -1,6 +1,6 @@
 // Sessions de terminal (pseudo-terminal node-pty). Elles appartiennent au serveur : recharger la page
 // ne coupe pas une commande en cours, la fin de la sortie est rejouée à la reconnexion.
-import { chmodSync, existsSync, statSync } from "node:fs";
+import { chmodSync, existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { EventEmitter } from "node:events";
 import path from "node:path";
@@ -21,31 +21,38 @@ if (isMac) {
 
 /**
  * Événements : "output" (sid, data), "exit" (sid, code).
+ * stateFile : fichier où sont gardés shell, nom, dossier et ordre des terminaux, pour les rouvrir au redémarrage.
  */
 export class Terminals extends EventEmitter {
-    constructor(ctx) {
+    constructor(ctx, stateFile) {
         super();
         this.ctx = ctx;
         this.sessions = new Map();
         this.counter = 0;
         this.env = terminalEnv(ctx);
+        this.stateFile = stateFile;
+        this.closing = false;
     }
 
-    /** Ouvre un shell (index dans ctx.shells) ; renvoie la description de la session. */
-    open(shellIndex = 0, cols = 100, rows = 30) {
+    /**
+     * Ouvre un shell (index dans ctx.shells) ; renvoie la description de la session.
+     * cwd : dossier de départ, déjà vérifié par l'appelant (sinon le workspace).
+     */
+    open(shellIndex = 0, cols = 100, rows = 30, { cwd, title } = {}) {
         const shell = this.ctx.shells[shellIndex] ?? this.ctx.shells[0];
         if (!shell) throw new Error("aucun shell trouvé (voir \"shells\" dans paths.json)");
+        const dir = cwd && existsSync(cwd) ? cwd : this.ctx.workspace;
         const [exe, ...args] = shell.command;
         const proc = pty.spawn(exe, args, {
             name: "xterm-256color",
             cols: clamp(cols, 20, 500),
             rows: clamp(rows, 5, 200),
-            cwd: this.ctx.workspace,
+            cwd: dir,
             env: this.env,
             useConpty: isWindows ? true : undefined
         });
         const sid = String(++this.counter);
-        const session = { sid, name: shell.name, kind: shell.kind, proc, buffer: "" };
+        const session = { sid, name: shell.name, kind: shell.kind, cwd: dir, title: title || null, proc, buffer: "" };
         this.sessions.set(sid, session);
 
         proc.onData((data) => {
@@ -55,8 +62,34 @@ export class Terminals extends EventEmitter {
         proc.onExit(({ exitCode }) => {
             this.sessions.delete(sid);
             this.emit("exit", sid, exitCode);
+            this.save();
         });
+        this.save();
         return this.describe(session);
+    }
+
+    /** Enregistre shell, nom et dossier des terminaux ouverts, dans l'ordre (pas pendant l'arrêt du serveur). */
+    save() {
+        if (!this.stateFile || this.closing) return;
+        const data = [...this.sessions.values()].map(({ name, title, cwd }) => ({ shell: name, title, cwd }));
+        try { writeFileSync(this.stateFile, JSON.stringify(data, null, 2)); } catch { /* disque en lecture seule : tant pis */ }
+    }
+
+    /** Au démarrage : rouvre les terminaux de la dernière fois (les commandes en cours, elles, sont perdues). */
+    restore() {
+        if (!this.stateFile || !existsSync(this.stateFile)) return 0;
+        let saved;
+        try { saved = JSON.parse(readFileSync(this.stateFile, "utf8")); } catch { return 0; }
+        if (!Array.isArray(saved)) return 0;
+        let count = 0;
+        for (const s of saved.slice(0, 12)) {
+            const index = Math.max(0, this.ctx.shells.findIndex((sh) => sh.name === s?.shell));
+            try {
+                this.open(index, 100, 30, { cwd: typeof s?.cwd === "string" ? s.cwd : undefined, title: typeof s?.title === "string" ? s.title.slice(0, 40) : null });
+                count++;
+            } catch { /* shell disparu : ignoré */ }
+        }
+        return count;
     }
 
     describe(session) {
@@ -69,6 +102,7 @@ export class Terminals extends EventEmitter {
         if (!session) return undefined;
         const clean = String(title ?? "").replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, 40);
         session.title = clean || null;
+        this.save();
         return session.title;
     }
 
@@ -80,6 +114,7 @@ export class Terminals extends EventEmitter {
         const at = entries.findIndex(([id]) => id === before);
         entries.splice(at < 0 ? entries.length : at, 0, [sid, session]);
         this.sessions = new Map(entries);
+        this.save();
         return this.order();
     }
 
@@ -105,7 +140,10 @@ export class Terminals extends EventEmitter {
         this.sessions.get(sid)?.proc.kill();
     }
 
+    /** Arrêt du serveur : les terminaux sont fermés sans effacer leur sauvegarde. */
     closeAll() {
+        this.save();
+        this.closing = true;
         for (const s of this.sessions.values()) s.proc.kill();
     }
 }

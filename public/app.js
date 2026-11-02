@@ -2,6 +2,7 @@
 import { Terminal } from "/vendor/xterm.mjs";
 import { FitAddon } from "/vendor/addon-fit.mjs";
 import { WebLinksAddon } from "/vendor/addon-web-links.mjs";
+import { SearchAddon } from "/vendor/addon-search.mjs";
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -16,7 +17,10 @@ const state = {
     terms: new Map(),   // sid -> { term, fit, tab, screen, ended, kind }
     layout: loadLayout(),   // disposition des terminaux : "tabs" (1, onglets), "2x1" ou "2x2"
     active: null,
-    pending: []         // textes à envoyer au prochain terminal ouvert par cette page
+    pending: [],        // textes à envoyer au prochain terminal ouvert par cette page
+    broadcast: false,   // diffusion : saisie et touches envoyées à tous les terminaux visibles
+    notify: loadPref("deck-notify") === "1",              // notification quand une commande longue se termine
+    fontSize: Number(loadPref("deck-font")) || 14         // taille du texte des terminaux
 };
 const requestId = crypto.randomUUID();
 /** Dispositions : nombre de terminaux visibles, colonnes et lignes. */
@@ -31,10 +35,17 @@ function loadLayout() {
     } catch { return "tabs"; }
 }
 function saveLayout() {
-    try { localStorage.setItem("deck-layout", state.layout); } catch { /* stockage refusé */ }
+    savePref("deck-layout", state.layout);
+}
+function loadPref(name) {
+    try { return localStorage.getItem(name); } catch { return null; }
+}
+function savePref(name, value) {
+    try { localStorage.setItem(name, value); } catch { /* stockage refusé */ }
 }
 // Navigateur sous macOS : Cmd+C / Cmd+V copient et collent déjà ; ailleurs, Ctrl+C / Ctrl+V sont gérés plus bas
-const macClient = /Mac|iPhone|iPad/.test(navigator.userAgentData?.platform ?? navigator.platform ?? navigator.userAgent);
+// (insensible à la casse : Chrome renvoie "macOS", Safari "MacIntel")
+const macClient = /mac|iphone|ipad/i.test(navigator.userAgentData?.platform || navigator.platform || navigator.userAgent);
 
 // ---------- Connexion ----------
 
@@ -88,8 +99,22 @@ function handle(msg) {
                 for (const text of state.pending.splice(0)) send({ t: "in", sid: msg.sid, d: text });
             }
             break;
-        case "out":
-            state.terms.get(msg.sid)?.term.write(msg.d);
+        case "out": {
+            const t = state.terms.get(msg.sid);
+            if (!t) break;
+            t.term.write(msg.d);
+            trackActivity(msg.sid, t);
+            break;
+        }
+        case "kube-list":
+            showKubePicker(msg);
+            break;
+        case "kube-used":
+            closePicker();
+            toast("contexte / namespace changé", "ok");
+            break;
+        case "git-list":
+            showGitPicker(msg);
             break;
         case "renamed": {
             const t = state.terms.get(msg.sid);
@@ -195,7 +220,8 @@ function statusKey(id, statusId, key) {
     el.dataset.id = id;
     el.dataset.status = statusId;
     el.style.setProperty("--c", s.bg);
-    el.title = statusId === "git" ? `${s.repo ?? ""}\nAppui : dépôt suivant` : "Appui : rafraîchir";
+    el.title = statusId === "git" ? `${s.repo ?? ""}\nAppui : choisir le dépôt, ouvrir un terminal dedans`
+        : statusId === "kube" ? "Appui : changer de contexte ou de namespace" : "Appui : rafraîchir";
 
     const title = Object.assign(document.createElement("span"), { className: "title", textContent: s.title });
     const lines = Object.assign(document.createElement("span"), { className: "lines" });
@@ -207,6 +233,8 @@ function statusKey(id, statusId, key) {
     if (s.footer) el.append(Object.assign(document.createElement("span"), { className: "footer", textContent: s.footer }));
     el.addEventListener("click", () => {
         pulse(el);
+        if (statusId === "kube") return openPicker(el, "kube-list", "Chargement des contextes…");
+        if (statusId === "git") return openPicker(el, "git-list", "Chargement des dépôts…");
         send({ t: "press", id: statusId });
     });
     return el;
@@ -254,6 +282,7 @@ function press(key, el) {
 }
 
 function pulse(el) {
+    if (!el) return;
     el.classList.add("pressed");
     setTimeout(() => el.classList.remove("pressed"), 120);
 }
@@ -267,9 +296,10 @@ function flash(id, ok) {
 }
 
 let toastTimer;
-function toast(text) {
+function toast(text, kind = "ko") {
     const el = $("#toast");
     el.textContent = text;
+    el.classList.toggle("ok", kind === "ok");
     el.classList.add("show");
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => el.classList.remove("show"), 4000);
@@ -322,9 +352,9 @@ function fillShells(shells) {
     select.hidden = shells.length < 2;
 }
 
-function openTerm() {
+function openTerm(cwd) {
     const { cols, rows } = estimateSize();
-    send({ t: "open", shell: Number($("#shell").value || 0), cols, rows, req: requestId });
+    send({ t: "open", shell: Number($("#shell").value || 0), cols, rows, req: requestId, ...(cwd ? { cwd } : {}) });
 }
 
 /** Taille du terminal avant sa création, d'après la zone disponible (cellule ~9 x 17 px ; un quart en grille). */
@@ -338,7 +368,7 @@ function addTerm(sid, name, kind = "posix", replay = "", title = null) {
     const term = new Terminal({
         cursorBlink: true,
         fontFamily: "'Cascadia Mono', Consolas, 'SF Mono', Menlo, Monaco, 'DejaVu Sans Mono', monospace",
-        fontSize: 14,
+        fontSize: state.fontSize,
         scrollback: 5000,
         theme: { background: "#000000" },
         ...(state.windowsPty ? { windowsPty: state.windowsPty } : {})
@@ -347,6 +377,8 @@ function addTerm(sid, name, kind = "posix", replay = "", title = null) {
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.loadAddon(new WebLinksAddon((ev, uri) => window.open(uri, "_blank", "noopener,noreferrer")));
+    const search = new SearchAddon();
+    term.loadAddon(search);
 
     const screen = Object.assign(document.createElement("div"), { className: "screen" });
     // Grille : un clic dans un terminal le rend actif (c'est lui qui reçoit les touches)
@@ -354,7 +386,10 @@ function addTerm(sid, name, kind = "posix", replay = "", title = null) {
     $("#screens").append(screen);
     term.open(screen);
     if (replay) term.write(replay);
-    term.onData((d) => send({ t: "in", sid, d }));
+    // Diffusion : ce qui est tapé dans un terminal visible part dans tous les terminaux visibles
+    term.onData((d) => {
+        for (const target of inputTargets(sid)) send({ t: "in", sid: target, d });
+    });
     term.onResize(({ cols, rows }) => send({ t: "resize", sid, cols, rows }));
 
     const tab = document.createElement("div");
@@ -377,7 +412,7 @@ function addTerm(sid, name, kind = "posix", replay = "", title = null) {
     dragTab(tab, sid);
     $("#tabs").append(tab);
 
-    const t = { term, fit, tab, label, screen, ended: false, kind, defaultTitle: `${name} ${sid}` };
+    const t = { term, fit, search, tab, label, screen, ended: false, kind, defaultTitle: `${name} ${sid}`, burstStart: 0, lastOut: 0 };
     state.terms.set(sid, t);
     setTitle(t, title);
 }
@@ -415,6 +450,8 @@ function startRename(sid) {
     };
     input.addEventListener("keydown", (ev) => {
         ev.stopPropagation();
+        // preventDefault : sinon la touche Entrée "traverse" vers le terminal qui reprend le focus et l'exécute
+        if (ev.key === "Enter" || ev.key === "Escape") ev.preventDefault();
         if (ev.key === "Enter") finish(true);
         if (ev.key === "Escape") finish(false);
     });
@@ -533,7 +570,11 @@ function layoutScreens() {
         btn.setAttribute("aria-pressed", String(on));
     }
     const shown = visibleTerms();
-    for (const [id, t] of state.terms) t.screen.classList.toggle("shown", shown.includes(id));
+    for (const [id, t] of state.terms) {
+        t.screen.classList.toggle("shown", shown.includes(id));
+        if (shown.includes(id)) t.tab.classList.remove("activity", "done");
+    }
+    screens.classList.toggle("broadcast", state.broadcast);
     requestAnimationFrame(fitVisible);
 }
 
@@ -583,11 +624,322 @@ function typeInTerminal(text) {
         openTerm();
         return;
     }
-    send({ t: "in", sid: state.active, d: text });
+    for (const target of inputTargets(state.active)) send({ t: "in", sid: target, d: text });
     t.term.focus();
 }
 
-$("#new-tab").addEventListener("click", openTerm);
+/** Terminaux qui reçoivent une saisie : celui d'origine, ou tous les visibles si la diffusion est active. */
+function inputTargets(sid) {
+    if (!state.broadcast) return [sid];
+    const visible = visibleTerms().filter((id) => !state.terms.get(id)?.ended);
+    return visible.includes(sid) ? visible : [sid];
+}
+
+// ---------- Activité des terminaux et notifications ----------
+
+const QUIET_MS = 4000;      // silence après lequel une commande est considérée terminée
+const LONG_MS = 10000;      // durée à partir de laquelle une commande est "longue"
+
+/** Sortie reçue : point d'activité sur l'onglet si le terminal est caché ; mesure de la durée de la commande. */
+function trackActivity(sid, t) {
+    const now = Date.now();
+    if (now - t.lastOut > QUIET_MS) t.burstStart = now;
+    t.lastOut = now;
+    if (!visibleTerms().includes(sid)) t.tab.classList.add("activity");
+}
+
+/** Commande longue terminée : onglet en vert s'il est caché, notification si la page n'est pas regardée. */
+setInterval(() => {
+    const now = Date.now();
+    for (const [sid, t] of state.terms) {
+        if (!t.burstStart || now - t.lastOut < QUIET_MS) continue;
+        const long = t.lastOut - t.burstStart >= LONG_MS;
+        t.burstStart = 0;
+        if (!long) continue;
+        const hidden = !visibleTerms().includes(sid);
+        if (hidden) {
+            t.tab.classList.remove("activity");
+            t.tab.classList.add("done");
+        }
+        if (state.notify && (hidden || document.hidden) && "Notification" in window && Notification.permission === "granted") {
+            const n = new Notification(`Deck : « ${t.title ?? t.defaultTitle} » a terminé`, { body: "La commande ne produit plus de sortie.", icon: "/img/icon-64.png", tag: `deck-${sid}` });
+            n.onclick = () => { window.focus(); activate(sid); n.close(); };
+        }
+    }
+}, 1500);
+
+async function toggleNotify() {
+    if (!state.notify) {
+        if (!("Notification" in window)) return toast("notifications non prises en charge par ce navigateur");
+        const perm = Notification.permission === "default" ? await Notification.requestPermission() : Notification.permission;
+        if (perm !== "granted") return toast("notifications refusées : à autoriser dans les réglages du navigateur pour ce site");
+    }
+    state.notify = !state.notify;
+    savePref("deck-notify", state.notify ? "1" : "0");
+    refreshToolbar();
+    toast(state.notify ? "notifications activées pour les commandes longues" : "notifications désactivées", "ok");
+}
+
+function toggleBroadcast() {
+    state.broadcast = !state.broadcast;
+    refreshToolbar();
+    layoutScreens();
+    if (state.broadcast && visibleTerms().length < 2) toast("diffusion active : passe en 2×1 ou 2×2 pour taper dans plusieurs terminaux", "ok");
+}
+
+// ---------- Taille du texte ----------
+
+function setFontSize(size) {
+    state.fontSize = Math.min(28, Math.max(9, size));
+    savePref("deck-font", String(state.fontSize));
+    for (const t of state.terms.values()) t.term.options.fontSize = state.fontSize;
+    requestAnimationFrame(fitVisible);
+}
+
+// ---------- Recherche dans le terminal actif ----------
+
+function openSearch() {
+    const bar = $("#searchbar");
+    bar.hidden = false;
+    const input = $("#search-input");
+    const selected = state.terms.get(state.active)?.term.getSelection();
+    if (selected && !selected.includes("\n")) input.value = selected;
+    input.focus();
+    input.select();
+}
+
+function closeSearch() {
+    $("#searchbar").hidden = true;
+    const t = state.terms.get(state.active);
+    t?.search.clearDecorations();
+    t?.term.clearSelection();
+    t?.term.focus();
+}
+
+function runSearch(backwards = false) {
+    const t = state.terms.get(state.active);
+    const query = $("#search-input").value;
+    if (!t || !query) return;
+    const opts = { caseSensitive: false };
+    const found = backwards ? t.search.findPrevious(query, opts) : t.search.findNext(query, opts);
+    $("#search-input").classList.toggle("none", !found);
+}
+
+// ---------- Sélecteurs des voyants (contexte / namespace K8s, dépôt Git) ----------
+
+let pickerAnchor = null;
+
+function openPicker(anchor, request, loadingText) {
+    pickerAnchor = anchor;
+    const panel = $("#picker");
+    panel.replaceChildren(Object.assign(document.createElement("p"), { className: "picker-note", textContent: loadingText }));
+    panel.hidden = false;
+    placePicker();
+    send({ t: request });
+}
+
+function placePicker() {
+    const panel = $("#picker");
+    const anchor = pickerAnchor?.isConnected ? pickerAnchor : document.querySelector(`[data-status="${pickerAnchor?.dataset.status}"]`);
+    if (!anchor) return;
+    const box = anchor.getBoundingClientRect();
+    const width = panel.offsetWidth || 320;
+    panel.style.top = `${box.bottom + 8}px`;
+    panel.style.left = `${Math.max(8, Math.min(box.left, window.innerWidth - width - 8))}px`;
+}
+
+function closePicker() {
+    $("#picker").hidden = true;
+    pickerAnchor = null;
+}
+
+function pickerSection(title, items, empty) {
+    const section = Object.assign(document.createElement("section"), { className: "picker-section" });
+    section.append(Object.assign(document.createElement("h3"), { textContent: title }));
+    if (!items.length) section.append(Object.assign(document.createElement("p"), { className: "picker-note", textContent: empty }));
+    const list = Object.assign(document.createElement("div"), { className: "picker-list" });
+    for (const item of items) {
+        const row = Object.assign(document.createElement("div"), { className: `picker-row${item.current ? " current" : ""}${item.prod ? " prod" : ""}` });
+        const main = Object.assign(document.createElement("button"), { className: "picker-item", textContent: item.label, title: item.title ?? item.label });
+        main.addEventListener("click", item.onClick);
+        row.append(main);
+        for (const action of item.actions ?? []) {
+            const btn = Object.assign(document.createElement("button"), { className: "picker-action", textContent: action.label, title: action.title });
+            btn.addEventListener("click", action.onClick);
+            row.append(btn);
+        }
+        list.append(row);
+    }
+    section.append(list);
+    return section;
+}
+
+function showKubePicker(msg) {
+    if ($("#picker").hidden) return;
+    const panel = $("#picker");
+    const contexts = msg.contexts.map((c) => ({
+        label: c.name, current: c.name === msg.current, prod: c.prod,
+        onClick: () => { if (c.name !== msg.current) send({ t: "kube-use", context: c.name }); else closePicker(); }
+    }));
+    const namespaces = msg.namespaces.map((n) => ({
+        label: n.name, current: n.name === msg.namespace, prod: n.prod,
+        onClick: () => { if (n.name !== msg.namespace) send({ t: "kube-use", namespace: n.name }); else closePicker(); }
+    }));
+    panel.replaceChildren(
+        pickerSection("Contexte", contexts, "aucun contexte dans kubeconfig"),
+        pickerSection(`Namespace (${msg.current || "aucun contexte"})`, namespaces, msg.nsError ? `liste indisponible : ${msg.nsError}` : "aucun namespace")
+    );
+    placePicker();
+}
+
+function showGitPicker(msg) {
+    if ($("#picker").hidden) return;
+    const repos = msg.repos.map((r) => ({
+        label: r.name, title: r.path, current: r.path === msg.current,
+        onClick: () => { send({ t: "git-select", repo: r.path }); closePicker(); },
+        actions: [{ label: ">_", title: `Nouveau terminal dans ${r.path}`, onClick: () => { closePicker(); openTerm(r.path); } }]
+    }));
+    $("#picker").replaceChildren(pickerSection("Dépôts (clic : afficher · >_ : terminal dedans)", repos, "aucun dépôt dans gitRoots (paths.json)"));
+    placePicker();
+}
+
+// ---------- Palette de commandes (Cmd/Ctrl+K) ----------
+
+let paletteItems = [];
+let paletteIndex = 0;
+
+/** Toutes les touches de toutes les rubriques, sans doublons (rubriques, actions, liens). */
+function paletteEntries() {
+    const seen = new Set();
+    const entries = [];
+    for (const [page, keys] of Object.entries(state.pages)) {
+        for (const key of keys) {
+            if (!key || ["status", "back", "clear"].includes(key.type)) continue;
+            const detail = key.type === "text" ? commandFor(key) : key.type === "web" ? key.url : key.type === "folder" ? "rubrique" : "programme";
+            if (detail == null) continue;
+            const id = `${key.type}|${key.label}|${detail}`;
+            if (seen.has(id)) continue;
+            seen.add(id);
+            const where = page === "root" ? "Accueil" : state.titles[page] ?? page;
+            entries.push({ key, where, detail, hay: `${key.label} ${where} ${detail}`.toLowerCase() });
+        }
+    }
+    return entries;
+}
+
+function openPalette() {
+    $("#palette").hidden = false;
+    const input = $("#palette-input");
+    input.value = "";
+    filterPalette();
+    input.focus();
+}
+
+function closePalette() {
+    $("#palette").hidden = true;
+    state.terms.get(state.active)?.term.focus();
+}
+
+function filterPalette() {
+    const words = $("#palette-input").value.toLowerCase().split(/\s+/).filter(Boolean);
+    paletteItems = paletteEntries().filter((e) => words.every((w) => e.hay.includes(w))).slice(0, 60);
+    paletteIndex = 0;
+    renderPalette();
+}
+
+function renderPalette() {
+    const list = $("#palette-list");
+    list.replaceChildren(...paletteItems.map((e, i) => {
+        const row = Object.assign(document.createElement("li"), { className: `palette-row${i === paletteIndex ? " sel" : ""}` });
+        row.style.setProperty("--c", e.key.color);
+        const icon = Object.assign(document.createElement("span"), { className: "palette-icon" });
+        if (e.key.icon) icon.style.setProperty("--logo", `url("/icons/${e.key.icon}.svg")`);
+        const text = Object.assign(document.createElement("span"), { className: "palette-text" });
+        text.append(
+            Object.assign(document.createElement("span"), { className: "palette-label", textContent: e.key.label }),
+            Object.assign(document.createElement("span"), { className: "palette-detail", textContent: e.detail })
+        );
+        const where = Object.assign(document.createElement("span"), { className: "palette-where", textContent: e.where });
+        const badge = e.key.badge ? Object.assign(document.createElement("span"), { className: `dot ${e.key.badge}` }) : "";
+        row.append(icon, text, where, badge);
+        row.addEventListener("mousemove", () => { if (paletteIndex !== i) { paletteIndex = i; renderPalette(); } });
+        row.addEventListener("click", () => runPalette(i));
+        return row;
+    }));
+    if (!paletteItems.length) list.append(Object.assign(document.createElement("li"), { className: "palette-empty", textContent: "aucune touche ne correspond" }));
+    list.children[paletteIndex]?.scrollIntoView({ block: "nearest" });
+}
+
+function runPalette(i) {
+    const entry = paletteItems[i];
+    if (!entry) return;
+    $("#palette").hidden = true;
+    press(entry.key, document.querySelector(`[data-id="${CSS.escape(entry.key.id)}"]`));
+}
+
+function refreshToolbar() {
+    for (const [id, on] of [["#broadcast", state.broadcast], ["#notify", state.notify]]) {
+        $(id).classList.toggle("on", on);
+        $(id).setAttribute("aria-pressed", String(on));
+    }
+}
+
+$("#new-tab").addEventListener("click", () => openTerm());
+$("#broadcast").addEventListener("click", toggleBroadcast);
+$("#notify").addEventListener("click", toggleNotify);
+$("#font-down").addEventListener("click", () => setFontSize(state.fontSize - 1));
+$("#font-up").addEventListener("click", () => setFontSize(state.fontSize + 1));
+$("#search-open").addEventListener("click", openSearch);
+$("#palette-open").addEventListener("click", openPalette);
+$("#search-input").addEventListener("keydown", (ev) => {
+    ev.stopPropagation();
+    if (ev.key === "Enter" || ev.key === "Escape") ev.preventDefault();
+    if (ev.key === "Enter") runSearch(ev.shiftKey);
+    if (ev.key === "Escape") closeSearch();
+});
+$("#search-input").addEventListener("input", () => runSearch());
+$("#search-prev").addEventListener("click", () => runSearch(true));
+$("#search-next").addEventListener("click", () => runSearch());
+$("#search-close").addEventListener("click", closeSearch);
+$("#palette-input").addEventListener("input", filterPalette);
+$("#palette-input").addEventListener("keydown", (ev) => {
+    ev.stopPropagation();
+    if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
+        ev.preventDefault();
+        const n = paletteItems.length;
+        if (n) paletteIndex = (paletteIndex + (ev.key === "ArrowDown" ? 1 : n - 1)) % n;
+        renderPalette();
+    }
+    // preventDefault : la touche Entrée ne doit pas atteindre le terminal (une commande à compléter serait exécutée)
+    if (ev.key === "Enter" || ev.key === "Escape") ev.preventDefault();
+    if (ev.key === "Enter") runPalette(paletteIndex);
+    if (ev.key === "Escape") closePalette();
+});
+$("#palette").addEventListener("mousedown", (ev) => { if (ev.target.id === "palette") closePalette(); });
+document.addEventListener("mousedown", (ev) => {
+    if (!$("#picker").hidden && !ev.target.closest("#picker, .key.status")) closePicker();
+});
+window.addEventListener("resize", () => { if (!$("#picker").hidden) placePicker(); });
+
+/** Raccourcis : Cmd/Ctrl+K palette, Cmd/Ctrl+F recherche, Cmd/Ctrl + / − / 0 taille du texte, Échap ferme. */
+document.addEventListener("keydown", (ev) => {
+    const mod = macClient ? ev.metaKey : ev.ctrlKey;
+    const key = ev.key.toLowerCase();
+    let handled = true;
+    if (mod && !ev.altKey && key === "k") openPalette();
+    else if (mod && !ev.altKey && key === "f") openSearch();
+    else if (mod && !ev.altKey && (key === "=" || key === "+")) setFontSize(state.fontSize + 1);
+    else if (mod && !ev.altKey && key === "-") setFontSize(state.fontSize - 1);
+    else if (mod && !ev.altKey && key === "0") setFontSize(14);
+    else if (key === "escape" && !$("#picker").hidden) closePicker();
+    else handled = false;
+    if (handled) {
+        ev.preventDefault();
+        ev.stopPropagation();
+    }
+}, true);
+refreshToolbar();
+document.querySelector(".kbd-mod").textContent = macClient ? "⌘K" : "Ctrl+K";
 for (const btn of document.querySelectorAll("#layouts button")) btn.addEventListener("click", () => setLayout(btn.dataset.layout));
 new ResizeObserver(fitVisible).observe($("#screens"));
 

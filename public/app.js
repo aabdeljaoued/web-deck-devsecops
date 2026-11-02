@@ -14,19 +14,24 @@ const state = {
     shells: [],         // [{ name, kind }] ; kind : posix, powershell ou cmd
     windowsPty: null,   // serveur Windows : infos ConPTY pour xterm.js
     terms: new Map(),   // sid -> { term, fit, tab, screen, ended, kind }
-    grid: loadGrid(),   // affichage en grille 2 x 2 (4 terminaux visibles) au lieu des onglets
+    layout: loadLayout(),   // disposition des terminaux : "tabs" (1, onglets), "2x1" ou "2x2"
     active: null,
     pending: []         // textes à envoyer au prochain terminal ouvert par cette page
 };
 const requestId = crypto.randomUUID();
-const GRID_SIZE = 4;
+/** Dispositions : nombre de terminaux visibles, colonnes et lignes. */
+const LAYOUTS = { "tabs": { size: 1, cols: 1, rows: 1 }, "2x1": { size: 2, cols: 2, rows: 1 }, "2x2": { size: 4, cols: 2, rows: 2 } };
+const layout = () => LAYOUTS[state.layout];
 
-/** Mode grille mémorisé entre deux chargements (si le navigateur autorise le stockage local). */
-function loadGrid() {
-    try { return localStorage.getItem("deck-grid") === "1"; } catch { return false; }
+/** Disposition mémorisée entre deux chargements (si le navigateur autorise le stockage local). */
+function loadLayout() {
+    try {
+        const saved = localStorage.getItem("deck-layout") ?? (localStorage.getItem("deck-grid") === "1" ? "2x2" : "tabs");
+        return saved in LAYOUTS ? saved : "tabs";
+    } catch { return "tabs"; }
 }
-function saveGrid() {
-    try { localStorage.setItem("deck-grid", state.grid ? "1" : "0"); } catch { /* stockage refusé */ }
+function saveLayout() {
+    try { localStorage.setItem("deck-layout", state.layout); } catch { /* stockage refusé */ }
 }
 // Navigateur sous macOS : Cmd+C / Cmd+V copient et collent déjà ; ailleurs, Ctrl+C / Ctrl+V sont gérés plus bas
 const macClient = /Mac|iPhone|iPad/.test(navigator.userAgentData?.platform ?? navigator.platform ?? navigator.userAgent);
@@ -65,17 +70,17 @@ function handle(msg) {
             fillShells(msg.shells);
             // Reconnexion ou rechargement : on repart des sessions du serveur, sortie rejouée
             for (const sid of [...state.terms.keys()]) removeTerm(sid);
-            for (const s of msg.sessions) addTerm(s.sid, s.name, s.kind, s.replay);
+            for (const s of msg.sessions) addTerm(s.sid, s.name, s.kind, s.replay, s.title);
             if (msg.sessions.length) activate(msg.sessions.at(-1).sid);
             layoutScreens();
-            if (state.grid) fillGrid();
+            if (layout().size > 1) fillGrid();
             else if (!msg.sessions.length) openTerm();
             render();
             break;
         }
         case "opened":
             if (!state.terms.has(msg.sid)) {
-                addTerm(msg.sid, msg.name, msg.kind);
+                addTerm(msg.sid, msg.name, msg.kind, "", msg.title);
                 layoutScreens();
             }
             if (msg.by === requestId) {
@@ -85,6 +90,14 @@ function handle(msg) {
             break;
         case "out":
             state.terms.get(msg.sid)?.term.write(msg.d);
+            break;
+        case "renamed": {
+            const t = state.terms.get(msg.sid);
+            if (t) setTitle(t, msg.title);
+            break;
+        }
+        case "order":
+            applyOrder(msg.order);
             break;
         case "exit": {
             const t = state.terms.get(msg.sid);
@@ -288,11 +301,11 @@ function openTerm() {
 /** Taille du terminal avant sa création, d'après la zone disponible (cellule ~9 x 17 px ; un quart en grille). */
 function estimateSize() {
     const box = $("#screens").getBoundingClientRect();
-    const div = state.grid ? 2 : 1;
-    return { cols: Math.max(20, Math.floor((box.width / div - 12) / 9)), rows: Math.max(5, Math.floor((box.height / div - 12) / 17)) };
+    const { cols, rows } = layout();
+    return { cols: Math.max(20, Math.floor((box.width / cols - 12) / 9)), rows: Math.max(5, Math.floor((box.height / rows - 12) / 17)) };
 }
 
-function addTerm(sid, name, kind = "posix", replay = "") {
+function addTerm(sid, name, kind = "posix", replay = "", title = null) {
     const term = new Terminal({
         cursorBlink: true,
         fontFamily: "'Cascadia Mono', Consolas, 'SF Mono', Menlo, Monaco, 'DejaVu Sans Mono', monospace",
@@ -307,7 +320,6 @@ function addTerm(sid, name, kind = "posix", replay = "") {
     term.loadAddon(new WebLinksAddon((ev, uri) => window.open(uri, "_blank", "noopener,noreferrer")));
 
     const screen = Object.assign(document.createElement("div"), { className: "screen" });
-    screen.dataset.title = `${name} ${sid}`;
     // Grille : un clic dans un terminal le rend actif (c'est lui qui reçoit les touches)
     screen.addEventListener("mousedown", () => { if (state.active !== sid) activate(sid); });
     $("#screens").append(screen);
@@ -319,17 +331,122 @@ function addTerm(sid, name, kind = "posix", replay = "") {
     const tab = document.createElement("div");
     tab.className = "tab";
     tab.setAttribute("role", "tab");
-    const title = Object.assign(document.createElement("span"), { textContent: `${name} ${sid}` });
+    tab.draggable = true;
+    tab.dataset.sid = sid;
+    const label = Object.assign(document.createElement("span"), { className: "tab-title", title: "Double-clic : renommer · glisser : déplacer" });
+    label.addEventListener("dblclick", (ev) => {
+        ev.stopPropagation();
+        startRename(sid);
+    });
     const close = Object.assign(document.createElement("button"), { className: "close", textContent: "×", title: "Fermer ce terminal" });
     close.addEventListener("click", (ev) => {
         ev.stopPropagation();
         closeTerm(sid);
     });
-    tab.append(title, close);
+    tab.append(label, close);
     tab.addEventListener("click", () => activate(sid));
+    dragTab(tab, sid);
     $("#tabs").append(tab);
 
-    state.terms.set(sid, { term, fit, tab, screen, ended: false, kind });
+    const t = { term, fit, tab, label, screen, ended: false, kind, defaultTitle: `${name} ${sid}` };
+    state.terms.set(sid, t);
+    setTitle(t, title);
+}
+
+// ---------- Noms et ordre des terminaux (enregistrés côté serveur, partagés entre les pages) ----------
+
+/** Affiche le nom choisi, ou le nom par défaut "shell n°". */
+function setTitle(t, title) {
+    t.title = title || null;
+    const text = t.title ?? t.defaultTitle;
+    t.label.textContent = text;
+    t.screen.dataset.title = text;
+}
+
+/** Remplace le nom de l'onglet par un champ : Entrée valide, Échap annule, vide = nom par défaut. */
+function startRename(sid) {
+    const t = state.terms.get(sid);
+    if (!t || t.tab.querySelector("input")) return;
+    const input = Object.assign(document.createElement("input"), {
+        className: "tab-rename",
+        value: t.title ?? "",
+        placeholder: t.defaultTitle,
+        maxLength: 40,
+        spellcheck: false
+    });
+    input.size = Math.max(6, input.value.length + 1);
+    let done = false;
+    const finish = (save) => {
+        if (done) return;
+        done = true;
+        if (save && input.value.trim() !== (t.title ?? "")) send({ t: "rename", sid, title: input.value });
+        input.replaceWith(t.label);
+        t.tab.draggable = true;
+        if (sid === state.active) t.term.focus();
+    };
+    input.addEventListener("keydown", (ev) => {
+        ev.stopPropagation();
+        if (ev.key === "Enter") finish(true);
+        if (ev.key === "Escape") finish(false);
+    });
+    input.addEventListener("input", () => { input.size = Math.max(6, input.value.length + 1); });
+    input.addEventListener("blur", () => finish(true));
+    input.addEventListener("click", (ev) => ev.stopPropagation());
+    t.tab.draggable = false;   // sinon la sélection de texte dans le champ lance un glisser
+    t.label.replaceWith(input);
+    input.focus();
+    input.select();
+}
+
+/** Glisser-déposer des onglets : déposé sur la moitié gauche d'un onglet = avant lui, moitié droite = après. */
+function dragTab(tab, sid) {
+    tab.addEventListener("dragstart", (ev) => {
+        ev.dataTransfer.setData("text/x-deck-sid", sid);
+        ev.dataTransfer.effectAllowed = "move";
+        tab.classList.add("dragging");
+    });
+    tab.addEventListener("dragend", () => {
+        tab.classList.remove("dragging");
+        clearDropMarks();
+    });
+    tab.addEventListener("dragover", (ev) => {
+        if (!ev.dataTransfer.types.includes("text/x-deck-sid")) return;
+        ev.preventDefault();
+        ev.dataTransfer.dropEffect = "move";
+        const after = isAfter(ev, tab);
+        clearDropMarks();
+        tab.classList.add(after ? "drop-after" : "drop-before");
+    });
+    tab.addEventListener("dragleave", () => tab.classList.remove("drop-before", "drop-after"));
+    tab.addEventListener("drop", (ev) => {
+        const moved = ev.dataTransfer.getData("text/x-deck-sid");
+        clearDropMarks();
+        if (!moved || moved === sid) return;
+        ev.preventDefault();
+        const ids = [...state.terms.keys()];
+        const before = isAfter(ev, tab) ? ids[ids.indexOf(sid) + 1] ?? null : sid;
+        if (before === moved) return;
+        send({ t: "move", sid: moved, before });
+    });
+}
+
+const isAfter = (ev, el) => {
+    const box = el.getBoundingClientRect();
+    return ev.clientX > box.left + box.width / 2;
+};
+const clearDropMarks = () => document.querySelectorAll(".tab.drop-before, .tab.drop-after").forEach((el) => el.classList.remove("drop-before", "drop-after"));
+
+/** Nouvel ordre reçu du serveur : onglets et terminaux réordonnés (la grille suit cet ordre). */
+function applyOrder(order) {
+    const known = order.filter((sid) => state.terms.has(sid));
+    const rest = [...state.terms.keys()].filter((sid) => !known.includes(sid));
+    const terms = new Map([...known, ...rest].map((sid) => [sid, state.terms.get(sid)]));
+    state.terms = terms;
+    for (const t of terms.values()) {
+        $("#tabs").append(t.tab);
+        $("#screens").append(t.screen);
+    }
+    layoutScreens();
 }
 
 /**
@@ -362,23 +479,30 @@ function activate(sid) {
         other.screen.classList.toggle("active", id === sid);
     }
     layoutScreens();
-    requestAnimationFrame(() => t.term.focus());
+    // Pas de vol du focus si un nom d'onglet est en cours de saisie (double-clic = clic + renommage)
+    requestAnimationFrame(() => { if (!document.activeElement?.classList.contains("tab-rename")) t.term.focus(); });
 }
 
-/** Terminaux affichés : l'actif en mode onglets ; en grille, les 4 premiers (l'actif remplace le 4e s'il est plus loin). */
+/** Terminaux affichés : l'actif en mode onglets ; en grille, les N premiers (l'actif remplace le dernier s'il est plus loin). */
 function visibleTerms() {
-    if (!state.grid) return state.active ? [state.active] : [];
-    const ids = [...state.terms.keys()];
-    const shown = ids.slice(0, GRID_SIZE);
-    if (state.active && !shown.includes(state.active)) shown.splice(GRID_SIZE - 1, 1, state.active);
+    const { size } = layout();
+    if (size === 1) return state.active ? [state.active] : [];
+    const shown = [...state.terms.keys()].slice(0, size);
+    if (state.active && !shown.includes(state.active)) shown.splice(size - 1, 1, state.active);
     return shown;
 }
 
 function layoutScreens() {
-    $("#screens").classList.toggle("grid", state.grid);
-    const btn = $("#grid-toggle");
-    btn.classList.toggle("on", state.grid);
-    btn.setAttribute("aria-pressed", String(state.grid));
+    const { size, cols, rows } = layout();
+    const screens = $("#screens");
+    screens.classList.toggle("grid", size > 1);
+    screens.style.setProperty("--cols", cols);
+    screens.style.setProperty("--rows", rows);
+    for (const btn of document.querySelectorAll("#layouts button")) {
+        const on = btn.dataset.layout === state.layout;
+        btn.classList.toggle("on", on);
+        btn.setAttribute("aria-pressed", String(on));
+    }
     const shown = visibleTerms();
     for (const [id, t] of state.terms) t.screen.classList.toggle("shown", shown.includes(id));
     requestAnimationFrame(fitVisible);
@@ -388,16 +512,17 @@ function fitVisible() {
     for (const id of visibleTerms()) state.terms.get(id)?.fit.fit();
 }
 
-/** Bascule onglets / grille 2 x 2 ; ouvre les terminaux manquants pour remplir la grille. */
-function toggleGrid() {
-    state.grid = !state.grid;
-    saveGrid();
+/** Change de disposition ; ouvre les terminaux manquants pour remplir la grille. */
+function setLayout(name) {
+    if (!(name in LAYOUTS)) return;
+    state.layout = name;
+    saveLayout();
     layoutScreens();
-    if (state.grid) fillGrid();
+    if (layout().size > 1) fillGrid();
 }
 
 function fillGrid() {
-    const missing = GRID_SIZE - [...state.terms.values()].filter((t) => !t.ended).length;
+    const missing = layout().size - [...state.terms.values()].filter((t) => !t.ended).length;
     for (let i = 0; i < missing; i++) openTerm();
 }
 
@@ -434,7 +559,7 @@ function typeInTerminal(text) {
 }
 
 $("#new-tab").addEventListener("click", openTerm);
-$("#grid-toggle").addEventListener("click", toggleGrid);
+for (const btn of document.querySelectorAll("#layouts button")) btn.addEventListener("click", () => setLayout(btn.dataset.layout));
 new ResizeObserver(fitVisible).observe($("#screens"));
 
 connect();

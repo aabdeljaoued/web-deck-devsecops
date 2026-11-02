@@ -60,7 +60,31 @@ export class Terminals extends EventEmitter {
     }
 
     describe(session) {
-        return { sid: session.sid, name: session.name, kind: session.kind };
+        return { sid: session.sid, name: session.name, kind: session.kind, title: session.title ?? null };
+    }
+
+    /** Nom choisi par l'utilisateur (vide = nom par défaut "shell n°"). Renvoie le nom retenu, ou undefined. */
+    rename(sid, title) {
+        const session = this.sessions.get(sid);
+        if (!session) return undefined;
+        const clean = String(title ?? "").replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, 40);
+        session.title = clean || null;
+        return session.title;
+    }
+
+    /** Place la session avant une autre (before absent ou inconnu = à la fin). Renvoie le nouvel ordre. */
+    move(sid, before) {
+        const session = this.sessions.get(sid);
+        if (!session || sid === before) return this.order();
+        const entries = [...this.sessions].filter(([id]) => id !== sid);
+        const at = entries.findIndex(([id]) => id === before);
+        entries.splice(at < 0 ? entries.length : at, 0, [sid, session]);
+        this.sessions = new Map(entries);
+        return this.order();
+    }
+
+    order() {
+        return [...this.sessions.keys()];
     }
 
     list() {

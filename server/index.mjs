@@ -152,6 +152,12 @@ wss.on("connection", (ws) => {
                 case "in": terminals.write(String(msg.sid), String(msg.d)); break;
                 case "resize": terminals.resize(String(msg.sid), msg.cols, msg.rows); break;
                 case "close": terminals.close(String(msg.sid)); break;
+                case "rename": {
+                    const title = terminals.rename(String(msg.sid), msg.title);
+                    if (title !== undefined) broadcast({ t: "renamed", sid: String(msg.sid), title });
+                    break;
+                }
+                case "move": broadcast({ t: "order", order: terminals.move(String(msg.sid), msg.before == null ? null : String(msg.before)) }); break;
                 case "press": await status.press(String(msg.id)); break;
                 case "run": {
                     // Seules les commandes du catalogue sont lancées : le navigateur n'envoie qu'un identifiant

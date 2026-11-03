@@ -83,6 +83,14 @@
         </form>
     </div>
 
+    <div id="duplicate" class="palette" hidden>
+        <div class="palette-box duplicate-box" role="alertdialog" aria-label="Deck déjà ouvert">
+            <h2>Le deck est déjà ouvert dans un autre onglet</h2>
+            <p>Cet onglet reste en veille pour ne pas ouvrir de terminaux en double. Tu peux le fermer.</p>
+            <button id="duplicate-use" type="button">Utiliser cet onglet quand même</button>
+        </div>
+    </div>
+
     <div id="toast" role="status" aria-live="polite"></div>
     <script type="module" src="/app.js"></script>
 </body>

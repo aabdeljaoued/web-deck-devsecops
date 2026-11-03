@@ -1023,4 +1023,43 @@ document.querySelector(".kbd-mod").textContent = macClient ? "⌘K" : "Ctrl+K";
 for (const btn of document.querySelectorAll("#layouts button")) btn.addEventListener("click", () => setLayout(btn.dataset.layout));
 new ResizeObserver(fitVisible).observe($("#screens"));
 
-connect();
+// ---------- Un seul onglet du deck par navigateur ----------
+// Double-clic sur le lanceur alors que le navigateur restaure sa session (ou deck déjà ouvert) :
+// le plus récent des onglets se ferme (ou se met en veille) au lieu d'ouvrir des terminaux en double.
+
+const tabId = crypto.randomUUID();
+const tabStart = performance.timeOrigin;
+let started = false;
+
+/** L'onglet a démarré avant l'autre (à égalité, le plus petit identifiant gagne). */
+const olderThan = (at, id) => tabStart < at || (tabStart === at && tabId < id);
+
+function startDeck() {
+    if (started) return;
+    started = true;
+    $("#duplicate").hidden = true;
+    connect();
+}
+
+function duplicateTab() {
+    if (started) return;
+    window.close();   // possible pour un onglet ouvert par le lanceur (une seule page dans son historique)
+    // Fermeture refusée par le navigateur : l'onglet reste en veille, sans se connecter
+    setTimeout(() => { if (!started) $("#duplicate").hidden = false; }, 300);
+}
+
+if ("BroadcastChannel" in window) {
+    const channel = new BroadcastChannel("web-deck-devsecops");
+    channel.onmessage = ({ data }) => {
+        if (data?.t === "probe" && data.id !== tabId && olderThan(data.at, data.id)) {
+            channel.postMessage({ t: "older", to: data.id });
+        }
+        if (data?.t === "older" && data.to === tabId) duplicateTab();
+    };
+    channel.postMessage({ t: "probe", id: tabId, at: tabStart });
+    $("#duplicate-use").addEventListener("click", startDeck);
+    // Pas de réponse d'un onglet plus ancien : c'est le seul deck ouvert
+    setTimeout(() => { if ($("#duplicate").hidden) startDeck(); }, 400);
+} else {
+    startDeck();
+}

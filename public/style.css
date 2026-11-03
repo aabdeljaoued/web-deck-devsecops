@@ -659,3 +659,17 @@ main {
 .favform-actions button.primary { background: #1f4f80; border-color: #4da3ff; }
 .favform-actions button.danger { color: #ff8a80; border-color: #7f2a2a; }
 .favform-actions button[hidden] { display: none; }
+
+/* Onglet du deck en double */
+.duplicate-box { padding: 20px 22px; }
+.duplicate-box h2 { margin: 0 0 8px; font-size: 17px; }
+.duplicate-box p { margin: 0 0 16px; color: var(--muted); font-size: 13px; }
+.duplicate-box button {
+    padding: 8px 14px;
+    border: 1px solid #4da3ff;
+    border-radius: 6px;
+    background: #1f4f80;
+    color: #fff;
+    font: inherit;
+    cursor: pointer;
+}

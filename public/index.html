@@ -17,6 +17,13 @@
             <span class="dot run"></span> exécutée
             <span class="dot type"></span> tapée, à compléter
         </p>
+        <select id="theme" class="theme-select" title="Thème aux couleurs de la mission">
+            <option value="">Thème : défaut</option>
+            <option value="allianz">Allianz</option>
+            <option value="bnp">BNP Paribas</option>
+            <option value="estreem">Estreem</option>
+            <option value="laposte">La Poste</option>
+        </select>
         <button id="palette-open" class="palette-open" title="Chercher une touche ou une commande"><svg viewBox="0 0 24 24" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></g></svg><span>Rechercher</span><kbd class="kbd-mod">⌘K</kbd></button>
         <span id="conn" class="conn" title="Connexion au serveur">connexion…</span>
     </header>
@@ -67,9 +74,18 @@
 
     <div id="favdialog" class="palette" hidden>
         <form id="favform" class="palette-box favform" autocomplete="off">
-            <h2>Nouveau favori</h2>
-            <label>Adresse <input id="fav-url" type="text" placeholder="https://grafana.ma-mission.fr" required spellcheck="false"></label>
+            <h2>Ajouter aux favoris</h2>
+            <div id="fav-kind" class="fav-kind" role="radiogroup" aria-label="Type">
+                <label><input type="radio" name="fav-kind" id="fav-kind-site" checked> Site</label>
+                <label><input type="radio" name="fav-kind" id="fav-kind-group"> Groupe</label>
+            </div>
+            <label id="fav-url-row">Adresse <input id="fav-url" type="text" placeholder="https://grafana.ma-mission.fr" required spellcheck="false"></label>
             <label>Nom <input id="fav-label" type="text" placeholder="nom de domaine si vide" maxlength="30"></label>
+            <label>Dans <select id="fav-parent"></select></label>
+            <div id="fav-color-row" class="fav-colors" role="radiogroup" aria-label="Couleur du groupe">
+                <span class="fav-colors-title">Couleur <span class="hint">reprise par les sites du groupe</span></span>
+                <div id="fav-swatches" class="swatches"></div>
+            </div>
             <label>Icône <span class="hint">vide = automatique d'après l'adresse ; sinon « lucide-book », « github »…</span>
                 <input id="fav-icon" type="text" placeholder="automatique" spellcheck="false"></label>
             <div class="favform-actions">

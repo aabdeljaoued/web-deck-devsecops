@@ -21,7 +21,9 @@ const state = {
     broadcast: false,   // diffusion : saisie et touches envoyées à tous les terminaux visibles
     notify: loadPref("deck-notify") === "1",              // notification quand une commande longue se termine
     fontSize: Number(loadPref("deck-font")) || 14,        // taille du texte des terminaux
-    favEdit: false      // rubrique Favoris en mode Modifier : un clic sur un favori ouvre son formulaire
+    favEdit: false,     // rubrique Favoris en mode Modifier : un clic sur un favori ouvre son formulaire
+    parents: {},        // page -> page parente (fil d'Ariane, Retour)
+    favGroups: []       // groupes de favoris { id, path, depth } pour le choix « Dans »
 };
 const requestId = crypto.randomUUID();
 /** Dispositions : nombre de terminaux visibles, colonnes et lignes. */
@@ -44,6 +46,18 @@ function loadPref(name) {
 function savePref(name, value) {
     try { localStorage.setItem(name, value); } catch { /* stockage refusé */ }
 }
+// Thème aux couleurs de la mission (couleurs dans style.css, [data-theme]) : appliqué dès le chargement
+const THEMES = ["allianz", "bnp", "estreem", "laposte"];
+function applyTheme(name) {
+    const theme = THEMES.includes(name) ? name : "";
+    if (theme) document.documentElement.dataset.theme = theme;
+    else delete document.documentElement.dataset.theme;
+    savePref("deck-theme", theme);
+    const select = document.querySelector("#theme");
+    if (select) select.value = theme;
+}
+applyTheme(loadPref("deck-theme") ?? "");
+
 // Navigateur sous macOS : Cmd+C / Cmd+V copient et collent déjà ; ailleurs, Ctrl+C / Ctrl+V sont gérés plus bas
 // (insensible à la casse : Chrome renvoie "macOS", Safari "MacIntel")
 const macClient = /mac|iphone|ipad/i.test(navigator.userAgentData?.platform || navigator.platform || navigator.userAgent);
@@ -76,6 +90,8 @@ function handle(msg) {
         case "hello": {
             state.pages = msg.pages;
             state.titles = msg.titles;
+            state.parents = msg.parents ?? {};
+            state.favGroups = msg.favGroups ?? [];
             state.status = msg.status ?? {};
             state.windowsPty = msg.windowsPty ?? null;
             if (!state.pages[state.page]) state.page = "root";
@@ -111,7 +127,11 @@ function handle(msg) {
             // Favoris modifiés (ici ou dans une autre page) : touches mises à jour
             state.pages = msg.pages;
             state.titles = msg.titles;
-            if (!state.pages[state.page]) state.page = "root";
+            const oldParents = state.parents;
+            state.parents = msg.parents ?? {};
+            state.favGroups = msg.favGroups ?? [];
+            // Groupe supprimé pendant qu'on était dedans : on remonte au premier niveau qui existe encore
+            while (!state.pages[state.page]) state.page = oldParents[state.page] ?? "root";
             render();
             break;
         case "fav-saved":
@@ -262,31 +282,37 @@ function statusKey(id, statusId, key) {
     return el;
 }
 
+/** Fil d'Ariane : Accueil › Favoris › Groupe › Sous-groupe (chaque niveau est cliquable). */
 function renderCrumbs() {
     const nav = $("#crumbs");
-    nav.replaceChildren();
-    const home = Object.assign(document.createElement("button"), { textContent: "Accueil" });
-    home.addEventListener("click", () => go("root"));
-    if (state.page === "root") {
-        nav.append(Object.assign(document.createElement("span"), { className: "current", textContent: "Accueil" }));
-        return;
-    }
-    nav.append(home, Object.assign(document.createElement("span"), { className: "sep", textContent: "›" }),
-        Object.assign(document.createElement("span"), { className: "current", textContent: state.titles[state.page] }));
+    const chain = [];
+    for (let p = state.page; p; p = p === "root" ? null : state.parents[p] ?? "root") chain.unshift(p);
+    nav.replaceChildren(...chain.flatMap((page, i) => {
+        const text = page === "root" ? "Accueil" : state.titles[page] ?? page;
+        const last = i === chain.length - 1;
+        const el = last
+            ? Object.assign(document.createElement("span"), { className: "current", textContent: text })
+            : Object.assign(document.createElement("button"), { textContent: text });
+        if (!last) el.addEventListener("click", () => go(page));
+        return i ? [Object.assign(document.createElement("span"), { className: "sep", textContent: "›" }), el] : [el];
+    }));
 }
+
+const isFavPage = (page) => page === "favoris" || page.startsWith("fav-");
 
 function go(page) {
     state.page = page;
+    if (!isFavPage(page)) state.favEdit = false;
     render();
 }
 
 function press(key, el) {
     pulse(el);
     switch (key.type) {
-        case "folder": return go(key.page);
-        case "back":
-            state.favEdit = false;
-            return go("root");
+        case "folder":
+            if (key.fav && state.favEdit) return openFavForm(key);
+            return go(key.page);
+        case "back": return go(key.page ?? "root");
         case "web":
             if (key.fav && state.favEdit) return openFavForm(key);
             return window.open(key.url, "_blank", "noopener,noreferrer");
@@ -912,17 +938,111 @@ function runPalette(i) {
 
 let favEditing = null;   // touche du favori modifié, null pour un ajout
 let favMoving = false;
+let favRemoveArmed = false;   // suppression d'un groupe non vide : deuxième clic pour confirmer
 
+/** Groupe de la page affichée (null = racine des favoris). */
+const currentFavGroup = () => (state.page.startsWith("fav-") ? state.page.slice(4) : null);
+const MAX_GROUP_DEPTH = 2;
+
+/**
+ * Formulaire d'un favori : ajout (key null, parent = groupe de la page) ou modification (site ou groupe).
+ * Un groupe n'a pas d'adresse ; « Dans » permet de le ranger ailleurs (sans dépasser deux niveaux).
+ */
 function openFavForm(key = null) {
     favEditing = key;
-    const form = $("#favform");
-    form.querySelector("h2").textContent = key ? "Modifier le favori" : "Nouveau favori";
+    favRemoveArmed = false;
+    const isGroup = key ? Boolean(key.favGroup) : false;
+    const parent = currentFavGroup();   // ajout : dans le groupe affiché ; modification : là où l'élément se trouve
+    $("#favform").querySelector("h2").textContent = key ? (isGroup ? "Modifier le groupe" : "Modifier le favori") : "Ajouter aux favoris";
+    $("#fav-kind").hidden = Boolean(key);
+    $("#fav-kind-site").checked = !isGroup;
+    $("#fav-kind-group").checked = isGroup;
+    // Dans un sous-groupe, on ne peut ajouter que des sites
+    const canGroup = favDepth(state.page) < MAX_GROUP_DEPTH;
+    $("#fav-kind-group").disabled = !canGroup;
+    $("#fav-kind-group").parentElement.title = canGroup ? "" : "un sous-groupe ne contient que des sites";
     $("#fav-label").value = key?.label ?? "";
     $("#fav-url").value = key?.url ?? "";
     $("#fav-icon").value = key?.favIcon ?? "";   // vide = icône automatique
+    fillParents(key, parent);
+    favColor = key?.favColor ?? "";
+    renderSwatches();
     for (const id of ["#fav-remove", "#fav-left", "#fav-right"]) $(id).hidden = !key;
+    $("#fav-remove").textContent = "Supprimer";
+    syncFavKind();
     $("#favdialog").hidden = false;
-    $(key ? "#fav-label" : "#fav-url").focus();
+    $(key || isGroup ? "#fav-label" : "#fav-url").focus();
+}
+
+/** Choix « Dans » : racine des favoris et groupes où l'élément peut aller. */
+function fillParents(key, parent) {
+    const select = $("#fav-parent");
+    const isGroup = key ? Boolean(key.favGroup) : $("#fav-kind-group").checked;
+    // Hauteur d'un groupe modifié : 2 s'il contient des sous-groupes (il doit alors rester à la racine)
+    const height = !isGroup ? 0 : key && hasSubgroups(key) ? 2 : 1;
+    const options = [new Option("Favoris (racine)", "")];
+    for (const g of state.favGroups) {
+        if (key && (g.id === key.fav || isInside(g.id, key.fav))) continue;   // pas dans lui-même
+        if (g.depth + height > MAX_GROUP_DEPTH) continue;
+        options.push(new Option(`${"\u00a0\u00a0".repeat(g.depth - 1)}${g.path}`, g.id));
+    }
+    select.replaceChildren(...options);
+    select.value = options.some((o) => o.value === (parent ?? "")) ? parent ?? "" : "";
+}
+
+/** Profondeur d'une page des favoris : 0 pour la rubrique, 1 pour un groupe, 2 pour un sous-groupe. */
+function favDepth(page) {
+    let depth = 0;
+    for (let p = page; p && p !== "favoris" && p.startsWith("fav-"); p = state.parents[p]) depth++;
+    return depth;
+}
+
+/** Le groupe groupId est-il (à n'importe quel niveau) à l'intérieur du groupe ancestorId ? */
+function isInside(groupId, ancestorId) {
+    for (let p = state.parents[`fav-${groupId}`]; p && p !== "favoris"; p = state.parents[p]) {
+        if (p === `fav-${ancestorId}`) return true;
+    }
+    return false;
+}
+
+const hasSubgroups = (key) => (state.pages[`fav-${key.fav}`] ?? []).some((k) => k?.favGroup);
+
+// ---------- Couleur d'un groupe : palette, ou n'importe quelle couleur (sélecteur du système) ----------
+
+const GROUP_COLORS = [
+    ["", "Par défaut (vert favoris)"], ["#1e88e5", "Bleu"], ["#00897b", "Turquoise"], ["#43a047", "Vert"], ["#fbc02d", "Jaune"],
+    ["#fb8c00", "Orange"], ["#e53935", "Rouge"], ["#d81b60", "Rose"], ["#8e24aa", "Violet"], ["#546e7a", "Gris bleu"]
+];
+let favColor = "";
+
+function renderSwatches() {
+    const box = $("#fav-swatches");
+    const custom = favColor && !GROUP_COLORS.some(([c]) => c === favColor);
+    const buttons = GROUP_COLORS.map(([color, name]) => {
+        const b = Object.assign(document.createElement("button"), { type: "button", className: `swatch${color === favColor ? " on" : ""}${color ? "" : " default"}`, title: name });
+        b.style.setProperty("--sw", color || "#9ccc65");
+        b.setAttribute("aria-pressed", String(color === favColor));
+        b.addEventListener("click", () => { favColor = color; renderSwatches(); });
+        return b;
+    });
+    // Couleur libre : sélecteur du système (input type=color)
+    const picker = Object.assign(document.createElement("label"), { className: `swatch picker${custom ? " on" : ""}`, title: "Autre couleur…" });
+    picker.style.setProperty("--sw", custom ? favColor : "transparent");
+    const input = Object.assign(document.createElement("input"), { type: "color", value: custom ? favColor : "#1e88e5" });
+    input.addEventListener("input", () => { favColor = input.value.toLowerCase(); renderSwatches(); });
+    picker.append(input);
+    box.replaceChildren(...buttons, picker);
+}
+
+/** Site : adresse visible ; groupe : pas d'adresse, mais une couleur. */
+function syncFavKind() {
+    const group = favEditing ? Boolean(favEditing.favGroup) : $("#fav-kind-group").checked;
+    $("#fav-color-row").hidden = !group;
+    $("#fav-url-row").hidden = group;
+    $("#fav-url").required = !group;
+    $("#fav-label").placeholder = group ? "Mission X, Monitoring, Docs…" : "nom de domaine si vide";
+    $("#fav-icon").placeholder = group ? "dossier" : "automatique";
+    if (!favEditing) fillParents(null, $("#fav-parent").value || currentFavGroup());
 }
 
 function closeFavForm() {
@@ -932,7 +1052,8 @@ function closeFavForm() {
 
 function submitFav(ev) {
     ev.preventDefault();
-    const def = { label: $("#fav-label").value, url: $("#fav-url").value, icon: $("#fav-icon").value };
+    const group = favEditing ? Boolean(favEditing.favGroup) : $("#fav-kind-group").checked;
+    const def = { kind: group ? "group" : "site", label: $("#fav-label").value, url: group ? "" : $("#fav-url").value, icon: $("#fav-icon").value, parent: $("#fav-parent").value || null, ...(group ? { color: favColor } : {}) };
     if (!def.label.trim() && def.url.trim()) {
         // Nom par défaut : le nom de domaine
         try { def.label = new URL(/^[a-z]+:\/\//i.test(def.url) ? def.url : `https://${def.url}`).hostname.replace(/^www\./, ""); } catch { /* le serveur signalera l'adresse invalide */ }
@@ -949,6 +1070,8 @@ function refreshToolbar() {
 
 $("#new-tab").addEventListener("click", () => openTerm());
 $("#broadcast").addEventListener("click", toggleBroadcast);
+$("#theme").addEventListener("change", (ev) => applyTheme(ev.target.value));
+applyTheme(loadPref("deck-theme") ?? "");
 $("#notify").addEventListener("click", toggleNotify);
 $("#font-down").addEventListener("click", () => setFontSize(state.fontSize - 1));
 $("#font-up").addEventListener("click", () => setFontSize(state.fontSize + 1));
@@ -982,8 +1105,23 @@ $("#palette").addEventListener("mousedown", (ev) => { if (ev.target.id === "pale
 $("#favform").addEventListener("submit", submitFav);
 $("#fav-cancel").addEventListener("click", closeFavForm);
 $("#fav-remove").addEventListener("click", () => {
-    if (favEditing) send({ t: "fav-remove", id: favEditing.fav });
+    if (!favEditing) return;
+    // Groupe non vide : un premier clic annonce ce qui sera supprimé, le second confirme
+    const inside = favEditing.favGroup ? countInside(favEditing.fav) : 0;
+    if (inside && !favRemoveArmed) {
+        favRemoveArmed = true;
+        $("#fav-remove").textContent = `Confirmer : supprimer le groupe et ses ${inside} élément${inside > 1 ? "s" : ""}`;
+        return;
+    }
+    send({ t: "fav-remove", id: favEditing.fav });
 });
+for (const input of document.querySelectorAll("#fav-kind input")) input.addEventListener("change", syncFavKind);
+
+/** Nombre d'éléments (sites et sous-groupes, à tous les niveaux) dans un groupe. */
+function countInside(groupId) {
+    return (state.pages[`fav-${groupId}`] ?? []).filter((k) => k?.fav)
+        .reduce((n, k) => n + 1 + (k.favGroup ? countInside(k.fav) : 0), 0);
+}
 for (const [id, delta] of [["#fav-left", -1], ["#fav-right", 1]]) {
     $(id).addEventListener("click", () => {
         if (!favEditing) return;

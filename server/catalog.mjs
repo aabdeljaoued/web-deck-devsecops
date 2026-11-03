@@ -10,7 +10,7 @@ import { platform } from "./platform.mjs";
 
 export const COLORS = {
     git: "#F05032", k8s: "#326CE5", sec: "#C62828", terraform: "#7B42BC", vault: "#FFC107",
-    ssh: "#2E7D32", openssl: "#AD1457", docker: "#0898C8", helm: "#5C6BC0", vscode: "#007ACC",
+    ssh: "#2E7D32", openssl: "#AD1457", docker: "#0898C8", helm: "#1E88E5", vscode: "#007ACC",
     tool: "#37474F", web: "#00897B", danger: "#B71C1C", brew: "#FBB040", ansible: "#5BBDBF", fav: "#9CCC65"
 };
 const C = COLORS;
@@ -97,8 +97,9 @@ function folder(label, sym, page, color, icon) {
 /** Logos utilisés par le catalogue : le serveur ne sert que ceux-là. */
 export const ICONS = new Set();
 
-function back() {
-    return { type: "back", label: "Retour", sym: "↩", icon: "lucide-arrow-left", color: "#212121" };
+/** Retour vers la page parente (l'accueil par défaut ; le groupe du dessus dans les favoris). */
+function back(page = "root") {
+    return { type: "back", label: "Retour", sym: "↩", icon: "lucide-arrow-left", color: "#212121", page };
 }
 
 /** Voyant mis à jour en direct par le serveur (server/status.mjs). */
@@ -442,14 +443,35 @@ function customCatalog(cfg) {
     return { sections, shortcuts };
 }
 
-/** Rubrique "favoris" : sites ajoutés depuis le deck (server/favorites.mjs), plus Modifier et Ajouter à droite. */
-function favoritesSection(favorites) {
-    const keys = favorites.map((f) => ({ ...web(f.label, "★", f.url, C.fav), icon: f.icon, fav: f.id, favIcon: f.chosen ?? "" }));
+// ---------- Favoris : rubrique "favoris", et une page par groupe / sous-groupe ----------
+
+const favPage = (groupId) => `fav-${groupId}`;
+
+/**
+ * Touches d'un niveau des favoris : sites et groupes, puis Modifier et Ajouter à droite.
+ * color : couleur héritée du groupe (les sites prennent la couleur de leur groupe ; un sous-groupe peut avoir la sienne).
+ */
+function favoriteKeys(items, groupId, depth, color = C.fav) {
+    const keys = items.map((f) => f.type === "group"
+        ? { ...folder(f.label, "▣", favPage(f.id), f.color ?? color, f.icon), fav: f.id, favGroup: true, favIcon: f.chosen ?? "", favColor: f.color ?? "", favCount: f.items.length }
+        : { ...web(f.label, "★", f.url, color), icon: f.icon, fav: f.id, favIcon: f.chosen ?? "" });
     keys.push(
         { type: "fav-edit", label: "Modifier", sym: "✎", icon: "lucide-pencil", color: C.tool, right: true },
-        { type: "fav-add", label: "Ajouter", sym: "+", icon: "lucide-plus", color: C.fav, right: true }
+        { type: "fav-add", label: "Ajouter", sym: "+", icon: "lucide-plus", color, right: true, favParent: groupId, favDepth: depth }
     );
-    return { label: "Favoris", sym: "★", icon: "lucide-bookmark", color: C.fav, keys };
+    return keys;
+}
+
+/** Pages des groupes (en plus de la rubrique) : { nom, titre, parent, touches }. */
+function favoriteGroupPages(items, parentPage, depth, color = C.fav) {
+    return items.filter((f) => f.type === "group").flatMap((g) => [
+        { name: favPage(g.id), title: g.label, parent: parentPage, keys: favoriteKeys(g.items, g.id, depth + 1, g.color ?? color) },
+        ...favoriteGroupPages(g.items, favPage(g.id), depth + 1, g.color ?? color)
+    ]);
+}
+
+function favoritesSection(favorites) {
+    return { label: "Favoris", sym: "★", icon: "lucide-bookmark", color: C.fav, keys: favoriteKeys(favorites, null, 0) };
 }
 
 /**
@@ -492,6 +514,7 @@ export function buildDeck(ctx, favorites = []) {
     const layouts = {};
     const rootKeys = [];
     const titles = { root: "Accueil" };
+    const parents = {};   // page -> page parente (fil d'Ariane et Retour)
     for (const s of sections) {
         const def = { ...SECTIONS[s], label: pick(SECTIONS[s].label), sym: pick(SECTIONS[s].sym) };
         rootKeys.push(folder(def.label, def.sym, s, def.color, pick(def.icon)));
@@ -500,6 +523,15 @@ export function buildDeck(ctx, favorites = []) {
         if (cfg.clearKey && def.terminal) keys.push(clear);
         if (keys.length > 14) throw new Error(`la rubrique "${s}" a ${keys.length} touches (max 14).`);
         layouts[s] = layout(keys, { "0,0": back() });
+        parents[s] = "root";
+        // Favoris : une page par groupe et sous-groupe
+        if (s === "favoris") {
+            for (const p of favoriteGroupPages(favorites, "favoris", 0)) {
+                layouts[p.name] = layout(p.keys, { "0,0": back(p.parent) });
+                titles[p.name] = p.title;
+                parents[p.name] = p.parent;
+            }
+        }
     }
     for (const s of shortcuts) rootKeys.push(SHORTCUTS[s]);
     layouts.root = layout(rootKeys);
@@ -518,5 +550,5 @@ export function buildDeck(ctx, favorites = []) {
             return { id, ...visible };
         });
     }
-    return { pages, titles, index, skipped };
+    return { pages, titles, parents, index, skipped };
 }

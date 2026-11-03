@@ -47,14 +47,29 @@ Linux fonctionne aussi (`./start.sh`) : sans bloc `linux` dans `paths.json`, cel
 - Les touches tapent la variante adaptée au shell de l'onglet actif (ex. `$env:VAULT_ADDR=` dans PowerShell, `export VAULT_ADDR=` dans bash/zsh, `set VAULT_ADDR=` dans cmd). Une touche sans variante pour ce shell affiche un message.
 - **Palette de commandes** (`⌘K` / `Ctrl+K`, ou « Rechercher » en haut à droite) : tape quelques lettres (`exec`, `plan`, `logs`…) pour trouver et lancer n'importe quelle touche, sans passer par les rubriques.
 
+### Thèmes
+
+La liste **Thème** en haut à droite habille le deck aux couleurs d'une mission : **Allianz**, **BNP Paribas**, **Estreem**, **La Poste** (ou défaut). Le thème colore l'en-tête, la barre des touches, le liseré et les éléments actifs (onglet, terminal sélectionné, boutons) ; les touches gardent leurs couleurs par outil pour rester repérables. Le choix est retenu par le navigateur.
+
+| Thème | Couleurs | Source |
+|---|---|---|
+| Allianz | bleu `#003781` (Pantone 288 C) | valeur la plus citée, non vérifiée sur la charte officielle |
+| BNP Paribas | vert `#00965E` (Pantone 340 C) | valeur la plus citée, non vérifiée sur la charte officielle |
+| Estreem | bleu nuit `#002D41`, cyan `#0FA5B6` | relevées dans les styles d'estreem.fr |
+| La Poste | jaune `#FFCB05`, bleu `#003DA5` | relevées dans les styles de laposte.fr |
+
+Les valeurs sont dans `public/style.css` (blocs `[data-theme="…"]`) : à ajuster avec la charte officielle si besoin. Les logos des marques ne sont pas utilisés.
+
 ### Favoris
 
-La rubrique **Favoris** regroupe tes sites liés à la mission (Jira, Confluence, Grafana, Argo CD, GitLab, consoles cloud…) :
+La rubrique **Favoris** regroupe tes sites liés à la mission (Jira, Confluence, Grafana, Argo CD, GitLab, consoles cloud…), rangés en **groupes** et **sous-groupes** :
 
-- **Ajouter** : adresse (le `https://` est ajouté s'il manque), nom (par défaut le nom de domaine) et icône facultative. Sans icône, elle est devinée d'après l'adresse (GitHub, GitLab, Jira / Confluence, Grafana, Jenkins, Argo, Kibana, Vault, Harbor, Sonar…), sinon un globe.
-- **Modifier** : les favoris se mettent à trembler ; un clic ouvre leur formulaire pour les renommer, les déplacer (◀ ▶) ou les supprimer. **Terminé** pour revenir à la normale.
-- Jusqu'à 12 favoris. Ils apparaissent aussi dans la palette (`⌘K`).
-- Enregistrés dans `favoris.json` à la racine du projet, **exclu de Git** : les adresses internes de la mission ne partent pas sur le dépôt. Le fichier peut aussi être édité à la main (`label`, `url`, `icon`), puis le serveur redémarré.
+- **Ajouter** : choisir **Site** (adresse — le `https://` est ajouté s'il manque —, nom par défaut le nom de domaine) ou **Groupe** (nom). **Dans** indique où le ranger (préréglé sur le groupe affiché). Icône facultative : sans icône, celle d'un site est devinée d'après l'adresse (GitHub, GitLab, Jira / Confluence, Grafana, Jenkins, Argo, Kibana, Vault, Harbor, Sonar…), sinon un globe ; un groupe a un dossier.
+- **Couleur d'un groupe** : à la création ou en modification, une palette de 10 couleurs ou n'importe quelle couleur (sélecteur du système). Les sites du groupe prennent sa couleur ; un sous-groupe peut avoir la sienne.
+- **Groupes** : un groupe s'ouvre comme une rubrique et peut contenir des sites et des **sous-groupes** ; un sous-groupe ne contient que des sites (deux niveaux). **Retour** remonte d'un niveau ; le fil en haut (`Accueil › Favoris › Mission X › Monitoring`) est cliquable.
+- **Modifier** : les éléments se mettent à trembler ; un clic ouvre leur formulaire pour les renommer, changer de groupe (**Dans**), les déplacer (◀ ▶) ou les supprimer. Supprimer un groupe supprime son contenu, après un second clic de confirmation qui indique le nombre d'éléments. **Terminé** pour revenir à la normale.
+- Jusqu'à 12 éléments par niveau, sans limite au total. Tous les sites et groupes apparaissent dans la palette (`⌘K`).
+- Enregistrés dans `favoris.json` à la racine du projet, **exclu de Git** : les adresses internes de la mission ne partent pas sur le dépôt. Le fichier peut aussi être édité à la main (sites `label` / `url` / `icon`, groupes `type: "group"` / `label` / `items`), puis le serveur redémarré.
 
 ### Voyants
 

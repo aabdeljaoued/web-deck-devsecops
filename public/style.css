@@ -7,9 +7,15 @@
     --run: #2ecc71;
     --type: #ffb300;
     --gap: 10px;
-    --count: 15;   /* nombre de touches de la ligne (au moins 15), mis à jour par la page */
+    --count: 15;
+    /* Thème (défaut ; voir [data-theme] plus bas) */
+    --accent: #4da3ff;          /* bordures actives, focus, sélection */
+    --accent-strong: #1f4f80;   /* fonds des boutons actifs */
+    --brand-line: var(--border);
+    --bar-bg: var(--panel) url("/img/deck-bar.jpg") center / 100% 100% no-repeat;
+    --bar-blend: normal;   /* nombre de touches de la ligne (au moins 15), mis à jour par la page */
     /* 15 touches sur une ligne : 80 px au plus, plus petites si la fenêtre est étroite */
-    --key: min(80px, calc((100vw - 36px - (var(--count) - 1) * var(--gap)) / var(--count)));
+    --key: min(70px, calc((100vw - 36px - (var(--count) - 1) * var(--gap)) / var(--count)));
     font-family: "Segoe UI", -apple-system, "Helvetica Neue", Arial, sans-serif;
 }
 
@@ -32,7 +38,8 @@ header {
     align-items: center;
     gap: 16px;
     padding: 8px 16px;
-    border-bottom: 1px solid var(--border);
+    border-bottom: 2px solid var(--brand-line);
+    background: var(--header-bg, transparent);
 }
 
 h1 {
@@ -75,8 +82,9 @@ main {
 #deck {
     padding: 12px 18px;
     border-bottom: 1px solid var(--border);
-    /* Fond généré avec Draw Things (Qwen Image), étiré sur toute la barre */
-    background: var(--panel) url("/img/deck-bar.jpg") center / 100% 100% no-repeat;
+    /* Thème par défaut : fond généré avec Draw Things (Qwen Image) ; thèmes : dégradé aux couleurs de la charte */
+    background: var(--bar-bg);
+    background-blend-mode: var(--bar-blend);
 }
 
 .grid {
@@ -90,7 +98,8 @@ main {
 
 .key {
     /* --c : couleur de la touche ; --tint : version claire et lumineuse pour l'icône et le halo */
-    --tint: color-mix(in srgb, var(--c) 55%, #fff);
+    /* Icône dans la couleur de la rubrique, à peine éclaircie (en espace oklab) pour rester lisible sur le fond sombre */
+    --tint: color-mix(in oklab, var(--c) 82%, #fff);
     position: relative;
     width: var(--key);
     height: var(--key);
@@ -145,7 +154,7 @@ main {
 }
 
 .key .sym {
-    font-size: 26px;
+    font-size: 23px;
     line-height: 1;
     font-weight: 700;
     white-space: nowrap;
@@ -154,8 +163,8 @@ main {
 }
 .key .sym.ascii { font-family: Consolas, Menlo, monospace; }
 .key .sym.logo {
-    width: 30px;
-    height: 30px;
+    width: 26px;
+    height: 26px;
     background: var(--tint);
     -webkit-mask: var(--logo) center / contain no-repeat;
     mask: var(--logo) center / contain no-repeat;
@@ -215,7 +224,7 @@ main {
     -webkit-box-orient: vertical;
     overflow: hidden;
 }
-.key.status .line.big { font-size: 24px; color: var(--tint); text-shadow: 0 0 8px color-mix(in srgb, var(--c) 70%, transparent); }
+.key.status .line.big { font-size: 21px; color: var(--tint); text-shadow: 0 0 8px color-mix(in srgb, var(--c) 70%, transparent); }
 .key.status .footer { font-size: 9px; font-weight: 600; opacity: .9; white-space: nowrap; }
 
 .key.ok { animation: flash-ok .6s; }
@@ -270,15 +279,15 @@ main {
 }
 .tab.active { background: #000; color: var(--text); }
 .tab.dragging { opacity: .45; }
-.tab.drop-before { box-shadow: inset 3px 0 0 #4da3ff; }
-.tab.drop-after { box-shadow: inset -3px 0 0 #4da3ff; }
+.tab.drop-before { box-shadow: inset 3px 0 0 var(--accent); }
+.tab.drop-after { box-shadow: inset -3px 0 0 var(--accent); }
 .tab-title { cursor: grab; }
 .tab-rename {
     font: inherit;
     font-size: 13px;
     color: var(--text);
     background: #0b0d12;
-    border: 1px solid #4da3ff;
+    border: 1px solid var(--accent);
     border-radius: 4px;
     padding: 1px 4px;
     outline: none;
@@ -326,8 +335,8 @@ main {
     overflow: hidden;
 }
 #screens.grid .screen.active {
-    border-color: #4da3ff;
-    box-shadow: 0 0 0 1px #4da3ff, 0 0 14px rgba(77, 163, 255, .35);
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent), 0 0 14px color-mix(in srgb, var(--accent) 35%, transparent);
 }
 #screens.grid .screen::after {
     content: attr(data-title);
@@ -342,7 +351,7 @@ main {
     background: rgba(26, 29, 35, .85);
     pointer-events: none;
 }
-#screens.grid .screen.active::after { color: #fff; background: #1f4f80; }
+#screens.grid .screen.active::after { color: #fff; background: var(--accent-strong); }
 
 /* Sélecteur de disposition : 1 terminal, 2x1, 2x2 */
 .layouts {
@@ -367,7 +376,7 @@ main {
 .layouts button:first-child { border-left: none; }
 .layouts button svg { width: 18px; height: 13px; }
 .layouts button:hover { color: var(--text); background: rgba(255, 255, 255, .05); }
-.layouts button.on { color: #fff; background: #1f4f80; }
+.layouts button.on { color: #fff; background: var(--accent-strong); }
 
 #toast {
     position: fixed;
@@ -392,7 +401,7 @@ main {
     .key.status .line.big { font-size: 20px; }
 }
 @media (max-height: 700px) {
-    :root { --key: min(64px, calc((100vw - 36px - (var(--count) - 1) * var(--gap)) / var(--count))); }
+    :root { --key: min(58px, calc((100vw - 36px - (var(--count) - 1) * var(--gap)) / var(--count))); }
 }
 
 /* ---------- Outils des terminaux : diffusion, notifications, recherche, taille du texte ---------- */
@@ -422,7 +431,7 @@ main {
 .tool:first-child { border-left: none; }
 .tool svg { width: 15px; height: 15px; }
 .tool:hover { color: var(--text); background: rgba(255, 255, 255, .05); }
-.tool.on { color: #fff; background: #1f4f80; }
+.tool.on { color: #fff; background: var(--accent-strong); }
 #broadcast.on { background: #8a4b00; }
 
 /* Activité d'un terminal caché : point bleu ; commande longue terminée : point vert */
@@ -431,8 +440,8 @@ main {
     width: 7px;
     height: 7px;
     border-radius: 50%;
-    background: #4da3ff;
-    box-shadow: 0 0 6px #4da3ff;
+    background: var(--accent);
+    box-shadow: 0 0 6px var(--accent);
 }
 .tab.done::before { background: var(--run); box-shadow: 0 0 6px var(--run); }
 
@@ -466,7 +475,7 @@ main {
     font-size: 13px;
     outline: none;
 }
-.searchbar input:focus { border-color: #4da3ff; }
+.searchbar input:focus { border-color: var(--accent); }
 .searchbar input.none { border-color: #ef5350; }
 .searchbar button {
     width: 26px;
@@ -514,7 +523,7 @@ main {
     cursor: pointer;
 }
 .picker-item:hover, .picker-action:hover { background: rgba(255, 255, 255, .07); }
-.picker-row.current .picker-item { color: #fff; background: #1f4f80; }
+.picker-row.current .picker-item { color: #fff; background: var(--accent-strong); }
 .picker-row.current .picker-item::before { content: "✓ "; }
 .picker-row.prod .picker-item { color: #ff8a80; }
 .picker-row.prod.current .picker-item { color: #fff; background: #b71c1c; }
@@ -544,7 +553,7 @@ main {
     font-size: 12px;
     cursor: pointer;
 }
-.palette-open:hover { color: var(--text); border-color: #4da3ff; }
+.palette-open:hover { color: var(--text); border-color: var(--accent); }
 .palette-open svg { width: 14px; height: 14px; }
 .palette-open kbd, .palette-help { font-size: 11px; color: var(--muted); }
 .palette-open kbd { padding: 1px 5px; border: 1px solid var(--border); border-radius: 4px; font-family: inherit; }
@@ -588,7 +597,7 @@ main {
     border-radius: 7px;
     cursor: pointer;
 }
-.palette-row.sel { background: #1f4f80; }
+.palette-row.sel { background: var(--accent-strong); }
 .palette-icon {
     flex: none;
     width: 22px;
@@ -626,7 +635,7 @@ main {
     color: #fff;
 }
 @keyframes wiggle { from { transform: rotate(-1.5deg); } to { transform: rotate(1.5deg); } }
-.key.fav-edit.on { box-shadow: inset 0 0 0 2px #4da3ff, 0 0 0 3px #050608, 0 4px 8px rgba(0, 0, 0, .7); }
+.key.fav-edit.on { box-shadow: inset 0 0 0 2px var(--accent), 0 0 0 3px #050608, 0 4px 8px rgba(0, 0, 0, .7); }
 
 .favform { padding: 16px 18px; display: flex; flex-direction: column; gap: 12px; }
 .favform h2 { margin: 0 0 2px; font-size: 16px; font-weight: 600; }
@@ -642,7 +651,7 @@ main {
     font-size: 14px;
     outline: none;
 }
-.favform input:focus { border-color: #4da3ff; }
+.favform input:focus { border-color: var(--accent); }
 .favform-actions { display: flex; gap: 6px; align-items: center; margin-top: 4px; }
 .favform-actions .grow { flex: 1; }
 .favform-actions button {
@@ -656,7 +665,7 @@ main {
     cursor: pointer;
 }
 .favform-actions button:hover { background: rgba(255, 255, 255, .06); }
-.favform-actions button.primary { background: #1f4f80; border-color: #4da3ff; }
+.favform-actions button.primary { background: var(--accent-strong); border-color: var(--accent); }
 .favform-actions button.danger { color: #ff8a80; border-color: #7f2a2a; }
 .favform-actions button[hidden] { display: none; }
 
@@ -666,10 +675,107 @@ main {
 .duplicate-box p { margin: 0 0 16px; color: var(--muted); font-size: 13px; }
 .duplicate-box button {
     padding: 8px 14px;
-    border: 1px solid #4da3ff;
+    border: 1px solid var(--accent);
     border-radius: 6px;
-    background: #1f4f80;
+    background: var(--accent-strong);
     color: #fff;
     font: inherit;
     cursor: pointer;
 }
+.favform label[hidden] { display: none; }
+.fav-kind { display: flex; gap: 16px; }
+.fav-kind[hidden] { display: none; }
+.fav-kind label { flex-direction: row; align-items: center; gap: 6px; font-size: 14px; color: var(--text); cursor: pointer; }
+.favform select {
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: #0b0d12;
+    color: var(--text);
+    font: inherit;
+    font-size: 14px;
+}
+.fav-kind label:has(input:disabled) { opacity: .4; cursor: not-allowed; }
+
+/* ---------- Thèmes aux couleurs des chartes (fonds sombres conservés pour la lisibilité) ---------- */
+/* Le motif généré reste visible en transparence (mode de fusion "luminosity") sur le dégradé de marque. */
+
+[data-theme="allianz"] {
+    /* Allianz Blue #003781 (Pantone 288 C) */
+    --accent: #5b9bea;
+    --accent-strong: #003781;
+    --brand-line: #3f7fd0;
+    --header-bg: linear-gradient(90deg, #003781 0%, #00296a 45%, var(--bg) 100%);
+    --bar-bg: url("/img/deck-bar.jpg") center / 100% 100% no-repeat, linear-gradient(90deg, #001a40 0%, #003781 60%, #0a4a9c 100%);
+    --bar-blend: luminosity, normal;
+}
+
+[data-theme="bnp"] {
+    /* Vert BNP Paribas #00965E (Pantone 340 C) */
+    --accent: #3cc48d;
+    --accent-strong: #00704a;
+    --brand-line: #00965e;
+    --header-bg: linear-gradient(90deg, #00714a 0%, #004a31 45%, var(--bg) 100%);
+    --bar-bg: url("/img/deck-bar.jpg") center / 100% 100% no-repeat, linear-gradient(90deg, #00261a 0%, #006b45 60%, #00965e 100%);
+    --bar-blend: luminosity, normal;
+}
+
+[data-theme="estreem"] {
+    /* Estreem : bleu nuit #002D41, cyan #0FA5B6 (charte relevée sur estreem.fr) */
+    --accent: #2cc6d6;
+    --accent-strong: #098694;
+    --brand-line: #0fa5b6;
+    --header-bg: linear-gradient(90deg, #002d41 0%, #01384f 45%, var(--bg) 100%);
+    --bar-bg: url("/img/deck-bar.jpg") center / 100% 100% no-repeat, linear-gradient(90deg, #00121a 0%, #002d41 55%, #0b6f7c 100%);
+    --bar-blend: luminosity, normal;
+}
+
+[data-theme="laposte"] {
+    /* La Poste : jaune #FFCB05, bleu #003DA5 (charte relevée sur laposte.fr) */
+    --accent: #ffcb05;
+    --accent-strong: #003da5;
+    --brand-line: #ffcb05;
+    --header-bg: linear-gradient(90deg, #003da5 0%, #002a73 45%, var(--bg) 100%);
+    --bar-bg: url("/img/deck-bar.jpg") center / 100% 100% no-repeat, linear-gradient(90deg, #001b4d 0%, #003da5 70%, #1652b8 100%);
+    --bar-blend: luminosity, normal;
+}
+
+/* Sélecteur de thème (en-tête) */
+.theme-select {
+    padding: 4px 8px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: #0b0d12;
+    color: var(--muted);
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+}
+.theme-select:hover, .theme-select:focus { color: var(--text); border-color: var(--accent); outline: none; }
+
+/* Couleur d'un groupe de favoris */
+.fav-colors { display: flex; flex-direction: column; gap: 6px; }
+.fav-colors[hidden] { display: none; }
+.fav-colors-title { font-size: 12px; color: var(--muted); }
+.swatches { display: flex; flex-wrap: wrap; gap: 8px; }
+.swatch {
+    position: relative;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    border: 2px solid transparent;
+    border-radius: 50%;
+    background: var(--sw);
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, .15) inset;
+    cursor: pointer;
+}
+.swatch:hover { transform: scale(1.1); }
+.swatch.on { border-color: #fff; box-shadow: 0 0 0 2px var(--accent); }
+.swatch.default::after { content: "★"; position: absolute; inset: 0; display: grid; place-items: center; font-size: 11px; color: #1b2a10; }
+.swatch.picker {
+    display: grid;
+    place-items: center;
+    background: conic-gradient(#e53935, #fbc02d, #43a047, #1e88e5, #8e24aa, #e53935);
+}
+.swatch.picker.on { background: var(--sw); }
+.swatch.picker input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }

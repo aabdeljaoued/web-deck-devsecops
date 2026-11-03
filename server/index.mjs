@@ -135,6 +135,8 @@ wss.on("connection", (ws) => {
         t: "hello",
         pages: deck.pages,
         titles: deck.titles,
+        parents: deck.parents,
+        favGroups: favorites.groups(),
         shells: ctx.shells.map(({ name, kind }) => ({ name, kind })),
         windowsPty: windowsPty(),
         sessions: terminals.list(),
@@ -166,13 +168,13 @@ wss.on("connection", (ws) => {
                 case "fav-update":
                 case "fav-remove":
                 case "fav-move": {
-                    const def = { label: msg.label, url: msg.url, icon: msg.icon };
+                    const def = { kind: msg.kind, label: msg.label, url: msg.url, icon: msg.icon, color: msg.color, ...("parent" in msg ? { parent: msg.parent } : {}) };
                     if (msg.t === "fav-add") favorites.add(def);
                     if (msg.t === "fav-update") favorites.update(String(msg.id), def);
                     if (msg.t === "fav-remove") favorites.remove(String(msg.id));
                     if (msg.t === "fav-move") favorites.move(String(msg.id), msg.delta);
                     deck = buildDeck(ctx, favorites.list());
-                    broadcast({ t: "deck", pages: deck.pages, titles: deck.titles });
+                    broadcast({ t: "deck", pages: deck.pages, titles: deck.titles, parents: deck.parents, favGroups: favorites.groups() });
                     reply({ t: "fav-saved" });
                     break;
                 }

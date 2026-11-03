@@ -5,3 +5,4 @@ paths.*.json
 .DS_Store
 Thumbs.db
 .deck-sessions.json
+favoris.json

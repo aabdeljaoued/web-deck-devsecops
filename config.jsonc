@@ -5,7 +5,8 @@
     "port": 7777,
 
     // Rubriques (dossiers) de la page d'accueil, dans l'ordre d'affichage.
-    // Disponibles : vscode, git, k8s, docker, helm, terraform, ansible, brew, sec, vault, ssh, openssl, veille
+    // Disponibles : vscode, git, k8s, docker, helm, terraform, ansible, brew, sec, vault, ssh, openssl, veille,
+    //               favoris (tes sites, ajoutés depuis le deck : touche "Ajouter" ; enregistrés dans favoris.json, hors Git)
     // (brew = Homebrew sous macOS, Scoop sous Windows ; ansible masquée sous Windows)
     "sections": [
         "vscode",
@@ -18,12 +19,13 @@
         "brew",
         "ssh",
         "openssl",
-        "veille"
+        "veille",
+        "favoris"
         // "sec",
         // "vault"
     ],
 
-    // Raccourcis de la page d'accueil, placés après les dossiers (15 touches au total).
+    // Raccourcis de la page d'accueil, placés après les dossiers (18 touches au total).
     // Disponibles : vscode, crc-start, crc-console, github, owasp, nvd, mitre, lock,
     //               kube-status, git-status, container-status (voyants)
     "shortcuts": [

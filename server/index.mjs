@@ -10,6 +10,7 @@ import path from "node:path";
 import { WebSocketServer } from "ws";
 
 import { buildDeck, ICONS } from "./catalog.mjs";
+import { Favorites } from "./favorites.mjs";
 import { iconFile } from "./icons.mjs";
 import { loadConfig, ROOT } from "./config.mjs";
 import { launch, openBrowser, windowsPty } from "./platform.mjs";
@@ -20,7 +21,8 @@ const HOST = "127.0.0.1";
 const COOKIE = "deck_token";
 
 const ctx = loadConfig();
-const deck = buildDeck(ctx);
+const favorites = new Favorites(path.join(ROOT, "favoris.json"));
+let deck = buildDeck(ctx, favorites.list());
 const port = ctx.port;
 const token = loadToken();
 const deckUrl = `http://${HOST}:${port}/?token=${token}`;
@@ -159,6 +161,21 @@ wss.on("connection", (ws) => {
                 case "kube-use": await status.useKube({ context: msg.context, namespace: msg.namespace }); reply({ t: "kube-used" }); break;
                 case "git-list": reply({ t: "git-list", ...status.listRepos() }); break;
                 case "git-select": await status.selectRepo(String(msg.repo)); break;
+                // Favoris : modifiés depuis la page, puis deck reconstruit et renvoyé à toutes les pages
+                case "fav-add":
+                case "fav-update":
+                case "fav-remove":
+                case "fav-move": {
+                    const def = { label: msg.label, url: msg.url, icon: msg.icon };
+                    if (msg.t === "fav-add") favorites.add(def);
+                    if (msg.t === "fav-update") favorites.update(String(msg.id), def);
+                    if (msg.t === "fav-remove") favorites.remove(String(msg.id));
+                    if (msg.t === "fav-move") favorites.move(String(msg.id), msg.delta);
+                    deck = buildDeck(ctx, favorites.list());
+                    broadcast({ t: "deck", pages: deck.pages, titles: deck.titles });
+                    reply({ t: "fav-saved" });
+                    break;
+                }
                 case "in": terminals.write(String(msg.sid), String(msg.d)); break;
                 case "resize": terminals.resize(String(msg.sid), msg.cols, msg.rows); break;
                 case "close": terminals.close(String(msg.sid)); break;

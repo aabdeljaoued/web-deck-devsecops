@@ -47,6 +47,15 @@ Linux fonctionne aussi (`./start.sh`) : sans bloc `linux` dans `paths.json`, cel
 - Les touches tapent la variante adaptée au shell de l'onglet actif (ex. `$env:VAULT_ADDR=` dans PowerShell, `export VAULT_ADDR=` dans bash/zsh, `set VAULT_ADDR=` dans cmd). Une touche sans variante pour ce shell affiche un message.
 - **Palette de commandes** (`⌘K` / `Ctrl+K`, ou « Rechercher » en haut à droite) : tape quelques lettres (`exec`, `plan`, `logs`…) pour trouver et lancer n'importe quelle touche, sans passer par les rubriques.
 
+### Favoris
+
+La rubrique **Favoris** regroupe tes sites liés à la mission (Jira, Confluence, Grafana, Argo CD, GitLab, consoles cloud…) :
+
+- **Ajouter** : adresse (le `https://` est ajouté s'il manque), nom (par défaut le nom de domaine) et icône facultative. Sans icône, elle est devinée d'après l'adresse (GitHub, GitLab, Jira / Confluence, Grafana, Jenkins, Argo, Kibana, Vault, Harbor, Sonar…), sinon un globe.
+- **Modifier** : les favoris se mettent à trembler ; un clic ouvre leur formulaire pour les renommer, les déplacer (◀ ▶) ou les supprimer. **Terminé** pour revenir à la normale.
+- Jusqu'à 12 favoris. Ils apparaissent aussi dans la palette (`⌘K`).
+- Enregistrés dans `favoris.json` à la racine du projet, **exclu de Git** : les adresses internes de la mission ne partent pas sur le dépôt. Le fichier peut aussi être édité à la main (`label`, `url`, `icon`), puis le serveur redémarré.
+
 ### Voyants
 
 - **K8s** : un clic ouvre la liste des **contextes** et des **namespaces** ; un clic bascule (`kubectl config use-context` / `set-context --current --namespace`). Les contextes et namespaces de production sont en rouge.
@@ -78,7 +87,7 @@ Après une modification de `config.jsonc` ou `paths.json`, redémarrer le serveu
 |---|---|
 | `port` | Port local (défaut 7777). Le serveur n'écoute que sur `127.0.0.1`. |
 | `sections` | Rubriques (dossiers) de l'accueil, dans l'ordre. Commenter une ligne avec `//` pour la masquer. |
-| `shortcuts` | Raccourcis de l'accueil, placés après les dossiers (15 touches au total). |
+| `shortcuts` | Raccourcis de l'accueil, placés après les dossiers (18 touches au total). |
 | `prodPattern` | Expression régulière : le voyant kubectl passe au rouge si le contexte ou le namespace correspond. |
 | `clearKey` | Ajoute la touche `clear` dans les rubriques terminal. |
 | `excludeTools` | Masque partout les touches dont la commande commence par cet outil (ex. `crc`, `helm`). |
@@ -116,7 +125,7 @@ Sans toucher au code : `customSections` (rubriques) et `customShortcuts` (raccou
 }
 ```
 
-`command` peut avoir des variantes par système (`{ "windows": …, "mac": … }`) et/ou par shell (`{ "posix": …, "powershell": …, "cmd": … }`). `enter: true` exécute (pastille verte), sinon la commande est seulement tapée. Icônes : `lucide-<nom>` ([lucide.dev/icons](https://lucide.dev/icons)) ou un logo ([simpleicons.org](https://simpleicons.org), ex. `github`). L'accueil a 15 cases au total.
+`command` peut avoir des variantes par système (`{ "windows": …, "mac": … }`) et/ou par shell (`{ "posix": …, "powershell": …, "cmd": … }`). `enter: true` exécute (pastille verte), sinon la commande est seulement tapée. Icônes : `lucide-<nom>` ([lucide.dev/icons](https://lucide.dev/icons)) ou un logo ([simpleicons.org](https://simpleicons.org), ex. `github`). L'accueil a 18 cases au total.
 
 ### Ajouter une rubrique ou une touche (dans le code)
 

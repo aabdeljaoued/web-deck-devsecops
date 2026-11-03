@@ -20,7 +20,8 @@ const state = {
     pending: [],        // textes à envoyer au prochain terminal ouvert par cette page
     broadcast: false,   // diffusion : saisie et touches envoyées à tous les terminaux visibles
     notify: loadPref("deck-notify") === "1",              // notification quand une commande longue se termine
-    fontSize: Number(loadPref("deck-font")) || 14         // taille du texte des terminaux
+    fontSize: Number(loadPref("deck-font")) || 14,        // taille du texte des terminaux
+    favEdit: false      // rubrique Favoris en mode Modifier : un clic sur un favori ouvre son formulaire
 };
 const requestId = crypto.randomUUID();
 /** Dispositions : nombre de terminaux visibles, colonnes et lignes. */
@@ -106,6 +107,17 @@ function handle(msg) {
             trackActivity(msg.sid, t);
             break;
         }
+        case "deck":
+            // Favoris modifiés (ici ou dans une autre page) : touches mises à jour
+            state.pages = msg.pages;
+            state.titles = msg.titles;
+            if (!state.pages[state.page]) state.page = "root";
+            render();
+            break;
+        case "fav-saved":
+            if (favMoving) favMoving = false;   // déplacement : le formulaire reste ouvert
+            else closeFavForm();
+            break;
         case "kube-list":
             showKubePicker(msg);
             break;
@@ -154,6 +166,8 @@ function render() {
     // L'espace extensible pousse Verrouiller et clear contre le bord droit de la fenêtre
     const spacer = Object.assign(document.createElement("div"), { className: "spacer" });
     grid.replaceChildren(...left.map(keyElement), spacer, ...right.map(keyElement));
+    // Taille des touches : la ligne doit tenir dans la fenêtre (15 cases au moins)
+    document.documentElement.style.setProperty("--count", Math.max(15, left.length + right.length));
     renderCrumbs();
 }
 
@@ -164,8 +178,8 @@ function render() {
 function rowOrder(keys) {
     const present = keys.filter(Boolean);
     const first = present.filter((k) => k.type === "back");
-    const lock = present.filter((k) => k.pin === "4,2");   // touche épinglée en bas à droite : Verrouiller
-    const last = [...lock, ...present.filter((k) => k.type === "clear")];
+    // À droite : Verrouiller, Modifier / Ajouter des favoris (right), puis clear
+    const last = [...present.filter((k) => k.right), ...present.filter((k) => k.type === "clear")];
     const middle = present.filter((k) => !first.includes(k) && !last.includes(k));
     return { left: [...first, ...middle], right: last };
 }
@@ -207,6 +221,14 @@ function keyElement(key) {
         const badge = document.createElement("span");
         badge.className = `badge ${key.badge}`;
         el.append(badge);
+    }
+    if (key.fav && state.favEdit) {
+        el.classList.add("editing");
+        el.title = `Modifier « ${key.label} »`;
+    }
+    if (key.type === "fav-edit") {
+        el.classList.toggle("on", state.favEdit);
+        el.querySelector(".label").textContent = state.favEdit ? "Terminé" : "Modifier";
     }
     el.addEventListener("click", () => press(key, el));
     return el;
@@ -262,8 +284,16 @@ function press(key, el) {
     pulse(el);
     switch (key.type) {
         case "folder": return go(key.page);
-        case "back": return go("root");
-        case "web": return window.open(key.url, "_blank", "noopener,noreferrer");
+        case "back":
+            state.favEdit = false;
+            return go("root");
+        case "web":
+            if (key.fav && state.favEdit) return openFavForm(key);
+            return window.open(key.url, "_blank", "noopener,noreferrer");
+        case "fav-add": return openFavForm();
+        case "fav-edit":
+            state.favEdit = !state.favEdit;
+            return render();
         case "run": return send({ t: "run", id: key.id });
         case "text": {
             const command = commandFor(key);
@@ -814,8 +844,9 @@ function paletteEntries() {
     const entries = [];
     for (const [page, keys] of Object.entries(state.pages)) {
         for (const key of keys) {
-            if (!key || ["status", "back", "clear"].includes(key.type)) continue;
-            const detail = key.type === "text" ? commandFor(key) : key.type === "web" ? key.url : key.type === "folder" ? "rubrique" : "programme";
+            if (!key || ["status", "back", "clear", "fav-edit"].includes(key.type)) continue;
+            const detail = key.type === "text" ? commandFor(key) : key.type === "web" ? key.url : key.type === "folder" ? "rubrique"
+                : key.type === "fav-add" ? "nouveau favori" : "programme";
             if (detail == null) continue;
             const id = `${key.type}|${key.label}|${detail}`;
             if (seen.has(id)) continue;
@@ -877,6 +908,38 @@ function runPalette(i) {
     press(entry.key, document.querySelector(`[data-id="${CSS.escape(entry.key.id)}"]`));
 }
 
+// ---------- Favoris : formulaire d'ajout / de modification ----------
+
+let favEditing = null;   // touche du favori modifié, null pour un ajout
+let favMoving = false;
+
+function openFavForm(key = null) {
+    favEditing = key;
+    const form = $("#favform");
+    form.querySelector("h2").textContent = key ? "Modifier le favori" : "Nouveau favori";
+    $("#fav-label").value = key?.label ?? "";
+    $("#fav-url").value = key?.url ?? "";
+    $("#fav-icon").value = key?.favIcon ?? "";   // vide = icône automatique
+    for (const id of ["#fav-remove", "#fav-left", "#fav-right"]) $(id).hidden = !key;
+    $("#favdialog").hidden = false;
+    $(key ? "#fav-label" : "#fav-url").focus();
+}
+
+function closeFavForm() {
+    $("#favdialog").hidden = true;
+    favEditing = null;
+}
+
+function submitFav(ev) {
+    ev.preventDefault();
+    const def = { label: $("#fav-label").value, url: $("#fav-url").value, icon: $("#fav-icon").value };
+    if (!def.label.trim() && def.url.trim()) {
+        // Nom par défaut : le nom de domaine
+        try { def.label = new URL(/^[a-z]+:\/\//i.test(def.url) ? def.url : `https://${def.url}`).hostname.replace(/^www\./, ""); } catch { /* le serveur signalera l'adresse invalide */ }
+    }
+    send(favEditing ? { t: "fav-update", id: favEditing.fav, ...def } : { t: "fav-add", ...def });
+}
+
 function refreshToolbar() {
     for (const [id, on] of [["#broadcast", state.broadcast], ["#notify", state.notify]]) {
         $(id).classList.toggle("on", on);
@@ -916,6 +979,23 @@ $("#palette-input").addEventListener("keydown", (ev) => {
     if (ev.key === "Escape") closePalette();
 });
 $("#palette").addEventListener("mousedown", (ev) => { if (ev.target.id === "palette") closePalette(); });
+$("#favform").addEventListener("submit", submitFav);
+$("#fav-cancel").addEventListener("click", closeFavForm);
+$("#fav-remove").addEventListener("click", () => {
+    if (favEditing) send({ t: "fav-remove", id: favEditing.fav });
+});
+for (const [id, delta] of [["#fav-left", -1], ["#fav-right", 1]]) {
+    $(id).addEventListener("click", () => {
+        if (!favEditing) return;
+        favMoving = true;
+        send({ t: "fav-move", id: favEditing.fav, delta });
+    });
+}
+$("#favdialog").addEventListener("mousedown", (ev) => { if (ev.target.id === "favdialog") closeFavForm(); });
+$("#favform").addEventListener("keydown", (ev) => {
+    ev.stopPropagation();
+    if (ev.key === "Escape") closeFavForm();
+});
 document.addEventListener("mousedown", (ev) => {
     if (!$("#picker").hidden && !ev.target.closest("#picker, .key.status")) closePicker();
 });

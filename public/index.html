@@ -65,6 +65,24 @@
         </div>
     </div>
 
+    <div id="favdialog" class="palette" hidden>
+        <form id="favform" class="palette-box favform" autocomplete="off">
+            <h2>Nouveau favori</h2>
+            <label>Adresse <input id="fav-url" type="text" placeholder="https://grafana.ma-mission.fr" required spellcheck="false"></label>
+            <label>Nom <input id="fav-label" type="text" placeholder="nom de domaine si vide" maxlength="30"></label>
+            <label>Icône <span class="hint">vide = automatique d'après l'adresse ; sinon « lucide-book », « github »…</span>
+                <input id="fav-icon" type="text" placeholder="automatique" spellcheck="false"></label>
+            <div class="favform-actions">
+                <button type="button" id="fav-left" title="Déplacer à gauche">◀</button>
+                <button type="button" id="fav-right" title="Déplacer à droite">▶</button>
+                <button type="button" id="fav-remove" class="danger">Supprimer</button>
+                <span class="grow"></span>
+                <button type="button" id="fav-cancel">Annuler</button>
+                <button type="submit" class="primary">Enregistrer</button>
+            </div>
+        </form>
+    </div>
+
     <div id="toast" role="status" aria-live="polite"></div>
     <script type="module" src="/app.js"></script>
 </body>

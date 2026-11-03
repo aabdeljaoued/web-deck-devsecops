@@ -11,7 +11,7 @@ import { platform } from "./platform.mjs";
 export const COLORS = {
     git: "#F05032", k8s: "#326CE5", sec: "#C62828", terraform: "#7B42BC", vault: "#FFC107",
     ssh: "#2E7D32", openssl: "#AD1457", docker: "#0898C8", helm: "#5C6BC0", vscode: "#007ACC",
-    tool: "#37474F", web: "#00897B", danger: "#B71C1C", brew: "#FBB040", ansible: "#5BBDBF"
+    tool: "#37474F", web: "#00897B", danger: "#B71C1C", brew: "#FBB040", ansible: "#5BBDBF", fav: "#9CCC65"
 };
 const C = COLORS;
 
@@ -116,7 +116,7 @@ function buildCatalog(ctx) {
     // Verrouillage du poste : toujours en bas à droite (pin), sur l'accueil comme dans les dossiers
     const lock = () => {
         const key = run("Verrouiller", "🔒", { windows: ["rundll32.exe", "user32.dll,LockWorkStation"], mac: ["pmset", "displaysleepnow"] }, C.danger);
-        return key && { ...key, pin: "4,2", icon: "lock" };
+        return key && { ...key, pin: "4,2", icon: "lock", right: true };
     };
     const openWorkspace = [apps.vscode, workspace];
     const sshConfig = sh("code $HOME/.ssh/config", "code $HOME/.ssh/config", "code %USERPROFILE%\\.ssh\\config");
@@ -373,7 +373,9 @@ function buildCatalog(ctx) {
 
 // ---------- Mise en page ----------
 
-const POSITIONS = [0, 1, 2].flatMap((r) => [0, 1, 2, 3, 4].map((c) => `${c},${r}`));   // ordre de lecture
+// 5 x 4 cases en ordre de lecture (l'accueil peut avoir jusqu'à 18 touches sur la ligne)
+const POSITIONS = [0, 1, 2, 3].flatMap((r) => [0, 1, 2, 3, 4].map((c) => `${c},${r}`));
+const ROOT_MAX = 18;
 
 /** Place les touches à position fixe (pin) puis remplit les cases libres dans l'ordre. */
 function layout(keys, page = {}) {
@@ -383,10 +385,6 @@ function layout(keys, page = {}) {
     return page;
 }
 
-/**
- * Pages du deck : { root: [15 touches ou null], <rubrique>: [...] }, et l'index des touches par id
- * (le serveur ne lance que des commandes "run" de ce catalogue, jamais une commande venue du navigateur).
- */
 // ---------- Touches personnelles (config.jsonc : customSections, customShortcuts) ----------
 
 const ID = /^[a-z0-9][a-z0-9-]{0,30}$/;
@@ -444,9 +442,24 @@ function customCatalog(cfg) {
     return { sections, shortcuts };
 }
 
-export function buildDeck(ctx) {
+/** Rubrique "favoris" : sites ajoutés depuis le deck (server/favorites.mjs), plus Modifier et Ajouter à droite. */
+function favoritesSection(favorites) {
+    const keys = favorites.map((f) => ({ ...web(f.label, "★", f.url, C.fav), icon: f.icon, fav: f.id, favIcon: f.chosen ?? "" }));
+    keys.push(
+        { type: "fav-edit", label: "Modifier", sym: "✎", icon: "lucide-pencil", color: C.tool, right: true },
+        { type: "fav-add", label: "Ajouter", sym: "+", icon: "lucide-plus", color: C.fav, right: true }
+    );
+    return { label: "Favoris", sym: "★", icon: "lucide-bookmark", color: C.fav, keys };
+}
+
+/**
+ * Pages du deck : { root: [touches ou null], <rubrique>: [...] }, et l'index des touches par id
+ * (le serveur ne lance que des commandes "run" de ce catalogue, jamais une commande venue du navigateur).
+ */
+export function buildDeck(ctx, favorites = []) {
     const { cfg } = ctx;
     const { shortcuts: SHORTCUTS, sections: SECTIONS, clear } = buildCatalog(ctx);
+    SECTIONS.favoris = favoritesSection(favorites);
     const custom = customCatalog(cfg);
     for (const [id, def] of Object.entries(custom.sections)) {
         if (SECTIONS[id]) throw new Error(`customSections : "${id}" existe déjà, choisis un autre identifiant`);
@@ -467,13 +480,14 @@ export function buildDeck(ctx) {
     const skipped = (cfg.shortcuts ?? []).filter((s) => !SHORTCUTS[s]);
     const shortcuts = (cfg.shortcuts ?? []).filter((s) => allowed(SHORTCUTS[s]));
     // Rubrique sans aucune touche sur ce système (ex. Ansible sous Windows) : pas de dossier vide
+    // (sauf Favoris, qui a toujours Ajouter)
     const sections = (cfg.sections ?? []).filter((s) => {
         const empty = !SECTIONS[s].keys.some(allowed);
         if (empty) skipped.push(s);
         return !empty;
     });
     const total = sections.length + shortcuts.length;
-    if (total > 15) throw new Error(`${total} touches demandées sur la page d'accueil (max 15). Retire des rubriques ou des raccourcis.`);
+    if (total > ROOT_MAX) throw new Error(`${total} touches demandées sur la page d'accueil (max ${ROOT_MAX}). Retire des rubriques ou des raccourcis.`);
 
     const layouts = {};
     const rootKeys = [];

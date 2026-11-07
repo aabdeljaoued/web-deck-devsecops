@@ -178,6 +178,8 @@ wss.on("connection", (ws) => {
                 case "vault-unlock": await vault.unlock(msg.password); break;
                 case "vault-lock": vault.lock("verrouillé"); break;
                 case "vault-password": await vault.changePassword(msg.current, msg.next); reply({ t: "vault-ok", text: "mot de passe maître changé" }); break;
+                case "vault-export": reply({ t: "vault-export", data: vault.exportBox() }); break;
+                case "vault-import": reply({ t: "vault-imported", mode: msg.mode, ...(await vault.importBox(msg.data, String(msg.mode), msg.password)) }); break;
                 case "note-save": reply({ t: "note-saved", id: vault.saveNote(msg), req: msg.req }); break;
                 case "note-delete": vault.deleteNote(String(msg.id)); break;
                 case "secret-save": vault.saveSecret(msg); reply({ t: "vault-ok", text: "secret enregistré", close: true }); break;

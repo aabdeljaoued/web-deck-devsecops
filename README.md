@@ -90,7 +90,14 @@ Le bouton **Coffre** (en haut à droite, ou « coffre » dans la palette `⌘K`)
   - **Afficher** : montre la valeur 15 s.
 - **Verrouillage** : bouton **Verrouiller**, automatiquement après 15 min d'inactivité, et à l'arrêt du serveur. Verrouillé, plus rien du contenu n'est gardé dans la page ni en mémoire du serveur.
 
-Sécurité : fichier `vault.enc` à la racine du projet, **exclu de Git**, lisible par l'utilisateur seul, chiffré en **AES-256-GCM** avec une clé dérivée du mot de passe maître par **scrypt** ; chaque échec de mot de passe ralentit la tentative suivante (jusqu'à 5 s). Les valeurs des secrets ne quittent le serveur que sur demande explicite (Copier, Afficher). Pour sauvegarder le coffre, copier `vault.enc` (il reste chiffré). Vérifier que la politique de sécurité du client autorise ce type de stockage pour ses identifiants.
+Sécurité : fichier `vault.enc` à la racine du projet, **exclu de Git**, lisible par l'utilisateur seul, chiffré en **AES-256-GCM** avec une clé dérivée du mot de passe maître par **scrypt** ; chaque échec de mot de passe ralentit la tentative suivante (jusqu'à 5 s). Les valeurs des secrets ne quittent le serveur que sur demande explicite (Copier, Afficher). Pour sauvegarder le coffre, copier `vault.enc` (il reste chiffré).
+
+**D'une machine à l'autre** : Réglages › Coffre › **Exporter…** (coffre déverrouillé) télécharge `coffre-deck-AAAA-MM-JJ.json`, toujours chiffré par le mot de passe maître. Sur l'autre machine, **Importer…** ce fichier et saisir le mot de passe maître **du fichier** :
+- **Utiliser ce coffre** (aucun coffre sur cette machine) : le fichier devient le coffre, déverrouillé ;
+- **Fusionner** (coffre déverrouillé) : ajoute les notes et secrets manquants, garde la version la plus récente d'un même élément ; le coffre garde son propre mot de passe ;
+- **Remplacer tout** (coffre déverrouillé, deux clics) : l'ancien coffre est copié dans `vault.enc.bak` (exclu de Git), le nouveau s'ouvre avec le mot de passe du fichier.
+
+Un mauvais mot de passe ne modifie rien (et ralentit l'essai suivant, comme le déverrouillage). Vérifier que la politique de sécurité du client autorise ce type de stockage pour ses identifiants.
 
 ### Réglages et retour automatique à l'accueil
 

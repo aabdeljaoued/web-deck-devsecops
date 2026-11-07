@@ -194,6 +194,17 @@ function handle(msg) {
         case "fav-export":
             downloadJson(msg.data, `favoris-deck-${new Date().toISOString().slice(0, 10)}.json`);
             break;
+        case "vault-export":
+            downloadJson(msg.data, `coffre-deck-${new Date().toISOString().slice(0, 10)}.json`, "coffre exporté (chiffré)");
+            break;
+        case "vault-imported": {
+            hideVaultImport();
+            const n = `${msg.notes} note(s), ${msg.secrets} secret(s)`;
+            toast(msg.mode === "merge" ? `coffre fusionné : ${msg.added} ajouté(s), ${msg.updated} mis à jour (fichier : ${n})`
+                : msg.mode === "replace" ? `coffre remplacé (${n}) ; il s'ouvre maintenant avec le mot de passe du fichier ; ancien coffre dans vault.enc.bak`
+                : `coffre importé et déverrouillé (${n})`, "ok");
+            break;
+        }
         case "fav-imported": {
             hideImportConfirm();
             const what = `${msg.added} favori(s) ${msg.mode === "replace" ? "importé(s), anciens remplacés" : "ajouté(s)"}`;
@@ -1255,6 +1266,7 @@ function applyVault(view) {
         loadNoteInEditor();
     }
     renderVault();
+    refreshVaultIo();
 }
 
 function renderVault() {
@@ -1486,6 +1498,7 @@ function openSettings() {
     $("#set-appearance").value = state.settings.appearance ?? "dark";
     $("#set-theme").value = state.settings.missionTheme ?? "";
     $("#settings").hidden = false;
+    refreshVaultIo();
     $("#set-appearance").focus();
 }
 
@@ -1493,14 +1506,14 @@ function openSettings() {
 
 let pendingImport = null;
 
-function downloadJson(data, filename) {
+function downloadJson(data, filename, what = "favoris exportés") {
     const url = URL.createObjectURL(new Blob([`${JSON.stringify(data, null, 2)}\n`], { type: "application/json" }));
     const a = Object.assign(document.createElement("a"), { href: url, download: filename });
     document.body.append(a);
     a.click();
     a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
-    toast(`favoris exportés : ${filename} (dans Téléchargements)`, "ok");
+    toast(`${what} : ${filename} (dans Téléchargements)`, "ok");
 }
 
 /** Fichier choisi : lu et résumé dans la page, puis l'utilisateur choisit Fusionner ou Remplacer. */
@@ -1543,10 +1556,72 @@ function importFavorites(mode) {
     send({ t: "fav-import", mode, data: pendingImport });
 }
 
+// ---------- Export / import du coffre (Réglages) : le fichier reste chiffré ----------
+
+let pendingVault = null;
+
+/** Boutons selon l'état du coffre : export et fusion seulement déverrouillé, "utiliser" seulement sans coffre. */
+function refreshVaultIo() {
+    const v = state.vault;
+    $("#vault-export").disabled = !v.unlocked;
+    $("#vault-export").title = v.unlocked ? "Télécharge le coffre, toujours chiffré" : "Déverrouille d'abord le coffre";
+    $("#vault-io-state").textContent = v.exists === false ? "aucun coffre sur cette machine" : v.unlocked ? "" : "coffre verrouillé : déverrouille-le pour exporter ou fusionner";
+    const open = Boolean(pendingVault);
+    $("#vault-import-use").hidden = !open || v.exists !== false;
+    $("#vault-import-merge").hidden = !open || !v.unlocked;
+    $("#vault-import-replace").hidden = !open || !v.unlocked;
+    $("#vault-import-open").hidden = !open || !v.exists || v.unlocked;
+    $("#vault-import-pass").hidden = !open || (v.exists && !v.unlocked);
+}
+
+async function readVaultFile(file) {
+    if (!file) return;
+    try {
+        if (file.size > 900 * 1024) throw new Error("fichier trop gros (900 Ko au plus)");
+        const data = JSON.parse(await file.text());
+        const box = data?.kind === "coffre" ? data.vault : data;
+        if (box?.kdf !== "scrypt" || !box?.data) throw new Error("ce n'est pas un export du coffre du deck");
+        pendingVault = data;
+        const when = data.exported ? ` exporté le ${new Date(data.exported).toLocaleString("fr-FR")}` : "";
+        $("#vault-import-summary").textContent = `${file.name}${when} (contenu chiffré)`;
+        $("#vault-import-confirm").hidden = false;
+        refreshVaultIo();
+        if (!$("#vault-import-pass").hidden) $("#vault-import-pass").focus();
+    } catch (err) {
+        toast(`import impossible : ${err.message.split("\n")[0]}`);
+    } finally {
+        $("#vault-import-file").value = "";
+    }
+}
+
+function hideVaultImport() {
+    pendingVault = null;
+    $("#vault-import-pass").value = "";
+    $("#vault-import-confirm").hidden = true;
+    $("#vault-import-replace").classList.remove("armed");
+    $("#vault-import-replace").textContent = "Remplacer tout";
+    refreshVaultIo();
+}
+
+function importVault(mode) {
+    if (!pendingVault) return;
+    const password = $("#vault-import-pass").value;
+    if (!password) { toast("saisis le mot de passe maître du fichier importé"); $("#vault-import-pass").focus(); return; }
+    const btn = $("#vault-import-replace");
+    if (mode === "replace" && !btn.classList.contains("armed")) {
+        btn.classList.add("armed");
+        btn.textContent = "Confirmer le remplacement";
+        return;
+    }
+    send({ t: "vault-import", mode, data: pendingVault, password });
+    $("#vault-import-pass").value = "";
+}
+
 /** Fermeture sans enregistrer : l'aperçu de l'apparence est annulé. */
 function closeSettings() {
     $("#settings").hidden = true;
     hideImportConfirm();
+    hideVaultImport();
     applyAppearance(state.settings.appearance, state.settings.missionTheme);
 }
 
@@ -1606,6 +1681,20 @@ $("#fav-import-file").addEventListener("change", (ev) => readImportFile(ev.targe
 $("#fav-import-merge").addEventListener("click", () => importFavorites("merge"));
 $("#fav-import-replace").addEventListener("click", () => importFavorites("replace"));
 $("#fav-import-cancel").addEventListener("click", hideImportConfirm);
+$("#vault-export").addEventListener("click", () => send({ t: "vault-export" }));
+$("#vault-import").addEventListener("click", () => $("#vault-import-file").click());
+$("#vault-import-file").addEventListener("change", (ev) => readVaultFile(ev.target.files[0]));
+$("#vault-import-use").addEventListener("click", () => importVault("use"));
+$("#vault-import-merge").addEventListener("click", () => importVault("merge"));
+$("#vault-import-replace").addEventListener("click", () => importVault("replace"));
+$("#vault-import-cancel").addEventListener("click", hideVaultImport);
+$("#vault-import-open").addEventListener("click", () => { closeSettings(); openVault(); });
+// Entrée dans le mot de passe : action principale de l'import, pas l'enregistrement des réglages
+$("#vault-import-pass").addEventListener("keydown", (ev) => {
+    if (ev.key !== "Enter") return;
+    ev.preventDefault();
+    importVault(state.vault.exists === false ? "use" : "merge");
+});
 $("#set-theme").addEventListener("change", previewAppearance);
 $("#settings").addEventListener("mousedown", (ev) => { if (ev.target.id === "settings") closeSettings(); });
 $("#settings-form").addEventListener("keydown", (ev) => {

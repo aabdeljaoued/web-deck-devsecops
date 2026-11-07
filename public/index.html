@@ -224,6 +224,27 @@
                     </span>
                 </div>
             </fieldset>
+            <fieldset class="settings-group">
+                <legend>Coffre</legend>
+                <span class="hint">Pour retrouver notes et secrets sur une autre machine. Le fichier exporté reste chiffré par ton mot de passe maître ; à l'import, il faut le mot de passe maître du fichier.</span>
+                <div class="settings-actions">
+                    <button type="button" id="vault-export">Exporter…</button>
+                    <button type="button" id="vault-import">Importer…</button>
+                    <input id="vault-import-file" type="file" accept=".json,.enc,application/json" hidden>
+                    <span id="vault-io-state" class="hint"></span>
+                </div>
+                <div id="vault-import-confirm" class="fav-import-confirm" hidden>
+                    <span id="vault-import-summary"></span>
+                    <input id="vault-import-pass" type="password" autocomplete="off" placeholder="mot de passe maître du fichier importé">
+                    <span class="settings-actions">
+                        <button type="button" id="vault-import-use" class="primary" title="Le fichier devient le coffre de cette machine">Utiliser ce coffre</button>
+                        <button type="button" id="vault-import-merge" class="primary" title="Ajoute les notes et secrets manquants ; garde la version la plus récente d'un même élément">Fusionner</button>
+                        <button type="button" id="vault-import-replace" title="Remplace le coffre actuel (copie gardée dans vault.enc.bak) ; il s'ouvrira ensuite avec le mot de passe du fichier">Remplacer tout</button>
+                        <button type="button" id="vault-import-open">Déverrouiller mon coffre</button>
+                        <button type="button" id="vault-import-cancel">Annuler</button>
+                    </span>
+                </div>
+            </fieldset>
             <p class="hint">Réglages enregistrés côté serveur (<code>settings.json</code>, hors Git) : les mêmes pour tous les onglets et navigateurs.</p>
             <div class="favform-actions">
                 <span class="grow"></span>

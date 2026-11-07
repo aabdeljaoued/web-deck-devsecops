@@ -981,3 +981,11 @@ main {
 .fav-import-confirm[hidden] { display: none; }
 #fav-import-replace { color: #ef5350; border-color: color-mix(in srgb, #ef5350 50%, transparent); }
 #fav-import-replace.armed { color: #fff; background: #c62828; border-color: #c62828; }
+#vault-import-replace { color: #ef5350; border-color: color-mix(in srgb, #ef5350 50%, transparent); }
+#vault-import-replace.armed { color: #fff; background: #c62828; border-color: #c62828; }
+.settings-actions button:disabled { opacity: .45; cursor: not-allowed; }
+.settings-actions button[hidden], .fav-import-confirm input[hidden] { display: none; }
+.fav-import-confirm input { padding: 7px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--input-bg); color: var(--text); font: inherit; font-size: 13px; }
+
+/* Boutons principaux : texte blanc sur l'accent, lisible dans tous les modes et thèmes */
+.settings-actions button.primary, .favform-actions button.primary { color: #fff; }

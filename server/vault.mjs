@@ -5,7 +5,7 @@
 // que sur demande explicite (copier / afficher) ; "taper dans le terminal" les écrit côté serveur.
 import { createCipheriv, createDecipheriv, randomBytes, randomUUID, scrypt as scryptCb } from "node:crypto";
 import { EventEmitter } from "node:events";
-import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { promisify } from "node:util";
 
 const scrypt = promisify(scryptCb);
@@ -109,6 +109,83 @@ export class Vault extends EventEmitter {
     need() {
         if (!this.unlocked) throw new Error("coffre verrouillé");
         this.touch();
+    }
+
+    // ---------- Export / import (autre machine) ----------
+
+    /** Export : le fichier chiffré tel quel (jamais déchiffré), seulement coffre déverrouillé. */
+    exportBox() {
+        this.need();
+        return { app: "web-deck-devsecops", kind: "coffre", version: 1, exported: new Date().toISOString(), vault: JSON.parse(readFileSync(this.file, "utf8")) };
+    }
+
+    /** Boîte chiffrée d'un export (ou d'un vault.enc copié tel quel), vérifiée champ par champ. */
+    static parseBox(data) {
+        const box = data?.kind === "coffre" ? data.vault : data;
+        const b64 = (v) => typeof v === "string" && v.length > 0 && v.length < 4 * 1024 * 1024 && /^[A-Za-z0-9+/]+=*$/.test(v);
+        if (!box || box.v !== 1 || box.kdf !== "scrypt" || ![box.salt, box.iv, box.tag, box.data].every(b64)) {
+            throw new Error("fichier non reconnu : ce n'est pas un export du coffre du deck");
+        }
+        if (box.N !== KDF.N || box.r !== KDF.r || box.p !== KDF.p) throw new Error("paramètres de chiffrement inattendus dans le fichier");
+        return { v: 1, kdf: "scrypt", N: box.N, r: box.r, p: box.p, salt: box.salt, iv: box.iv, tag: box.tag, data: box.data };
+    }
+
+    /** Déchiffre une boîte avec son mot de passe ; un échec ralentit la tentative suivante, comme le déverrouillage. */
+    async openBox(box, password) {
+        if (this.failures) await new Promise((r) => setTimeout(r, Math.min(5000, 1000 * this.failures)));
+        const salt = Buffer.from(box.salt, "base64");
+        const key = await this.derive(password, salt);
+        let data;
+        try {
+            const decipher = createDecipheriv("aes-256-gcm", key, Buffer.from(box.iv, "base64"));
+            decipher.setAuthTag(Buffer.from(box.tag, "base64"));
+            data = JSON.parse(Buffer.concat([decipher.update(Buffer.from(box.data, "base64")), decipher.final()]).toString("utf8"));
+        } catch {
+            this.failures++;
+            throw new Error("mot de passe du fichier incorrect");
+        }
+        this.failures = 0;
+        if (!Array.isArray(data?.notes) || !Array.isArray(data?.secrets)) throw new Error("contenu du coffre importé invalide");
+        return { key, salt, data };
+    }
+
+    /**
+     * Import : "use" (aucun coffre ici : le fichier devient le coffre), "merge" (ajoute ce qui manque,
+     * garde la version la plus récente d'un même élément) ou "replace" (copie de l'ancien dans vault.enc.bak).
+     * Le mot de passe est celui du fichier importé ; le coffre reste déverrouillé après l'import.
+     */
+    async importBox(data, mode, password) {
+        const box = Vault.parseBox(data);
+        if (mode === "use") {
+            if (this.exists) throw new Error("un coffre existe déjà ici : déverrouille-le, puis Fusionner ou Remplacer");
+        } else if (mode === "merge" || mode === "replace") {
+            this.need();
+        } else {
+            throw new Error(`mode d'import inconnu : ${mode}`);
+        }
+        const opened = await this.openBox(box, password);
+        const stats = { notes: opened.data.notes.length, secrets: opened.data.secrets.length, added: 0, updated: 0 };
+        if (mode === "merge") {
+            for (const kind of ["notes", "secrets"]) {
+                for (const item of opened.data[kind]) {
+                    if (typeof item?.id !== "string") continue;
+                    const mine = this.data[kind].find((x) => x.id === item.id);
+                    if (!mine) { this.data[kind].push(item); stats.added++; }
+                    else if (String(item.updated ?? "") > String(mine.updated ?? "")) { Object.assign(mine, item); stats.updated++; }
+                }
+            }
+            this.save();
+        } else {
+            if (mode === "replace") copyFileSync(this.file, `${this.file}.bak`);
+            const tmp = `${this.file}.tmp`;
+            writeFileSync(tmp, JSON.stringify(box), { mode: 0o600 });
+            renameSync(tmp, this.file);
+            if (this.key) this.key.fill(0);
+            Object.assign(this, { key: opened.key, salt: opened.salt, data: opened.data });
+        }
+        this.touch();
+        this.emit("change");
+        return stats;
     }
 
     /** Écriture atomique : fichier temporaire puis renommage (pas de coffre à moitié écrit). */

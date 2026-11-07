@@ -17,9 +17,11 @@ const clip = (v, max) => String(v ?? "").replace(/\u0000/g, "").slice(0, max);
 
 /** Événement "change" : état ou contenu modifié (à renvoyer aux pages). */
 export class Vault extends EventEmitter {
-    constructor(file) {
+    /** @param backups sauvegardes automatiques (server/backups.mjs), facultatif */
+    constructor(file, backups = null) {
         super();
         this.file = file;
+        this.backups = backups;
         this.key = null;
         this.salt = null;
         this.data = null;
@@ -165,6 +167,7 @@ export class Vault extends EventEmitter {
         }
         const opened = await this.openBox(box, password);
         const stats = { notes: opened.data.notes.length, secrets: opened.data.secrets.length, added: 0, updated: 0 };
+        this.backups?.before(this.file, { force: true });
         if (mode === "merge") {
             for (const kind of ["notes", "secrets"]) {
                 for (const item of opened.data[kind]) {
@@ -200,6 +203,7 @@ export class Vault extends EventEmitter {
         };
         const tmp = `${this.file}.tmp`;
         writeFileSync(tmp, JSON.stringify(box), { mode: 0o600 });
+        this.backups?.before(this.file);
         renameSync(tmp, this.file);
     }
 

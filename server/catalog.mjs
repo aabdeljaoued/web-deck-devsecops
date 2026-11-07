@@ -7,6 +7,7 @@
 // sh(posix, powershell, cmd) ; la page choisit selon le shell de l'onglet actif.
 import { iconFile } from "./icons.mjs";
 import { platform } from "./platform.mjs";
+import { neededTool } from "./tools.mjs";
 
 export const COLORS = {
     git: "#F05032", k8s: "#326CE5", sec: "#C62828", terraform: "#7B42BC", vault: "#FFC107",
@@ -169,7 +170,7 @@ function buildCatalog(ctx) {
             text("log graph", "log", "git log --oneline --graph --decorate -20", true, C.git),
             text("diff stat", "±", "git diff --stat", true, C.git),
             // delta : diff lisible (coloration, numéros de ligne), sans changer la config Git
-            textIcon("delta", "Δ", "git -c core.pager=delta diff", true, C.git, "lucide-git-compare"),
+            { ...textIcon("delta", "Δ", "git -c core.pager=delta diff", true, C.git, "lucide-git-compare"), needs: "delta" },
             text("fetch prune", "⟳", "git fetch --all --prune", true, C.git),
             text("commit signé", "✍", 'git commit -S -m "', false, C.git),
             text("push", "⬆", "git push", false, C.git),
@@ -600,7 +601,9 @@ export function buildDeck(ctx, favorites = [], worlds = {}) {
             const id = `${name}/${pos}`;
             index.set(id, key);
             if (key.icon && iconFile(key.icon)) ICONS.add(key.icon);
-            const { command, tool, ...visible } = key;   // pin reste visible : la page aligne à droite les touches épinglées
+            const { command, tool, needs, ...rest } = key;
+            // needs : outil installable requis (la page grise la touche s'il manque, voir server/tools.mjs)
+            const visible = neededTool(key) ? { ...rest, needs: neededTool(key) } : rest;   // pin reste visible : la page aligne à droite les touches épinglées
             return { id, ...visible };
         });
     }

@@ -91,12 +91,19 @@ export const MAX_GROUP_DEPTH = 2;
  * Racine = rubrique Favoris (profondeur 0) ; groupes en profondeur 1, sous-groupes en profondeur 2.
  */
 export class Favorites {
-    constructor(file) {
+    /** @param backups sauvegardes automatiques (server/backups.mjs), facultatif */
+    constructor(file, backups = null) {
         this.file = file;
+        this.backups = backups;
+        this.reload();
+    }
+
+    /** (Re)lit favoris.json (démarrage, restauration d'une sauvegarde). */
+    reload() {
         this.items = [];
-        if (!existsSync(file)) return;
+        if (!existsSync(this.file)) return;
         try {
-            const data = JSON.parse(readFileSync(file, "utf8"));
+            const data = JSON.parse(readFileSync(this.file, "utf8"));
             this.items = this.load(Array.isArray(data) ? data : [], 0);
         } catch (err) {
             console.warn(`  favoris.json illisible : ${err.message}`);
@@ -146,6 +153,7 @@ export class Favorites {
         const incoming = this.load(list, 0, stats);
         const sites = (items) => items.reduce((n, f) => n + (f.type === "group" ? sites(f.items) : 1), 0);
         if (mode === "replace") {
+            this.backups?.before(this.file, { force: true });
             this.items = incoming;
             stats.added = sites(incoming);
         } else if (mode === "merge") {
@@ -293,6 +301,7 @@ export class Favorites {
     }
 
     save() {
+        this.backups?.before(this.file);
         writeFileSync(this.file, `${JSON.stringify(this.dump(), null, 2)}\n`);
     }
 }

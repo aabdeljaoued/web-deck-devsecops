@@ -10,3 +10,5 @@ vault.enc
 vault.enc.tmp
 vault.enc.bak
 settings.json
+.deck-backups/
+.deck.log

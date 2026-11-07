@@ -30,6 +30,17 @@ Shells détectés sous Windows : PowerShell 7 (`pwsh`), Windows PowerShell, Git 
 2. Double-cliquer sur **`start.command`** dans le Finder (ou `./start.sh` dans un terminal). Fermer la fenêtre Terminal arrête le deck.
    Si le projet vient d'un zip téléchargé, macOS peut bloquer le lanceur : clic droit › Ouvrir, ou `xattr -dr com.apple.quarantine .` dans le dossier.
 
+### Lancement automatique (service de session, recommandé)
+
+Pour que le deck démarre avec la session, tourne **sans fenêtre** et **redémarre tout seul** s'il s'arrête, sans droits administrateur :
+
+| | Installer | Désinstaller | Journal |
+|---|---|---|---|
+| macOS | double-clic sur `service/installer.command` (LaunchAgent) | `service/desinstaller.command` | `~/Library/Logs/web-deck-devsecops.log` |
+| Windows | double-clic sur `service\installer.cmd` (dossier Démarrage, lancement caché) | `service\desinstaller.cmd` | `%LOCALAPPDATA%\web-deck-devsecops\deck.log` |
+
+L'installation arrête un deck lancé à la main (ses terminaux sont rouverts) et ouvre le navigateur. Lancé à la main avec `start.command` / `start.cmd`, fermer la fenêtre arrête le deck. **Réglages › Serveur** indique le mode de lancement et propose **Redémarrer le deck** (deux clics ; les commandes en cours s'arrêtent, les terminaux sont rouverts) : en service, c'est le service qui le relance ; lancé à la main, une nouvelle copie détachée de la fenêtre démarre (journal `.deck.log`).
+
 Sans les outils de ligne de commande Xcode, `git` est considéré comme absent (sinon macOS ouvrirait une fenêtre d'installation à chaque rafraîchissement du voyant) : `xcode-select --install`.
 
 La touche **Verrouiller** (raccourci `lock`, à ajouter dans `shortcuts` de `config.jsonc`) met l'écran en veille (`pmset displaysleepnow`) : elle ne verrouille que si *Réglages Système › Écran verrouillé › Exiger un mot de passe* est réglé sur « Immédiatement ».
@@ -105,6 +116,14 @@ Un mauvais mot de passe ne modifie rien (et ralentit l'essai suivant, comme le d
 Après une action dans une rubrique (Docker, K8s, Git, un groupe de favoris…), le deck revient tout seul à l'accueil si aucune autre action n'y est lancée pendant **60 secondes** ; chaque action relance le compte à rebours. Une fine barre en bas des touches montre le temps restant. Le décompte se met en pause (barre grise) tant qu'un formulaire, le coffre, la palette ou un sélecteur est ouvert, ou en mode Modifier des favoris.
 
 Dans **Réglages** (engrenage en haut à droite), rubrique Navigation : une case active ou désactive le retour automatique, et le délai (de 5 à 3600 secondes) s'affiche quand il est activé. Désactiver garde le délai choisi pour la prochaine réactivation, et arrête un compte à rebours en cours. Les réglages sont enregistrés côté serveur dans `settings.json` (exclu de Git), les mêmes pour tous les onglets et navigateurs.
+
+### Outils non installés
+
+Les touches d'un outil installable absent (stern, popeye, dive, gitleaks, delta, lazygit, trivy, checkov, semgrep, ssh-audit, kubectl, helm, terraform, vault…) sont **grisées** avec la mention « à installer ». Un clic tape la commande d'installation sans l'exécuter (`brew install …` sur macOS, `scoop install …` ou `pip install …` sur Windows). La vérification se refait toutes les minutes et au retour sur l'onglet : une fois l'outil installé, la touche se rallume. Les commandes Linux faites pour un serveur distant (`systemctl`, `ss`…) ne sont pas concernées. Liste et paquets : `server/tools.mjs`.
+
+### Sauvegardes automatiques
+
+Avant chaque modification de `favoris.json`, `vault.enc` ou `settings.json`, la version actuelle est copiée dans `.deck-backups/` (exclu de Git, lisible par l'utilisateur seul) : au plus une copie toutes les 10 minutes, toujours avant une opération destructrice (Remplacer tout, restauration), 10 copies gardées par fichier. **Réglages › Sauvegardes** les liste et permet d'en **restaurer** une (deux clics) ; la version actuelle est d'abord sauvegardée, donc une restauration se rattrape. Le coffre restauré est verrouillé : il s'ouvre avec le mot de passe maître de l'époque.
 
 ### Rubriques activées
 
@@ -217,6 +236,7 @@ Le terminal donne un shell complet : l'accès est verrouillé.
 
 ## Dépannage
 
+- **Le deck s'arrête tout seul** : lancé avec `start.command` / `start.cmd`, fermer sa fenêtre l'arrête. Installer le service (voir *Lancement automatique*) ; en cas de plantage, le journal du service en donne la cause.
 - **« Accès refusé »** : ouvrir l'adresse complète affichée dans la fenêtre du serveur (avec `?token=…`).
 - **Un outil est « introuvable »** au démarrage alors qu'il marche dans un terminal : indiquer son chemin complet dans `paths.<machine>.json`.
 - **Un voyant affiche « erreur »** : lancer la même commande dans le terminal intégré pour voir le message (`kubectl config current-context`, `git status`, `docker ps`).

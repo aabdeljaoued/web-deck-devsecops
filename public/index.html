@@ -213,6 +213,18 @@
                 <label id="set-autohome-row" class="settings-row">Délai <input id="set-autohome" type="number" min="5" max="3600" step="5" required> secondes</label>
             </fieldset>
             <fieldset class="settings-group">
+                <legend>Serveur</legend>
+                <span id="server-mode" class="hint"></span>
+                <div class="settings-actions">
+                    <button type="button" id="server-restart" title="Les commandes en cours dans les terminaux s'arrêtent ; les terminaux sont rouverts">Redémarrer le deck</button>
+                </div>
+            </fieldset>
+            <fieldset class="settings-group">
+                <legend>Sauvegardes</legend>
+                <span class="hint">Copies automatiques avant chaque modification (au plus une toutes les 10 min, toujours avant un remplacement), 10 gardées par fichier dans <code>.deck-backups/</code>, hors Git. Restaurer sauvegarde d'abord la version actuelle.</span>
+                <div id="backup-rows" class="backup-rows"></div>
+            </fieldset>
+            <fieldset class="settings-group">
                 <legend>Favoris</legend>
                 <span class="hint">Pour retrouver tes favoris sur une autre machine : exporte-les ici, puis importe le fichier là-bas. Le fichier contient les adresses de mission : garde-le hors des dépôts et des partages publics.</span>
                 <div class="settings-actions">

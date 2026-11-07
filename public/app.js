@@ -8,6 +8,8 @@ const $ = (sel) => document.querySelector(sel);
 
 const state = {
     ws: null,
+    tools: { missing: new Set(), install: {} },   // outils installables absents (server/tools.mjs)
+    server: null,                                 // mode de lancement (service ou à la main)
     pages: {},
     titles: {},
     page: "root",
@@ -123,6 +125,8 @@ function handle(msg) {
             state.parents = msg.parents ?? {};
             state.favGroups = msg.favGroups ?? [];
             state.worlds = msg.worlds ?? null;
+            state.server = msg.server ?? null;
+            if (msg.tools) applyTools(msg.tools);
             state.status = msg.status ?? {};
             if (msg.vault) applyVault(msg.vault);
             if (msg.settings) {
@@ -198,6 +202,21 @@ function handle(msg) {
             break;
         case "secret-value":
             useSecretValue(msg);
+            break;
+        case "tools":
+            applyTools(msg);
+            break;
+        case "restarting":
+            closeSettings();
+            toast("redémarrage du deck… (reconnexion automatique)", "ok");
+            break;
+        case "backup-list":
+            renderBackups(msg.backups);
+            break;
+        case "backup-restored":
+            renderBackups(msg.backups);
+            toast(msg.name === "vault.enc" ? "coffre restauré : il est verrouillé, déverrouille-le avec le mot de passe de l'époque"
+                : `${msg.name} restauré (la version d'avant est dans les sauvegardes)`, "ok");
             break;
         case "fav-export":
             downloadJson(msg.data, `favoris-deck-${new Date().toISOString().slice(0, 10)}.json`);
@@ -325,6 +344,12 @@ function keyElement(key) {
     label.textContent = key.label;
     el.append(sym, label);
 
+    if (key.needs && state.tools.missing.has(key.needs)) {
+        el.classList.add("missing");
+        const install = state.tools.install[key.needs];
+        el.title = `${key.needs} n'est pas installé.\n${install ? `Clic : tape « ${install} » (à valider avec Entrée)` : "Installe-le avec le gestionnaire de paquets du système."}`;
+        el.append(Object.assign(document.createElement("span"), { className: "missing-tag", textContent: "à installer" }));
+    }
     if (key.badge) {
         const badge = document.createElement("span");
         badge.className = `badge ${key.badge}`;
@@ -402,6 +427,14 @@ function press(key, el) {
     pulse(el);
     // Action dans une rubrique : (re)lance le compte à rebours du retour à l'accueil
     if (key.type !== "back" && state.page !== "root" && (key.type !== "folder" || isFavPage(key.page))) armAutoHome();
+    // Outil absent : la touche propose son installation au lieu de lancer une commande qui échouerait
+    if (key.needs && state.tools.missing.has(key.needs)) {
+        const install = state.tools.install[key.needs];
+        send({ t: "tools-check" });   // déjà installé entre-temps ? la touche se rallume
+        if (!install) return toast(`${key.needs} n'est pas installé : installe-le avec le gestionnaire de paquets du système`);
+        toast(`${key.needs} n'est pas installé : commande d'installation tapée, valide avec Entrée`, "ok");
+        return typeInTerminal(install);
+    }
     switch (key.type) {
         case "folder":
             if (key.fav && state.favEdit) return openFavForm(key);
@@ -1503,6 +1536,64 @@ function tickAutoHome() {
 
 // ---------- Réglages (espace admin) ----------
 
+// ---------- Outils non installés ----------
+
+function applyTools(view) {
+    state.tools = { missing: new Set(view.missing ?? []), install: view.install ?? {} };
+    if (state.pages[state.page]) render();
+}
+// Retour sur l'onglet (après un brew install dans un autre terminal, par exemple) : nouvelle vérification
+window.addEventListener("focus", () => send({ t: "tools-check" }));
+
+// ---------- Serveur et sauvegardes (Réglages) ----------
+
+function renderServer() {
+    const s = state.server;
+    $("#server-mode").textContent = !s ? ""
+        : s.supervisor === "launchd" ? "Lancé en service macOS (LaunchAgent) : démarre avec la session et redémarre tout seul. Journal : ~/Library/Logs/web-deck-devsecops.log"
+        : s.supervisor === "windows" ? "Lancé en service Windows (démarrage de session) : redémarre tout seul. Journal : %LOCALAPPDATA%\\web-deck-devsecops\\deck.log"
+        : "Lancé à la main (start.command / start.cmd) : fermer sa fenêtre arrête le deck. Pour un lancement automatique et fiable : service/installer.command (Mac) ou service\\installer.cmd (Windows). Après un redémarrage d'ici, journal dans .deck.log.";
+    const btn = $("#server-restart");
+    btn.classList.remove("armed");
+    btn.textContent = "Redémarrer le deck";
+}
+
+/** Redémarrer arrête les commandes en cours : deuxième clic de confirmation. */
+function restartServer() {
+    const btn = $("#server-restart");
+    if (!btn.classList.contains("armed")) {
+        btn.classList.add("armed");
+        btn.textContent = "Confirmer (les commandes en cours s'arrêtent)";
+        return;
+    }
+    send({ t: "restart" });
+}
+
+const BACKUP_LABELS = { "favoris.json": "Favoris", "settings.json": "Réglages", "vault.enc": "Coffre (chiffré)" };
+
+function renderBackups(all) {
+    $("#backup-rows").replaceChildren(...Object.entries(BACKUP_LABELS).map(([name, label]) => {
+        const list = all?.[name] ?? [];
+        const row = Object.assign(document.createElement("div"), { className: "backup-row" });
+        const select = document.createElement("select");
+        if (!list.length) select.append(new Option("aucune copie pour l'instant", ""));
+        for (const b of list) select.append(new Option(`${new Date(b.time).toLocaleString("fr-FR")} (${b.size < 1024 ? `${b.size} o` : `${Math.round(b.size / 1024)} Ko`})`, b.id));
+        select.disabled = !list.length;
+        const btn = Object.assign(document.createElement("button"), { type: "button", textContent: "Restaurer", disabled: !list.length });
+        btn.addEventListener("click", () => {
+            if (!btn.classList.contains("armed")) {
+                btn.classList.add("armed");
+                btn.textContent = "Confirmer";
+                return;
+            }
+            send({ t: "backup-restore", name, id: select.value });
+        });
+        select.addEventListener("change", () => { btn.classList.remove("armed"); btn.textContent = "Restaurer"; });
+        row.append(Object.assign(document.createElement("span"), { className: "backup-name", textContent: label }), select, btn);
+        return row;
+    }));
+}
+
 /** Rubriques à cocher (Réglages) : toutes celles disponibles sur ce système, dans l'ordre de l'accueil. */
 function renderWorldChoices() {
     const w = state.worlds;
@@ -1548,6 +1639,8 @@ function openSettings() {
     $("#set-appearance").value = state.settings.appearance ?? "dark";
     $("#set-theme").value = state.settings.missionTheme ?? "";
     renderWorldChoices();
+    renderServer();
+    send({ t: "backup-list" });
     $("#settings").hidden = false;
     refreshVaultIo();
     // Pas de focus sur un champ : le premier clic doit agir directement (sinon il ne sert qu'à quitter ce champ)
@@ -1734,6 +1827,7 @@ $("#palette").addEventListener("mousedown", (ev) => { if (ev.target.id === "pale
 $("#favform").addEventListener("submit", submitFav);
 $("#vault-open").addEventListener("click", openVault);
 $("#settings-open").addEventListener("click", openSettings);
+$("#server-restart").addEventListener("click", restartServer);
 $("#settings-cancel").addEventListener("click", closeSettings);
 $("#set-appearance").addEventListener("change", previewAppearance);
 $("#set-autohome-on").addEventListener("change", () => { toggleAutoHomeRow(); if ($("#set-autohome-on").checked) $("#set-autohome").focus(); });

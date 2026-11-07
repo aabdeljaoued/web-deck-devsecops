@@ -3,13 +3,17 @@
 //
 //   node server/index.mjs            démarre et ouvre le navigateur
 //   node server/index.mjs --no-open  démarre sans ouvrir le navigateur
+//   --restarting                     relancé par le bouton Redémarrer : attend que le port se libère
+// DECK_SUPERVISOR=launchd|windows : lancé en service (service/), qui le relance s'il s'arrête sur un code ≠ 0.
+import { spawn } from "node:child_process";
 import { randomBytes, timingSafeEqual } from "node:crypto";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, openSync, readFileSync, writeFileSync } from "node:fs";
 import http from "node:http";
 import path from "node:path";
 import { WebSocketServer } from "ws";
 
 import { buildDeck, ICONS } from "./catalog.mjs";
+import { Backups } from "./backups.mjs";
 import { Favorites } from "./favorites.mjs";
 import { Vault } from "./vault.mjs";
 import { Settings } from "./settings.mjs";
@@ -18,13 +22,15 @@ import { loadConfig, ROOT } from "./config.mjs";
 import { launch, openBrowser, windowsPty } from "./platform.mjs";
 import { StatusHub } from "./status.mjs";
 import { Terminals } from "./terminal.mjs";
+import { neededTool, Tools } from "./tools.mjs";
 
 const HOST = "127.0.0.1";
 const COOKIE = "deck_token";
 
 const ctx = loadConfig();
-const favorites = new Favorites(path.join(ROOT, "favoris.json"));
-const settings = new Settings(path.join(ROOT, "settings.json"));
+const backups = new Backups(path.join(ROOT, ".deck-backups"));
+const favorites = new Favorites(path.join(ROOT, "favoris.json"), backups);
+const settings = new Settings(path.join(ROOT, "settings.json"), backups);
 /** Deck avec les favoris et les rubriques choisies dans les Réglages. */
 const makeDeck = (worlds = settings.get().worlds) => buildDeck(ctx, favorites.list(), worlds);
 let deck;
@@ -35,8 +41,20 @@ try {
     console.warn(`  Rubriques des Réglages ignorées : ${err.message}`);
     deck = makeDeck({});
 }
+// Outils installables manquants : vérifiés au démarrage, toutes les minutes et à la demande de la page
+const tools = new Tools();
+const deckTools = () => [...deck.index.values()].map(neededTool).filter(Boolean);
+async function checkTools() {
+    try {
+        if (await tools.check(deckTools())) broadcast({ t: "tools", ...tools.view() });
+    } catch (err) {
+        console.warn(`  vérification des outils : ${err.message}`);
+    }
+}
+setInterval(checkTools, 60 * 1000).unref();
+
 /** Message "deck" envoyé aux pages après une reconstruction. */
-const deckMessage = () => ({ t: "deck", pages: deck.pages, titles: deck.titles, parents: deck.parents, favGroups: favorites.groups(), worlds: deck.worlds });
+const deckMessage = () => (setImmediate(checkTools), { t: "deck", pages: deck.pages, titles: deck.titles, parents: deck.parents, favGroups: favorites.groups(), worlds: deck.worlds });
 const port = ctx.port;
 const token = loadToken();
 const deckUrl = `http://${HOST}:${port}/?token=${token}`;
@@ -123,7 +141,7 @@ const server = http.createServer((req, res) => {
 const terminals = new Terminals(ctx, path.join(ROOT, ".deck-sessions.json"));
 const status = new StatusHub(ctx);
 const restored = terminals.restore();
-const vault = new Vault(path.join(ROOT, "vault.enc"));
+const vault = new Vault(path.join(ROOT, "vault.enc"), backups);
 const wss = new WebSocketServer({ noServer: true, maxPayload: 1024 * 1024 });
 
 server.on("upgrade", (req, socket, head) => {
@@ -155,6 +173,8 @@ wss.on("connection", (ws) => {
         parents: deck.parents,
         favGroups: favorites.groups(),
         worlds: deck.worlds,
+        tools: tools.view(),
+        server: { supervisor: SUPERVISOR, log: SUPERVISOR ? null : LOG_FILE },
         shells: ctx.shells.map(({ name, kind }) => ({ name, kind })),
         windowsPty: windowsPty(),
         sessions: terminals.list(),
@@ -232,6 +252,34 @@ wss.on("connection", (ws) => {
                     break;
                 }
                 // Export / import des favoris (Réglages) : pour les retrouver sur une autre machine
+                // Sauvegardes automatiques (Réglages) : liste et restauration (la version actuelle est sauvegardée avant)
+                // Redémarrage demandé depuis les Réglages (terminaux rouverts au démarrage suivant)
+                case "restart": restart(); break;
+                case "tools-check": await checkTools(); reply({ t: "tools", ...tools.view() }); break;
+                case "backup-list": reply({ t: "backup-list", backups: backups.all() }); break;
+                case "backup-restore": {
+                    const name = String(msg.name);
+                    if (name === "favoris.json") {
+                        backups.restore(favorites.file, String(msg.id));
+                        favorites.reload();
+                        deck = makeDeck();
+                        broadcast(deckMessage());
+                    } else if (name === "settings.json") {
+                        backups.restore(settings.file, String(msg.id));
+                        settings.reload();
+                        try { deck = makeDeck(); } catch (err) { deck = makeDeck({}); console.warn(`  Rubriques des Réglages ignorées : ${err.message}`); }
+                        broadcast({ t: "settings", settings: settings.get() });
+                        broadcast(deckMessage());
+                    } else if (name === "vault.enc") {
+                        vault.lock("restauré");
+                        backups.restore(vault.file, String(msg.id));
+                        vault.emit("change", "restauré");
+                    } else {
+                        throw new Error("fichier inconnu");
+                    }
+                    reply({ t: "backup-restored", name, backups: backups.all() });
+                    break;
+                }
                 case "fav-export": reply({ t: "fav-export", data: favorites.export() }); break;
                 case "fav-import": {
                     const stats = favorites.import(msg.data, msg.mode === "replace" ? "replace" : "merge");
@@ -272,7 +320,18 @@ wss.on("connection", (ws) => {
 
 // ---------- Démarrage ----------
 
+const RESTARTING = process.argv.includes("--restarting");
+const SUPERVISOR = process.env.DECK_SUPERVISOR || null;
+const LOG_FILE = path.join(ROOT, ".deck.log");
+const RESTART_EXIT_CODE = 75;   // « relance-moi » pour le service (launchd : KeepAlive si la sortie n'est pas un succès)
+let listenTries = 0;
+
 server.on("error", (err) => {
+    // Relancé par Redémarrer : l'ancien serveur libère le port dans la seconde, on réessaie jusqu'à 15 s
+    if (err.code === "EADDRINUSE" && RESTARTING && ++listenTries < 50) {
+        setTimeout(() => server.listen(port, HOST), 300);
+        return;
+    }
     if (err.code === "EADDRINUSE") {
         // Déjà lancé (double-clic sur le lanceur) : on ouvre simplement la page
         console.log(`Le deck tourne déjà sur le port ${port} : ouverture du navigateur.`);
@@ -284,6 +343,8 @@ server.on("error", (err) => {
 });
 
 server.listen(port, HOST, () => {
+    checkTools();
+    console.log(`${new Date().toLocaleString("fr-FR")}${RESTARTING ? " (redémarrage)" : ""}${SUPERVISOR ? ` [service ${SUPERVISOR}]` : ""}`);
     console.log(`Deck DevSecOps (${ctx.machine}${ctx.machineFile ? `, ${ctx.machineFile}` : ""})`);
     console.log(`  Shells     : ${ctx.shells.map((s) => s.name).join(", ") || "aucun !"}`);
     console.log(`  Workspace  : ${ctx.workspace}`);
@@ -292,9 +353,30 @@ server.listen(port, HOST, () => {
     if (missing.length) console.log(`  Introuvables : ${missing.join(", ")} (voir paths.json)`);
     if (deck.skipped.length) console.log(`  Non disponibles ici : ${deck.skipped.join(", ")}`);
     console.log(`\n  ${deckUrl}\n`);
-    console.log("Ctrl+C pour arrêter (ferme aussi les terminaux).");
-    if (!process.argv.includes("--no-open")) openBrowser(deckUrl);
+    console.log(SUPERVISOR ? "Lancé en service : redémarre tout seul s'il s'arrête." : "Ctrl+C pour arrêter (ferme aussi les terminaux).");
+    if (!process.argv.includes("--no-open") && !RESTARTING) openBrowser(deckUrl);
 });
+
+/**
+ * Redémarrage depuis la page : en service, sortie avec RESTART_EXIT_CODE (le service relance) ; lancé à la main,
+ * une nouvelle copie détachée est démarrée (journal .deck.log), qui attend que ce serveur libère le port.
+ */
+function restart() {
+    broadcast({ t: "restarting" });
+    console.log("Redémarrage demandé depuis la page…");
+    setTimeout(() => {
+        vault.lock();
+        terminals.closeAll();
+        server.close();
+        if (SUPERVISOR) process.exit(RESTART_EXIT_CODE);
+        const log = openSync(LOG_FILE, "a", 0o600);
+        const child = spawn(process.execPath, [process.argv[1], "--no-open", "--restarting"], {
+            cwd: ROOT, env: process.env, detached: true, stdio: ["ignore", log, log], windowsHide: true
+        });
+        child.unref();
+        process.exit(0);
+    }, 300);
+}
 
 function shutdown() {
     vault.lock();

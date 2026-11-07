@@ -45,8 +45,16 @@ const SCHEMA = {
 };
 
 export class Settings {
-    constructor(file) {
+    /** @param backups sauvegardes automatiques (server/backups.mjs), facultatif */
+    constructor(file, backups = null) {
         this.file = file;
+        this.backups = backups;
+        this.reload();
+    }
+
+    /** (Re)lit settings.json (démarrage, restauration d'une sauvegarde). */
+    reload() {
+        const file = this.file;
         this.values = Object.fromEntries(Object.entries(SCHEMA).map(([k, s]) => [k, s.default]));
         if (!existsSync(file)) return;
         try {
@@ -81,6 +89,7 @@ export class Settings {
 
     /** Enregistre des réglages déjà vérifiés par check(). */
     save(next) {
+        this.backups?.before(this.file);
         this.values = next;
         writeFileSync(this.file, `${JSON.stringify(this.values, null, 2)}\n`);
         return this.get();

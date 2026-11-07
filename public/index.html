@@ -24,6 +24,7 @@
             <option value="estreem">Estreem</option>
             <option value="laposte">La Poste</option>
         </select>
+        <button id="vault-open" class="palette-open vault-open" title="Coffre : notes et secrets chiffrés"><svg viewBox="0 0 24 24" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10.5" width="16" height="11" rx="2.5"/><path d="M7.5 10.5V7.2a4.5 4.5 0 0 1 9 0v3.3"/></g></svg><span>Coffre</span></button>
         <button id="palette-open" class="palette-open" title="Chercher une touche ou une commande"><svg viewBox="0 0 24 24" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></g></svg><span>Rechercher</span><kbd class="kbd-mod">⌘K</kbd></button>
         <span id="conn" class="conn" title="Connexion au serveur">connexion…</span>
     </header>
@@ -104,6 +105,79 @@
             <h2>Le deck est déjà ouvert dans un autre onglet</h2>
             <p>Cet onglet reste en veille pour ne pas ouvrir de terminaux en double. Tu peux le fermer.</p>
             <button id="duplicate-use" type="button">Utiliser cet onglet quand même</button>
+        </div>
+    </div>
+
+    <div id="vault" class="palette" hidden>
+        <div class="palette-box vault-box" role="dialog" aria-label="Coffre">
+            <div class="vault-head">
+                <h2>Coffre</h2>
+                <div class="vault-tabs" role="tablist">
+                    <button id="vault-tab-notes" role="tab" data-tab="notes">Notes</button>
+                    <button id="vault-tab-secrets" role="tab" data-tab="secrets">Secrets</button>
+                </div>
+                <span id="vault-info" class="vault-info"></span>
+                <button id="vault-lock" class="vault-btn" type="button">Verrouiller</button>
+                <button id="vault-close" class="vault-btn icon" type="button" title="Fermer (Échap)">×</button>
+            </div>
+
+            <!-- Verrouillé : création ou déverrouillage -->
+            <form id="vault-locked" class="vault-locked" autocomplete="off">
+                <p id="vault-locked-text"></p>
+                <input id="vault-pass" type="password" placeholder="Mot de passe maître" autocomplete="current-password">
+                <input id="vault-pass2" type="password" placeholder="Confirmer le mot de passe maître" autocomplete="new-password">
+                <button type="submit" class="vault-btn primary" id="vault-unlock-btn">Déverrouiller</button>
+                <p class="hint">Chiffrement AES-256-GCM, clé dérivée du mot de passe maître (scrypt). Fichier <code>vault.enc</code>, hors Git.
+                    <strong>Mot de passe oublié = contenu perdu.</strong> Verrouillage automatique après 15 min d'inactivité.</p>
+            </form>
+
+            <!-- Notes -->
+            <div id="vault-notes" class="vault-split" hidden>
+                <div class="vault-list">
+                    <div class="vault-list-head">
+                        <input id="note-search" type="search" placeholder="Rechercher dans les notes">
+                        <button id="note-new" class="vault-btn" type="button">+ Note</button>
+                    </div>
+                    <ul id="note-list"></ul>
+                </div>
+                <div class="vault-editor">
+                    <input id="note-title" type="text" placeholder="Titre" maxlength="120">
+                    <textarea id="note-body" placeholder="Note (enregistrée automatiquement, chiffrée)" spellcheck="false"></textarea>
+                    <div class="vault-editor-foot">
+                        <span id="note-status" class="hint"></span>
+                        <button id="note-delete" class="vault-btn danger" type="button">Supprimer</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Secrets -->
+            <div id="vault-secrets" class="vault-secrets" hidden>
+                <div class="vault-list-head">
+                    <input id="secret-search" type="search" placeholder="Rechercher un secret">
+                    <button id="secret-new" class="vault-btn" type="button">+ Secret</button>
+                </div>
+                <ul id="secret-list"></ul>
+                <form id="secret-form" class="secret-form" hidden autocomplete="off">
+                    <h3 id="secret-form-title">Nouveau secret</h3>
+                    <label>Nom <input id="secret-name" type="text" maxlength="80" placeholder="Token GitLab, compte service OCP…" required></label>
+                    <label>Identifiant <input id="secret-user" type="text" maxlength="200" placeholder="facultatif" autocomplete="off"></label>
+                    <label>Valeur
+                        <span class="secret-value-row">
+                            <input id="secret-value" type="password" maxlength="10000" autocomplete="new-password">
+                            <button id="secret-show" class="vault-btn" type="button" title="Afficher / masquer">👁</button>
+                            <button id="secret-gen" class="vault-btn" type="button" title="Générer un mot de passe de 24 caractères">Générer</button>
+                        </span>
+                    </label>
+                    <label>Adresse <input id="secret-url" type="text" maxlength="500" placeholder="facultatif"></label>
+                    <label>Note <textarea id="secret-note" maxlength="2000" rows="3" placeholder="facultatif"></textarea></label>
+                    <div class="favform-actions">
+                        <button id="secret-delete" type="button" class="danger">Supprimer</button>
+                        <span class="grow"></span>
+                        <button id="secret-cancel" type="button">Annuler</button>
+                        <button type="submit" class="primary">Enregistrer</button>
+                    </div>
+                </form>
+            </div>
         </div>
     </div>
 

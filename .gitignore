@@ -6,3 +6,5 @@ paths.*.json
 Thumbs.db
 .deck-sessions.json
 favoris.json
+vault.enc
+vault.enc.tmp

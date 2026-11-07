@@ -11,6 +11,7 @@ import { WebSocketServer } from "ws";
 
 import { buildDeck, ICONS } from "./catalog.mjs";
 import { Favorites } from "./favorites.mjs";
+import { Vault } from "./vault.mjs";
 import { iconFile } from "./icons.mjs";
 import { loadConfig, ROOT } from "./config.mjs";
 import { launch, openBrowser, windowsPty } from "./platform.mjs";
@@ -109,6 +110,7 @@ const server = http.createServer((req, res) => {
 const terminals = new Terminals(ctx, path.join(ROOT, ".deck-sessions.json"));
 const status = new StatusHub(ctx);
 const restored = terminals.restore();
+const vault = new Vault(path.join(ROOT, "vault.enc"));
 const wss = new WebSocketServer({ noServer: true, maxPayload: 1024 * 1024 });
 
 server.on("upgrade", (req, socket, head) => {
@@ -128,6 +130,8 @@ function broadcast(message) {
 terminals.on("output", (sid, d) => broadcast({ t: "out", sid, d }));
 terminals.on("exit", (sid, code) => broadcast({ t: "exit", sid, code }));
 status.on("update", (id, state) => broadcast({ t: "status", id, state }));
+// Coffre : état et contenu (secrets sans leur valeur) renvoyés à toutes les pages à chaque changement
+vault.on("change", (reason) => broadcast({ t: "vault", ...vault.view(), ...(reason ? { reason } : {}) }));
 
 wss.on("connection", (ws) => {
     status.start();
@@ -140,7 +144,8 @@ wss.on("connection", (ws) => {
         shells: ctx.shells.map(({ name, kind }) => ({ name, kind })),
         windowsPty: windowsPty(),
         sessions: terminals.list(),
-        status: status.states
+        status: status.states,
+        vault: vault.view()
     }));
 
     ws.on("message", async (raw) => {
@@ -163,6 +168,24 @@ wss.on("connection", (ws) => {
                 case "kube-use": await status.useKube({ context: msg.context, namespace: msg.namespace }); reply({ t: "kube-used" }); break;
                 case "git-list": reply({ t: "git-list", ...status.listRepos() }); break;
                 case "git-select": await status.selectRepo(String(msg.repo)); break;
+                // Coffre (notes et secrets chiffrés)
+                case "vault-create": await vault.create(msg.password); break;
+                case "vault-unlock": await vault.unlock(msg.password); break;
+                case "vault-lock": vault.lock("verrouillé"); break;
+                case "vault-password": await vault.changePassword(msg.current, msg.next); reply({ t: "vault-ok", text: "mot de passe maître changé" }); break;
+                case "note-save": reply({ t: "note-saved", id: vault.saveNote(msg), req: msg.req }); break;
+                case "note-delete": vault.deleteNote(String(msg.id)); break;
+                case "secret-save": vault.saveSecret(msg); reply({ t: "vault-ok", text: "secret enregistré", close: true }); break;
+                case "secret-delete": vault.deleteSecret(String(msg.id)); break;
+                // La valeur n'est envoyée qu'à la page qui la demande (copier / afficher)
+                case "secret-reveal": reply({ t: "secret-value", id: String(msg.id), value: vault.secretValue(String(msg.id)), purpose: msg.purpose }); break;
+                // Taper dans le terminal : écrit côté serveur, la valeur ne passe pas par la page
+                case "secret-type": {
+                    if (!terminals.sessions.has(String(msg.sid))) throw new Error("aucun terminal actif");
+                    terminals.write(String(msg.sid), vault.secretValue(String(msg.id)));
+                    reply({ t: "vault-ok", text: "secret tapé dans le terminal (sans Entrée)" });
+                    break;
+                }
                 // Favoris : modifiés depuis la page, puis deck reconstruit et renvoyé à toutes les pages
                 case "fav-add":
                 case "fav-update":
@@ -237,6 +260,7 @@ server.listen(port, HOST, () => {
 });
 
 function shutdown() {
+    vault.lock();
     terminals.closeAll();
     process.exit(0);
 }

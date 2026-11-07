@@ -785,3 +785,98 @@ main {
 .key.fav-before { box-shadow: inset 4px 0 0 var(--accent), 0 0 0 3px #050608; }
 .key.fav-after { box-shadow: inset -4px 0 0 var(--accent), 0 0 0 3px #050608; }
 .key.fav-into { box-shadow: inset 0 0 0 3px var(--accent), 0 0 18px color-mix(in srgb, var(--accent) 60%, transparent); filter: brightness(1.3); }
+
+/* ---------- Coffre : notes et secrets ---------- */
+
+.vault-open svg { width: 14px; height: 14px; }
+.vault-open.on { color: #fff; border-color: var(--run); }
+.vault-open.on svg { color: var(--run); }
+
+.vault-box { width: min(1000px, 94vw); height: min(640px, 80vh); display: flex; flex-direction: column; }
+.vault-head { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--border); }
+.vault-head h2 { margin: 0; font-size: 16px; }
+.vault-tabs { display: flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+.vault-tabs button { padding: 5px 14px; border: none; background: none; color: var(--muted); font: inherit; font-size: 13px; cursor: pointer; }
+.vault-tabs button + button { border-left: 1px solid var(--border); }
+.vault-tabs button.on { color: #fff; background: var(--accent-strong); }
+.vault-tabs button:disabled { opacity: .4; cursor: default; }
+.vault-info { flex: 1; font-size: 12px; color: var(--muted); }
+
+.vault-btn {
+    padding: 6px 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: none;
+    color: var(--text);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+.vault-btn:hover { background: rgba(255, 255, 255, .06); }
+.vault-btn.primary { background: var(--accent-strong); border-color: var(--accent); }
+.vault-btn.danger { color: #ff8a80; border-color: #7f2a2a; }
+.vault-btn.icon { font-size: 17px; line-height: 1; padding: 4px 10px; }
+.vault-btn[hidden] { display: none; }
+
+.vault-locked { display: flex; flex-direction: column; gap: 12px; max-width: 420px; margin: 48px auto; }
+.vault-locked[hidden] { display: none; }
+.vault-locked p { margin: 0; }
+.vault-locked .hint, .vault-box .hint { font-size: 12px; color: var(--muted); line-height: 1.5; }
+.vault-locked input[hidden] { display: none; }
+.vault-box input, .vault-box textarea {
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: #0b0d12;
+    color: var(--text);
+    font: inherit;
+    font-size: 14px;
+    outline: none;
+}
+.vault-box input:focus, .vault-box textarea:focus { border-color: var(--accent); }
+
+.vault-split { flex: 1; min-height: 0; display: grid; grid-template-columns: 280px 1fr; }
+.vault-split[hidden], .vault-secrets[hidden] { display: none; }
+.vault-list { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--border); }
+.vault-list-head { display: flex; gap: 8px; padding: 10px; }
+.vault-list-head input { flex: 1; min-width: 0; }
+#note-list, #secret-list { list-style: none; margin: 0; padding: 0 6px 6px; overflow: auto; flex: 1; }
+.vault-item { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border-radius: 6px; cursor: pointer; }
+.vault-item:hover { background: rgba(255, 255, 255, .05); }
+.vault-item.on { background: var(--accent-strong); }
+.vault-item-title { font-size: 14px; color: var(--text); }
+.vault-item-sub { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vault-empty { padding: 12px; font-size: 13px; color: var(--muted); }
+
+.vault-editor { display: flex; flex-direction: column; gap: 8px; padding: 10px 14px; min-height: 0; }
+#note-title { font-size: 16px; font-weight: 600; }
+#note-body { flex: 1; resize: none; font-family: Consolas, Menlo, monospace; font-size: 13px; line-height: 1.5; }
+.vault-editor-foot { display: flex; justify-content: space-between; align-items: center; }
+
+.vault-secrets { flex: 1; min-height: 0; display: flex; flex-direction: column; position: relative; }
+.secret-row { display: flex; align-items: center; gap: 6px; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+.secret-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.secret-mask { font-family: Consolas, Menlo, monospace; font-size: 12px; color: var(--muted); letter-spacing: 1px; overflow-wrap: anywhere; }
+.secret-mask.shown { color: #ffd54f; letter-spacing: 0; }
+
+.secret-form {
+    position: absolute;
+    inset: 10px 10px auto auto;
+    width: 420px;
+    max-height: calc(100% - 20px);
+    overflow: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 16px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--panel);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, .6);
+}
+.secret-form[hidden] { display: none; }
+.secret-form h3 { margin: 0; font-size: 15px; }
+.secret-form label { display: flex; flex-direction: column; gap: 5px; font-size: 12px; color: var(--muted); }
+.secret-value-row { display: flex; gap: 6px; }
+.secret-value-row input { flex: 1; min-width: 0; font-family: Consolas, Menlo, monospace; }

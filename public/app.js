@@ -23,6 +23,7 @@ const state = {
     fontSize: Number(loadPref("deck-font")) || 14,        // taille du texte des terminaux
     favEdit: false,     // rubrique Favoris en mode Modifier : un clic sur un favori ouvre son formulaire
     parents: {},        // page -> page parente (fil d'Ariane, Retour)
+    vault: { exists: null, unlocked: false },   // coffre : notes et secrets (sans leur valeur) ; exists null = pas encore connu
     favGroups: []       // groupes de favoris { id, path, depth } pour le choix « Dans »
 };
 const requestId = crypto.randomUUID();
@@ -93,6 +94,7 @@ function handle(msg) {
             state.parents = msg.parents ?? {};
             state.favGroups = msg.favGroups ?? [];
             state.status = msg.status ?? {};
+            if (msg.vault) applyVault(msg.vault);
             state.windowsPty = msg.windowsPty ?? null;
             if (!state.pages[state.page]) state.page = "root";
             fillShells(msg.shells);
@@ -137,6 +139,26 @@ function handle(msg) {
         case "fav-saved":
             if (favMoving) favMoving = false;   // déplacement : le formulaire reste ouvert
             else closeFavForm();
+            break;
+        case "vault":
+            applyVault(msg);
+            if (!msg.unlocked && msg.reason === "inactivité") toast("coffre verrouillé après 15 min d'inactivité", "ok");
+            break;
+        case "note-saved":
+            if (msg.req === noteReq && !vaultUi.noteId) {
+                vaultUi.noteId = msg.id;
+                scheduleNote();   // ce qui a été tapé avant la création est enregistré aussi
+            } else {
+                $("#note-status").textContent = "enregistrée";
+            }
+            renderNotes();
+            break;
+        case "secret-value":
+            useSecretValue(msg);
+            break;
+        case "vault-ok":
+            toast(msg.text, "ok");
+            if (msg.close) closeSecretForm();
             break;
         case "kube-list":
             showKubePicker(msg);
@@ -320,6 +342,7 @@ function press(key, el) {
             if (key.fav && state.favEdit) return openFavForm(key);
             return window.open(key.url, "_blank", "noopener,noreferrer");
         case "fav-add": return openFavForm();
+        case "vault": return openVault();
         case "fav-edit":
             state.favEdit = !state.favEdit;
             return render();
@@ -871,6 +894,7 @@ let paletteIndex = 0;
 function paletteEntries() {
     const seen = new Set();
     const entries = [];
+    entries.push({ key: { type: "vault", label: "Coffre : notes et secrets", icon: "lock", color: "#5c6bc0" }, where: "Coffre", detail: "notes et secrets chiffrés", hay: "coffre vault notes secrets mots de passe tokens password" });
     for (const [page, keys] of Object.entries(state.pages)) {
         for (const key of keys) {
             if (!key || ["status", "back", "clear", "fav-edit"].includes(key.type)) continue;
@@ -1142,6 +1166,226 @@ function submitFav(ev) {
     send(favEditing ? { t: "fav-update", id: favEditing.fav, ...def } : { t: "fav-add", ...def });
 }
 
+// ---------- Coffre : notes et secrets chiffrés (côté serveur, voir server/vault.mjs) ----------
+
+const vaultUi = { tab: "notes", noteId: null, secretEditing: null, shown: new Map() };
+let noteReq = null;
+let noteTimer = null;
+let clipboardTimer = null;
+
+function openVault() {
+    $("#vault").hidden = false;
+    renderVault();
+    (state.vault.unlocked ? (vaultUi.tab === "notes" ? $("#note-body") : $("#secret-search")) : $("#vault-pass")).focus();
+}
+
+function closeVault() {
+    flushNote();
+    $("#vault").hidden = true;
+    state.terms.get(state.active)?.term.focus();
+}
+
+/** Nouvel état reçu du serveur : contenu mis à jour, ou tout effacé à l'écran si le coffre est verrouillé. */
+function applyVault(view) {
+    const wasUnlocked = state.vault.unlocked;
+    state.vault = view;
+    if (!view.unlocked) {
+        vaultUi.noteId = null;
+        vaultUi.shown.clear();
+        closeSecretForm();
+        // Plus rien du contenu dans la page : listes, éditeur, champs de mot de passe
+        $("#note-list").replaceChildren();
+        $("#secret-list").replaceChildren();
+        $("#note-search").value = "";
+        $("#secret-search").value = "";
+        $("#note-title").value = "";
+        $("#note-body").value = "";
+        $("#vault-pass").value = "";
+        $("#vault-pass2").value = "";
+    } else if (!wasUnlocked) {
+        vaultUi.noteId = view.notes[0]?.id ?? null;
+        loadNoteInEditor();
+    }
+    renderVault();
+}
+
+function renderVault() {
+    const v = state.vault;
+    $("#vault-open").classList.toggle("on", Boolean(v.unlocked));
+    $("#vault-locked").hidden = v.unlocked;
+    $("#vault-lock").hidden = !v.unlocked;
+    for (const tab of ["notes", "secrets"]) {
+        $(`#vault-tab-${tab}`).classList.toggle("on", vaultUi.tab === tab);
+        $(`#vault-tab-${tab}`).disabled = !v.unlocked;
+        $(`#vault-${tab}`).hidden = !v.unlocked || vaultUi.tab !== tab;
+    }
+    $("#vault-info").textContent = v.unlocked ? `${v.notes.length} note(s) · ${v.secrets.length} secret(s) · verrouillage auto après ${v.idleLockMin} min` : "verrouillé";
+    // Verrouillé : création du coffre (avec confirmation) ou déverrouillage
+    const known = v.exists !== null;   // avant la connexion au serveur, on ne sait pas encore si le coffre existe
+    $("#vault-pass2").hidden = !known || v.exists;
+    $("#vault-locked-text").textContent = !known ? "Connexion au serveur…" : v.exists ? "Le coffre est verrouillé." : "Aucun coffre : choisis un mot de passe maître (8 caractères minimum) pour le créer.";
+    $("#vault-unlock-btn").textContent = !known || v.exists ? "Déverrouiller" : "Créer le coffre";
+    $("#vault-unlock-btn").disabled = !known;
+    if (v.unlocked) {
+        renderNotes();
+        renderSecrets();
+    }
+}
+
+// ----- Notes -----
+
+function renderNotes() {
+    if (!state.vault.unlocked) return;
+    const q = $("#note-search").value.toLowerCase();
+    const notes = state.vault.notes.filter((n) => !q || `${n.title} ${n.body}`.toLowerCase().includes(q));
+    $("#note-list").replaceChildren(...notes.map((n) => {
+        const li = Object.assign(document.createElement("li"), { className: `vault-item${n.id === vaultUi.noteId ? " on" : ""}` });
+        li.append(
+            Object.assign(document.createElement("span"), { className: "vault-item-title", textContent: n.title }),
+            Object.assign(document.createElement("span"), { className: "vault-item-sub", textContent: n.body.split("\n")[0].slice(0, 80) || "—" })
+        );
+        li.addEventListener("click", () => selectNote(n.id));
+        return li;
+    }));
+    if (!notes.length) $("#note-list").append(Object.assign(document.createElement("li"), { className: "vault-empty", textContent: q ? "aucune note ne correspond" : "aucune note : « + Note »" }));
+    const has = Boolean(vaultUi.noteId);
+    for (const id of ["#note-title", "#note-body", "#note-delete"]) $(id).disabled = !has;
+}
+
+function loadNoteInEditor() {
+    const note = state.vault.notes?.find((n) => n.id === vaultUi.noteId);
+    $("#note-title").value = note?.title ?? "";
+    $("#note-body").value = note?.body ?? "";
+    $("#note-status").textContent = note ? `modifiée le ${new Date(note.updated).toLocaleString("fr-FR")}` : "";
+    $("#note-delete").textContent = "Supprimer";
+    delete $("#note-delete").dataset.armed;
+}
+
+function selectNote(id) {
+    flushNote();
+    vaultUi.noteId = id;
+    loadNoteInEditor();
+    renderNotes();
+    $("#note-body").focus();
+}
+
+/** Enregistrement automatique 700 ms après la dernière frappe (et en quittant la note). */
+function scheduleNote() {
+    $("#note-status").textContent = "modification…";
+    clearTimeout(noteTimer);
+    noteTimer = setTimeout(flushNote, 700);
+}
+
+function flushNote() {
+    if (!noteTimer) return;
+    clearTimeout(noteTimer);
+    noteTimer = null;
+    if (!vaultUi.noteId || !state.vault.unlocked) return;
+    noteReq = crypto.randomUUID();
+    send({ t: "note-save", id: vaultUi.noteId, title: $("#note-title").value, body: $("#note-body").value, req: noteReq });
+}
+
+function newNote() {
+    flushNote();
+    vaultUi.noteId = null;
+    noteReq = crypto.randomUUID();
+    $("#note-title").value = "Nouvelle note";
+    $("#note-body").value = "";
+    send({ t: "note-save", title: "Nouvelle note", body: "", req: noteReq });
+    setTimeout(() => { $("#note-title").select(); $("#note-title").focus(); }, 50);
+}
+
+// ----- Secrets -----
+
+function renderSecrets() {
+    if (!state.vault.unlocked) return;
+    const q = $("#secret-search").value.toLowerCase();
+    const secrets = state.vault.secrets.filter((s) => !q || `${s.name} ${s.user} ${s.url} ${s.note}`.toLowerCase().includes(q));
+    const button = (text, title, onClick, cls = "") => {
+        const b = Object.assign(document.createElement("button"), { type: "button", className: `vault-btn ${cls}`, textContent: text, title });
+        b.addEventListener("click", onClick);
+        return b;
+    };
+    $("#secret-list").replaceChildren(...secrets.map((s) => {
+        const li = Object.assign(document.createElement("li"), { className: "secret-row" });
+        const info = Object.assign(document.createElement("div"), { className: "secret-info" });
+        const shown = vaultUi.shown.get(s.id);
+        info.append(
+            Object.assign(document.createElement("span"), { className: "vault-item-title", textContent: s.name }),
+            Object.assign(document.createElement("span"), { className: "vault-item-sub", textContent: [s.user, s.url].filter(Boolean).join(" · ") || "—" }),
+            Object.assign(document.createElement("code"), { className: `secret-mask${shown ? " shown" : ""}`, textContent: shown ?? "•".repeat(Math.min(s.length, 24)) })
+        );
+        li.append(info,
+            button("Copier", "Copier dans le presse-papiers (effacé après 30 s)", () => send({ t: "secret-reveal", id: s.id, purpose: "copy" })),
+            button("Taper ▸", "Taper dans le terminal actif, sans Entrée (la valeur ne passe pas par la page)", () => {
+                if (!state.active) return toast("aucun terminal actif");
+                send({ t: "secret-type", id: s.id, sid: state.active });
+            }),
+            button(shown ? "Masquer" : "Afficher", "Afficher la valeur 15 s", () => {
+                if (shown) { vaultUi.shown.delete(s.id); renderSecrets(); } else send({ t: "secret-reveal", id: s.id, purpose: "show" });
+            }),
+            button("Modifier", "Modifier", () => openSecretForm(s)));
+        return li;
+    }));
+    if (!secrets.length) $("#secret-list").append(Object.assign(document.createElement("li"), { className: "vault-empty", textContent: q ? "aucun secret ne correspond" : "aucun secret : « + Secret »" }));
+}
+
+/** Valeur reçue (seulement sur demande) : copiée puis effacée du presse-papiers, ou affichée 15 s. */
+function useSecretValue({ id, value, purpose }) {
+    if (purpose === "copy") {
+        navigator.clipboard.writeText(value).then(() => {
+            toast("copié : effacé du presse-papiers dans 30 s", "ok");
+            clearTimeout(clipboardTimer);
+            clipboardTimer = setTimeout(() => navigator.clipboard.writeText("").catch(() => {}), 30000);
+        }, () => toast("copie refusée par le navigateur"));
+    } else if (purpose === "show") {
+        vaultUi.shown.set(id, value);
+        renderSecrets();
+        setTimeout(() => { vaultUi.shown.delete(id); renderSecrets(); }, 15000);
+    }
+}
+
+function openSecretForm(secret = null) {
+    vaultUi.secretEditing = secret;
+    $("#secret-form-title").textContent = secret ? "Modifier le secret" : "Nouveau secret";
+    $("#secret-name").value = secret?.name ?? "";
+    $("#secret-user").value = secret?.user ?? "";
+    $("#secret-url").value = secret?.url ?? "";
+    $("#secret-note").value = secret?.note ?? "";
+    $("#secret-value").value = "";
+    $("#secret-value").type = "password";
+    $("#secret-value").placeholder = secret ? "laisser vide pour garder la valeur actuelle" : "token, mot de passe…";
+    $("#secret-value").required = !secret;
+    $("#secret-delete").hidden = !secret;
+    $("#secret-delete").textContent = "Supprimer";
+    delete $("#secret-delete").dataset.armed;
+    $("#secret-form").hidden = false;
+    $("#secret-name").focus();
+}
+
+function closeSecretForm() {
+    $("#secret-form").hidden = true;
+    $("#secret-value").value = "";
+    vaultUi.secretEditing = null;
+}
+
+/** Mot de passe aléatoire de 24 caractères (sans caractères ambigus). */
+function generatePassword() {
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789-_.!@#%+=";
+    const bytes = crypto.getRandomValues(new Uint8Array(24));
+    return [...bytes].map((b) => chars[b % chars.length]).join("");
+}
+
+/** Bouton de suppression en deux clics (pas de fenêtre de confirmation du navigateur). */
+function armOrRun(btn, text, run) {
+    if (!btn.dataset.armed) {
+        btn.dataset.armed = "1";
+        btn.textContent = text;
+        return;
+    }
+    run();
+}
+
 function refreshToolbar() {
     for (const [id, on] of [["#broadcast", state.broadcast], ["#notify", state.notify]]) {
         $(id).classList.toggle("on", on);
@@ -1184,6 +1428,55 @@ $("#palette-input").addEventListener("keydown", (ev) => {
 });
 $("#palette").addEventListener("mousedown", (ev) => { if (ev.target.id === "palette") closePalette(); });
 $("#favform").addEventListener("submit", submitFav);
+$("#vault-open").addEventListener("click", openVault);
+$("#vault-close").addEventListener("click", closeVault);
+$("#vault-lock").addEventListener("click", () => { flushNote(); send({ t: "vault-lock" }); });
+$("#vault").addEventListener("mousedown", (ev) => { if (ev.target.id === "vault") closeVault(); });
+$("#vault").addEventListener("keydown", (ev) => {
+    if (ev.key === "Escape") {
+        ev.preventDefault();
+        if (!$("#secret-form").hidden) closeSecretForm(); else closeVault();
+    }
+    ev.stopPropagation();
+});
+for (const tab of ["notes", "secrets"]) $(`#vault-tab-${tab}`).addEventListener("click", () => { flushNote(); vaultUi.tab = tab; renderVault(); });
+$("#vault-locked").addEventListener("submit", (ev) => {
+    ev.preventDefault();
+    const password = $("#vault-pass").value;
+    if (!state.vault.exists) {
+        if (password !== $("#vault-pass2").value) return toast("les deux mots de passe sont différents");
+        send({ t: "vault-create", password });
+    } else {
+        send({ t: "vault-unlock", password });
+    }
+    $("#vault-pass").value = "";
+    $("#vault-pass2").value = "";
+});
+$("#note-new").addEventListener("click", newNote);
+$("#note-search").addEventListener("input", renderNotes);
+$("#note-title").addEventListener("input", scheduleNote);
+$("#note-body").addEventListener("input", scheduleNote);
+$("#note-delete").addEventListener("click", () => armOrRun($("#note-delete"), "Confirmer la suppression", () => {
+    send({ t: "note-delete", id: vaultUi.noteId });
+    vaultUi.noteId = null;
+    clearTimeout(noteTimer);
+    noteTimer = null;
+    loadNoteInEditor();
+}));
+$("#secret-new").addEventListener("click", () => openSecretForm());
+$("#secret-search").addEventListener("input", renderSecrets);
+$("#secret-cancel").addEventListener("click", closeSecretForm);
+$("#secret-show").addEventListener("click", () => { const i = $("#secret-value"); i.type = i.type === "password" ? "text" : "password"; });
+$("#secret-gen").addEventListener("click", () => { $("#secret-value").value = generatePassword(); $("#secret-value").type = "text"; });
+$("#secret-delete").addEventListener("click", () => armOrRun($("#secret-delete"), "Confirmer la suppression", () => {
+    send({ t: "secret-delete", id: vaultUi.secretEditing.id });
+    closeSecretForm();
+}));
+$("#secret-form").addEventListener("submit", (ev) => {
+    ev.preventDefault();
+    send({ t: "secret-save", id: vaultUi.secretEditing?.id, name: $("#secret-name").value, user: $("#secret-user").value,
+        url: $("#secret-url").value, note: $("#secret-note").value, value: $("#secret-value").value });
+});
 $("#fav-cancel").addEventListener("click", closeFavForm);
 $("#fav-remove").addEventListener("click", () => {
     if (!favEditing) return;
@@ -1222,6 +1515,8 @@ window.addEventListener("resize", () => { if (!$("#picker").hidden) placePicker(
 
 /** Raccourcis : Cmd/Ctrl+K palette, Cmd/Ctrl+F recherche, Cmd/Ctrl + / − / 0 taille du texte, Échap ferme. */
 document.addEventListener("keydown", (ev) => {
+    // Coffre ou formulaire des favoris ouverts : leurs champs gardent les raccourcis du navigateur
+    if (!$("#vault").hidden || !$("#favdialog").hidden) return;
     const mod = macClient ? ev.metaKey : ev.ctrlKey;
     const key = ev.key.toLowerCase();
     let handled = true;

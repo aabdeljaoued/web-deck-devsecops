@@ -72,6 +72,20 @@ La rubrique **Favoris** regroupe tes sites liés à la mission (Jira, Confluence
 - Jusqu'à 12 éléments par niveau, sans limite au total. Tous les sites et groupes apparaissent dans la palette (`⌘K`).
 - Enregistrés dans `favoris.json` à la racine du projet, **exclu de Git** : les adresses internes de la mission ne partent pas sur le dépôt. Le fichier peut aussi être édité à la main (sites `label` / `url` / `icon`, groupes `type: "group"` / `label` / `items`), puis le serveur redémarré.
 
+### Coffre : notes et secrets
+
+Le bouton **Coffre** (en haut à droite, ou « coffre » dans la palette `⌘K`) ouvre un coffre chiffré pour les **notes** de mission et les **secrets** (tokens, mots de passe).
+
+- **Création** : au premier usage, choisir un **mot de passe maître** (8 caractères minimum). **Mot de passe oublié = contenu perdu** : il n'existe aucune récupération.
+- **Notes** : liste à gauche, éditeur à droite, enregistrement automatique pendant la frappe, recherche.
+- **Secrets** : nom, identifiant, valeur (bouton **Générer** : 24 caractères aléatoires), adresse, note. La liste n'affiche que les noms, valeurs masquées :
+  - **Copier** : copie la valeur, effacée du presse-papiers après 30 s ;
+  - **Taper ▸** : écrit la valeur dans le terminal actif, sans Entrée, **côté serveur** (elle ne passe pas par la page). À utiliser devant une demande de mot de passe (saisie masquée) : devant une invite de commande ordinaire, la valeur s'afficherait en clair et irait dans l'historique du shell après Entrée ;
+  - **Afficher** : montre la valeur 15 s.
+- **Verrouillage** : bouton **Verrouiller**, automatiquement après 15 min d'inactivité, et à l'arrêt du serveur. Verrouillé, plus rien du contenu n'est gardé dans la page ni en mémoire du serveur.
+
+Sécurité : fichier `vault.enc` à la racine du projet, **exclu de Git**, lisible par l'utilisateur seul, chiffré en **AES-256-GCM** avec une clé dérivée du mot de passe maître par **scrypt** ; chaque échec de mot de passe ralentit la tentative suivante (jusqu'à 5 s). Les valeurs des secrets ne quittent le serveur que sur demande explicite (Copier, Afficher). Pour sauvegarder le coffre, copier `vault.enc` (il reste chiffré). Vérifier que la politique de sécurité du client autorise ce type de stockage pour ses identifiants.
+
 ### Voyants
 
 - **K8s** : un clic ouvre la liste des **contextes** et des **namespaces** ; un clic bascule (`kubectl config use-context` / `set-context --current --namespace`). Les contextes et namespaces de production sont en rouge.

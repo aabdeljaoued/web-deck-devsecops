@@ -1043,3 +1043,13 @@ main {
 .backup-row button { padding: 5px 10px; border: 1px solid var(--border); border-radius: 6px; background: none; color: var(--text); font: inherit; font-size: 12px; cursor: pointer; }
 .backup-row button:disabled { opacity: .45; cursor: not-allowed; }
 .backup-name { color: var(--text); }
+
+/* Coffre : couleur des notes (bandeau dans la liste et en haut de l'éditeur) */
+.note-colors { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.note-colors .swatch { width: 20px; height: 20px; }
+.note-colors .swatch:disabled { opacity: .35; cursor: not-allowed; transform: none; }
+.swatch.none { box-shadow: 0 0 0 1px var(--border) inset; }
+.swatch.none::after { content: ""; position: absolute; left: 50%; top: 2px; bottom: 2px; width: 2px; background: var(--muted); transform: translateX(-50%) rotate(45deg); }
+.vault-item.colored { box-shadow: inset 4px 0 0 var(--nc); padding-left: 14px; }
+.vault-item.colored.on { box-shadow: inset 4px 0 0 var(--nc), inset 0 0 0 1px color-mix(in srgb, var(--nc) 60%, transparent); }
+.vault-editor { box-shadow: inset 0 4px 0 var(--note-c, transparent); }

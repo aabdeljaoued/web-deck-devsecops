@@ -95,7 +95,7 @@ La rubrique **Favoris** regroupe tes sites liés à la mission (Jira, Confluence
 Le bouton **Coffre** (en haut à droite, ou « coffre » dans la palette `⌘K`) ouvre un coffre chiffré pour les **notes** de mission et les **secrets** (tokens, mots de passe).
 
 - **Création** : au premier usage, choisir un **mot de passe maître** (8 caractères minimum). **Mot de passe oublié = contenu perdu** : il n'existe aucune récupération.
-- **Notes** : liste à gauche, éditeur à droite, enregistrement automatique pendant la frappe, recherche.
+- **Notes** : liste à gauche, éditeur à droite, enregistrement automatique pendant la frappe, recherche. Une **couleur** par note (pastilles sous le titre, ou couleur libre) : bandeau dans la liste et en haut de l'éditeur ; chiffrée avec le reste du coffre.
 - **Secrets** : nom, identifiant, valeur (bouton **Générer** : 24 caractères aléatoires), adresse, note. La liste n'affiche que les noms, valeurs masquées :
   - **Copier** : copie la valeur, effacée du presse-papiers après 30 s ;
   - **Taper ▸** : écrit la valeur dans le terminal actif, sans Entrée, **côté serveur** (elle ne passe pas par la page). À utiliser devant une demande de mot de passe (saisie masquée) : devant une invite de commande ordinaire, la valeur s'afficherait en clair et irait dans l'historique du shell après Entrée ;

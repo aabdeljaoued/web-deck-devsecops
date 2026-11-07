@@ -233,7 +233,7 @@ wss.on("connection", (ws) => {
                 case "vault-password": await vault.changePassword(msg.current, msg.next); reply({ t: "vault-ok", text: "mot de passe maître changé" }); break;
                 case "vault-export": reply({ t: "vault-export", data: vault.exportBox() }); break;
                 case "vault-import": reply({ t: "vault-imported", mode: msg.mode, ...(await vault.importBox(msg.data, String(msg.mode), msg.password)) }); break;
-                case "note-save": reply({ t: "note-saved", id: vault.saveNote(msg), req: msg.req }); break;
+                case "note-save": reply({ t: "note-saved", id: vault.saveNote({ id: msg.id, title: msg.title, body: msg.body, color: msg.color }), req: msg.req }); break;
                 case "note-delete": vault.deleteNote(String(msg.id)); break;
                 case "secret-save": vault.saveSecret(msg); reply({ t: "vault-ok", text: "secret enregistré", close: true }); break;
                 case "secret-delete": vault.deleteSecret(String(msg.id)); break;

@@ -209,9 +209,15 @@ export class Vault extends EventEmitter {
 
     // ---------- Notes ----------
 
-    saveNote({ id, title, body }) {
+    /** color : "#rrggbb", "" (aucune) ; absente = inchangée. */
+    saveNote({ id, title, body, color }) {
         this.need();
         const note = { title: clip(title, 120).trim() || "Sans titre", body: clip(body, 200000), updated: new Date().toISOString() };
+        if (color !== undefined) {
+            const c = String(color ?? "").trim().toLowerCase();
+            if (c && !/^#[0-9a-f]{6}$/.test(c)) throw new Error(`couleur invalide : ${c} (format #rrggbb)`);
+            note.color = c || null;
+        }
         const existing = id && this.data.notes.find((n) => n.id === id);
         if (existing) Object.assign(existing, note);
         else this.data.notes.unshift({ id: randomUUID(), ...note });

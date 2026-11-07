@@ -1243,6 +1243,43 @@ function renderSwatches() {
     box.replaceChildren(...buttons, picker);
 }
 
+// ---------- Couleur d'une note du coffre (même palette, plus « aucune ») ----------
+
+const NOTE_COLORS = [["", "Aucune couleur"], ...GROUP_COLORS.slice(1)];
+
+function renderNoteColors() {
+    const box = $("#note-colors");
+    const current = vaultUi.noteColor ?? "";
+    const disabled = !vaultUi.noteId;
+    const custom = current && !NOTE_COLORS.some(([c]) => c === current);
+    const buttons = NOTE_COLORS.map(([color, name]) => {
+        const b = Object.assign(document.createElement("button"), { type: "button", className: `swatch${color === current ? " on" : ""}${color ? "" : " none"}`, title: name, disabled });
+        b.style.setProperty("--sw", color || "transparent");
+        b.setAttribute("aria-pressed", String(color === current));
+        b.addEventListener("click", () => setNoteColor(color));
+        return b;
+    });
+    const picker = Object.assign(document.createElement("label"), { className: `swatch picker${custom ? " on" : ""}`, title: "Autre couleur…" });
+    picker.style.setProperty("--sw", custom ? current : "transparent");
+    const input = Object.assign(document.createElement("input"), { type: "color", value: custom ? current : "#1e88e5", disabled });
+    input.addEventListener("input", () => setNoteColor(input.value.toLowerCase()));
+    picker.append(input);
+    box.replaceChildren(...buttons, picker);
+    $(".vault-editor").style.setProperty("--note-c", current || "transparent");
+}
+
+/** Couleur choisie : affichée tout de suite, enregistrée aussitôt (pas d'attente de frappe). */
+function setNoteColor(color) {
+    if (!vaultUi.noteId) return;
+    vaultUi.noteColor = color;
+    const note = state.vault.notes?.find((n) => n.id === vaultUi.noteId);
+    if (note) note.color = color || null;
+    renderNoteColors();
+    renderNotes();
+    scheduleNote();
+    flushNote();
+}
+
 /** Site : adresse visible ; groupe : pas d'adresse, mais une couleur. */
 function syncFavKind() {
     const group = favEditing ? Boolean(favEditing.favGroup) : $("#fav-kind-group").checked;
@@ -1272,7 +1309,7 @@ function submitFav(ev) {
 
 // ---------- Coffre : notes et secrets chiffrés (côté serveur, voir server/vault.mjs) ----------
 
-const vaultUi = { tab: "notes", noteId: null, secretEditing: null, shown: new Map() };
+const vaultUi = { tab: "notes", noteId: null, noteColor: "", secretEditing: null, shown: new Map() };
 let noteReq = null;
 let noteTimer = null;
 let clipboardTimer = null;
@@ -1344,7 +1381,8 @@ function renderNotes() {
     const q = $("#note-search").value.toLowerCase();
     const notes = state.vault.notes.filter((n) => !q || `${n.title} ${n.body}`.toLowerCase().includes(q));
     $("#note-list").replaceChildren(...notes.map((n) => {
-        const li = Object.assign(document.createElement("li"), { className: `vault-item${n.id === vaultUi.noteId ? " on" : ""}` });
+        const li = Object.assign(document.createElement("li"), { className: `vault-item${n.id === vaultUi.noteId ? " on" : ""}${n.color ? " colored" : ""}` });
+        if (n.color) li.style.setProperty("--nc", n.color);
         li.append(
             Object.assign(document.createElement("span"), { className: "vault-item-title", textContent: n.title }),
             Object.assign(document.createElement("span"), { className: "vault-item-sub", textContent: n.body.split("\n")[0].slice(0, 80) || "—" })
@@ -1355,12 +1393,15 @@ function renderNotes() {
     if (!notes.length) $("#note-list").append(Object.assign(document.createElement("li"), { className: "vault-empty", textContent: q ? "aucune note ne correspond" : "aucune note : « + Note »" }));
     const has = Boolean(vaultUi.noteId);
     for (const id of ["#note-title", "#note-body", "#note-delete"]) $(id).disabled = !has;
+    renderNoteColors();
 }
 
 function loadNoteInEditor() {
     const note = state.vault.notes?.find((n) => n.id === vaultUi.noteId);
     $("#note-title").value = note?.title ?? "";
     $("#note-body").value = note?.body ?? "";
+    vaultUi.noteColor = note?.color ?? "";
+    renderNoteColors();
     $("#note-status").textContent = note ? `modifiée le ${new Date(note.updated).toLocaleString("fr-FR")}` : "";
     $("#note-delete").textContent = "Supprimer";
     delete $("#note-delete").dataset.armed;
@@ -1387,7 +1428,7 @@ function flushNote() {
     noteTimer = null;
     if (!vaultUi.noteId || !state.vault.unlocked) return;
     noteReq = crypto.randomUUID();
-    send({ t: "note-save", id: vaultUi.noteId, title: $("#note-title").value, body: $("#note-body").value, req: noteReq });
+    send({ t: "note-save", id: vaultUi.noteId, title: $("#note-title").value, body: $("#note-body").value, color: vaultUi.noteColor ?? "", req: noteReq });
 }
 
 function newNote() {

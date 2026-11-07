@@ -103,22 +103,75 @@ export class Favorites {
         }
     }
 
-    load(list, depth) {
+    load(list, depth, stats = null) {
         const items = [];
         for (const def of list) {
             try {
                 const id = typeof def?.id === "string" ? def.id : randomUUID();
                 if (def?.type === "group") {
                     if (depth >= MAX_GROUP_DEPTH) throw new Error("trop de niveaux de groupes");
-                    items.push({ id, ...cleanGroup(def), items: this.load(Array.isArray(def.items) ? def.items : [], depth + 1) });
+                    items.push({ id, ...cleanGroup(def), items: this.load(Array.isArray(def.items) ? def.items : [], depth + 1, stats) });
                 } else {
                     items.push({ id, ...cleanSite(def) });   // ancien format (liste de sites) accepté tel quel
                 }
             } catch (err) {
-                console.warn(`  favoris.json : "${def?.label ?? "?"}" ignoré (${err.message})`);
+                if (stats) stats.skipped.push(`"${def?.label ?? "?"}" : ${err.message}`);
+                else console.warn(`  favoris.json : "${def?.label ?? "?"}" ignoré (${err.message})`);
             }
         }
+        if (stats && items.length > MAX_FAVORITES) stats.skipped.push(`${items.length - MAX_FAVORITES} élément(s) au-delà de ${MAX_FAVORITES} par niveau`);
         return items.slice(0, MAX_FAVORITES);
+    }
+
+    /** Contenu enregistrable (format de favoris.json) : icônes choisies seulement. */
+    dump(items = this.items) {
+        return items.map((f) => f.type === "group"
+            ? { id: f.id, type: "group", label: f.label, ...(f.icon ? { icon: f.icon } : {}), ...(f.color ? { color: f.color } : {}), items: this.dump(f.items) }
+            : { id: f.id, label: f.label, url: f.url, ...(f.icon ? { icon: f.icon } : {}) });
+    }
+
+    /** Fichier d'export : favoris et quelques informations pour le reconnaître à l'import. */
+    export() {
+        return { app: "web-deck-devsecops", kind: "favoris", version: 1, exported: new Date().toISOString(), favorites: this.dump() };
+    }
+
+    /**
+     * Import d'un export (ou d'un favoris.json) : "replace" remplace tout, "merge" ajoute ce qui manque
+     * (groupes de même nom fusionnés, sites déjà présents à la même place ignorés). Tout ou rien.
+     */
+    import(data, mode = "merge") {
+        const list = Array.isArray(data) ? data : data?.kind === "favoris" && Array.isArray(data.favorites) ? data.favorites : null;
+        if (!list) throw new Error("fichier non reconnu : ce n'est pas un export de favoris du deck");
+        const stats = { added: 0, duplicates: 0, skipped: [] };
+        const incoming = this.load(list, 0, stats);
+        const sites = (items) => items.reduce((n, f) => n + (f.type === "group" ? sites(f.items) : 1), 0);
+        if (mode === "replace") {
+            this.items = incoming;
+            stats.added = sites(incoming);
+        } else if (mode === "merge") {
+            const fresh = (f) => ({ ...f, id: randomUUID(), ...(f.type === "group" ? { items: f.items.map(fresh) } : {}) });
+            const merge = (target, items, depth) => {
+                for (const f of items) {
+                    if (f.type === "group") {
+                        const same = target.find((g) => g.type === "group" && g.label.toLowerCase() === f.label.toLowerCase());
+                        if (same) { merge(same.items, f.items, depth + 1); continue; }
+                    } else if (target.some((s) => s.type !== "group" && s.url === f.url)) {
+                        stats.duplicates++;
+                        continue;
+                    }
+                    if (target.length >= MAX_FAVORITES) throw new Error(`fusion impossible : plus de ${MAX_FAVORITES} éléments à un même niveau ("${f.label}")`);
+                    target.push(fresh(f));
+                    stats.added += f.type === "group" ? sites(f.items) : 1;
+                }
+            };
+            const next = structuredClone(this.items);
+            merge(next, incoming, 0);
+            this.items = next;
+        } else {
+            throw new Error(`mode d'import inconnu : ${mode}`);
+        }
+        this.save();
+        return stats;
     }
 
     /** Arbre avec les icônes affichées (choisie, automatique pour un site, dossier pour un groupe) ; chosen = icône choisie. */
@@ -240,9 +293,6 @@ export class Favorites {
     }
 
     save() {
-        const dump = (items) => items.map((f) => f.type === "group"
-            ? { id: f.id, type: "group", label: f.label, ...(f.icon ? { icon: f.icon } : {}), ...(f.color ? { color: f.color } : {}), items: dump(f.items) }
-            : { id: f.id, label: f.label, url: f.url, ...(f.icon ? { icon: f.icon } : {}) });
-        writeFileSync(this.file, `${JSON.stringify(dump(this.items), null, 2)}\n`);
+        writeFileSync(this.file, `${JSON.stringify(this.dump(), null, 2)}\n`);
     }
 }

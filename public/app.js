@@ -191,6 +191,16 @@ function handle(msg) {
         case "secret-value":
             useSecretValue(msg);
             break;
+        case "fav-export":
+            downloadJson(msg.data, `favoris-deck-${new Date().toISOString().slice(0, 10)}.json`);
+            break;
+        case "fav-imported": {
+            hideImportConfirm();
+            const what = `${msg.added} favori(s) ${msg.mode === "replace" ? "importé(s), anciens remplacés" : "ajouté(s)"}`;
+            const extra = [msg.duplicates ? `${msg.duplicates} déjà présent(s)` : "", msg.skipped?.length ? `${msg.skipped.length} ignoré(s) : ${msg.skipped[0]}` : ""].filter(Boolean);
+            toast(extra.length ? `${what} ; ${extra.join(" ; ")}` : what, msg.skipped?.length ? "ko" : "ok");
+            break;
+        }
         case "vault-ok":
             toast(msg.text, "ok");
             if (msg.close) closeSecretForm();
@@ -1479,9 +1489,64 @@ function openSettings() {
     $("#set-appearance").focus();
 }
 
+// ---------- Export / import des favoris (Réglages) ----------
+
+let pendingImport = null;
+
+function downloadJson(data, filename) {
+    const url = URL.createObjectURL(new Blob([`${JSON.stringify(data, null, 2)}\n`], { type: "application/json" }));
+    const a = Object.assign(document.createElement("a"), { href: url, download: filename });
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    toast(`favoris exportés : ${filename} (dans Téléchargements)`, "ok");
+}
+
+/** Fichier choisi : lu et résumé dans la page, puis l'utilisateur choisit Fusionner ou Remplacer. */
+async function readImportFile(file) {
+    if (!file) return;
+    try {
+        if (file.size > 900 * 1024) throw new Error("fichier trop gros pour des favoris");
+        const data = JSON.parse(await file.text());
+        const list = Array.isArray(data) ? data : data?.kind === "favoris" && Array.isArray(data.favorites) ? data.favorites : null;
+        if (!list) throw new Error("ce n'est pas un export de favoris du deck");
+        const count = (items) => items.reduce((n, f) => n + (f?.type === "group" ? count(Array.isArray(f.items) ? f.items : []) : 1), 0);
+        const groups = (items) => items.reduce((n, f) => n + (f?.type === "group" ? 1 + groups(Array.isArray(f.items) ? f.items : []) : 0), 0);
+        pendingImport = data;
+        $("#fav-import-summary").textContent = `${file.name} : ${count(list)} site(s), ${groups(list)} groupe(s)`;
+        $("#fav-import-confirm").hidden = false;
+        $("#fav-import-merge").focus();
+    } catch (err) {
+        toast(`import impossible : ${err.message.split("\n")[0]}`);
+    } finally {
+        $("#fav-import-file").value = "";
+    }
+}
+
+function hideImportConfirm() {
+    pendingImport = null;
+    $("#fav-import-confirm").hidden = true;
+    $("#fav-import-replace").classList.remove("armed");
+    $("#fav-import-replace").textContent = "Remplacer tout";
+}
+
+/** Remplacer efface les favoris actuels : deuxième clic de confirmation. */
+function importFavorites(mode) {
+    if (!pendingImport) return;
+    const btn = $("#fav-import-replace");
+    if (mode === "replace" && !btn.classList.contains("armed")) {
+        btn.classList.add("armed");
+        btn.textContent = "Confirmer le remplacement";
+        return;
+    }
+    send({ t: "fav-import", mode, data: pendingImport });
+}
+
 /** Fermeture sans enregistrer : l'aperçu de l'apparence est annulé. */
 function closeSettings() {
     $("#settings").hidden = true;
+    hideImportConfirm();
     applyAppearance(state.settings.appearance, state.settings.missionTheme);
 }
 
@@ -1535,6 +1600,12 @@ $("#vault-open").addEventListener("click", openVault);
 $("#settings-open").addEventListener("click", openSettings);
 $("#settings-cancel").addEventListener("click", closeSettings);
 $("#set-appearance").addEventListener("change", previewAppearance);
+$("#fav-export").addEventListener("click", () => send({ t: "fav-export" }));
+$("#fav-import").addEventListener("click", () => $("#fav-import-file").click());
+$("#fav-import-file").addEventListener("change", (ev) => readImportFile(ev.target.files[0]));
+$("#fav-import-merge").addEventListener("click", () => importFavorites("merge"));
+$("#fav-import-replace").addEventListener("click", () => importFavorites("replace"));
+$("#fav-import-cancel").addEventListener("click", hideImportConfirm);
 $("#set-theme").addEventListener("change", previewAppearance);
 $("#settings").addEventListener("mousedown", (ev) => { if (ev.target.id === "settings") closeSettings(); });
 $("#settings-form").addEventListener("keydown", (ev) => {

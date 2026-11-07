@@ -207,6 +207,23 @@
                 <span class="settings-row"><input id="set-autohome" type="number" min="0" max="3600" step="5" required> secondes</span>
             </label>
             </fieldset>
+            <fieldset class="settings-group">
+                <legend>Favoris</legend>
+                <span class="hint">Pour retrouver tes favoris sur une autre machine : exporte-les ici, puis importe le fichier là-bas. Le fichier contient les adresses de mission : garde-le hors des dépôts et des partages publics.</span>
+                <div class="settings-actions">
+                    <button type="button" id="fav-export">Exporter…</button>
+                    <button type="button" id="fav-import">Importer…</button>
+                    <input id="fav-import-file" type="file" accept=".json,application/json" hidden>
+                </div>
+                <div id="fav-import-confirm" class="fav-import-confirm" hidden>
+                    <span id="fav-import-summary"></span>
+                    <span class="settings-actions">
+                        <button type="button" id="fav-import-merge" class="primary" title="Ajoute ce qui manque : groupes de même nom fusionnés, sites déjà présents ignorés">Fusionner</button>
+                        <button type="button" id="fav-import-replace" class="danger" title="Remplace tous les favoris actuels par ceux du fichier">Remplacer tout</button>
+                        <button type="button" id="fav-import-cancel">Annuler</button>
+                    </span>
+                </div>
+            </fieldset>
             <p class="hint">Réglages enregistrés côté serveur (<code>settings.json</code>, hors Git) : les mêmes pour tous les onglets et navigateurs.</p>
             <div class="favform-actions">
                 <span class="grow"></span>

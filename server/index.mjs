@@ -208,6 +208,15 @@ wss.on("connection", (ws) => {
                     reply({ t: "fav-saved" });
                     break;
                 }
+                // Export / import des favoris (Réglages) : pour les retrouver sur une autre machine
+                case "fav-export": reply({ t: "fav-export", data: favorites.export() }); break;
+                case "fav-import": {
+                    const stats = favorites.import(msg.data, msg.mode === "replace" ? "replace" : "merge");
+                    deck = buildDeck(ctx, favorites.list());
+                    broadcast({ t: "deck", pages: deck.pages, titles: deck.titles, parents: deck.parents, favGroups: favorites.groups() });
+                    reply({ t: "fav-imported", mode: msg.mode, ...stats });
+                    break;
+                }
                 case "in": terminals.write(String(msg.sid), String(msg.d)); break;
                 case "resize": terminals.resize(String(msg.sid), msg.cols, msg.rows); break;
                 case "close": terminals.close(String(msg.sid)); break;

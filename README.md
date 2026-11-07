@@ -76,6 +76,7 @@ La rubrique **Favoris** regroupe tes sites liés à la mission (Jira, Confluence
 - **Modifier** : les éléments se mettent à trembler ; un clic ouvre leur formulaire pour les renommer, changer de groupe (**Dans**), les déplacer (◀ ▶) ou les supprimer. Supprimer un groupe supprime son contenu, après un second clic de confirmation qui indique le nombre d'éléments. **Terminé** pour revenir à la normale.
 - Jusqu'à 12 éléments par niveau, sans limite au total. Tous les sites et groupes apparaissent dans la palette (`⌘K`).
 - Enregistrés dans `favoris.json` à la racine du projet, **exclu de Git** : les adresses internes de la mission ne partent pas sur le dépôt. Le fichier peut aussi être édité à la main (sites `label` / `url` / `icon`, groupes `type: "group"` / `label` / `items`), puis le serveur redémarré.
+- **D'une machine à l'autre** : Réglages › Favoris › **Exporter…** télécharge `favoris-deck-AAAA-MM-JJ.json` ; sur l'autre machine, **Importer…** ce fichier puis **Fusionner** (ajoute ce qui manque : groupes de même nom réunis, sites déjà présents ignorés) ou **Remplacer tout** (deux clics). Un import trop gros pour un niveau (12 éléments) est refusé en entier, sans rien modifier. Le fichier contient les adresses de mission : à garder hors des dépôts et partages publics.
 
 ### Coffre : notes et secrets
 

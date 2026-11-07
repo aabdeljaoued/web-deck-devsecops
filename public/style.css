@@ -666,7 +666,7 @@ main {
 .favform input:focus { border-color: var(--accent); }
 .favform-actions { display: flex; gap: 6px; align-items: center; margin-top: 4px; }
 .favform-actions .grow { flex: 1; }
-.favform-actions button {
+.favform-actions button, .settings-actions button {
     padding: 7px 12px;
     border: 1px solid var(--border);
     border-radius: 6px;
@@ -676,8 +676,8 @@ main {
     font-size: 13px;
     cursor: pointer;
 }
-.favform-actions button:hover { background: rgba(255, 255, 255, .06); }
-.favform-actions button.primary { background: var(--accent-strong); border-color: var(--accent); }
+.settings-actions button:hover, .favform-actions button:hover { background: rgba(255, 255, 255, .06); }
+.settings-actions button.primary, .favform-actions button.primary { background: var(--accent-strong); border-color: var(--accent); }
 .favform-actions button.danger { color: #ff8a80; border-color: #7f2a2a; }
 .favform-actions button[hidden] { display: none; }
 
@@ -904,7 +904,8 @@ main {
 /* Réglages */
 .settings-open { padding: 4px 8px; }
 .settings-open svg { width: 15px; height: 15px; }
-.settings-box { width: min(520px, 92vw); }
+#settings { padding-top: 20px; }
+.settings-box { width: min(520px, 92vw); max-height: calc(100vh - 40px); overflow-y: auto; }
 .settings-row { display: flex; align-items: center; gap: 8px; color: var(--text); font-size: 14px; }
 .settings-row input { width: 110px; }
 
@@ -973,3 +974,10 @@ main {
 /* Réglages : groupes */
 .settings-group { margin: 0; padding: 10px 12px 12px; border: 1px solid var(--border); border-radius: 8px; display: flex; flex-direction: column; gap: 10px; }
 .settings-group legend { padding: 0 6px; font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+
+/* Réglages : export / import des favoris */
+.settings-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.fav-import-confirm { display: flex; flex-direction: column; gap: 8px; padding: 10px; border-radius: 8px; background: color-mix(in srgb, var(--accent) 10%, transparent); border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); font-size: 13px; }
+.fav-import-confirm[hidden] { display: none; }
+#fav-import-replace { color: #ef5350; border-color: color-mix(in srgb, #ef5350 50%, transparent); }
+#fav-import-replace.armed { color: #fff; background: #c62828; border-color: #c62828; }

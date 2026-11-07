@@ -12,6 +12,7 @@ import { WebSocketServer } from "ws";
 import { buildDeck, ICONS } from "./catalog.mjs";
 import { Favorites } from "./favorites.mjs";
 import { Vault } from "./vault.mjs";
+import { Settings } from "./settings.mjs";
 import { iconFile } from "./icons.mjs";
 import { loadConfig, ROOT } from "./config.mjs";
 import { launch, openBrowser, windowsPty } from "./platform.mjs";
@@ -111,6 +112,7 @@ const terminals = new Terminals(ctx, path.join(ROOT, ".deck-sessions.json"));
 const status = new StatusHub(ctx);
 const restored = terminals.restore();
 const vault = new Vault(path.join(ROOT, "vault.enc"));
+const settings = new Settings(path.join(ROOT, "settings.json"));
 const wss = new WebSocketServer({ noServer: true, maxPayload: 1024 * 1024 });
 
 server.on("upgrade", (req, socket, head) => {
@@ -145,7 +147,8 @@ wss.on("connection", (ws) => {
         windowsPty: windowsPty(),
         sessions: terminals.list(),
         status: status.states,
-        vault: vault.view()
+        vault: vault.view(),
+        settings: settings.get()
     }));
 
     ws.on("message", async (raw) => {
@@ -168,6 +171,8 @@ wss.on("connection", (ws) => {
                 case "kube-use": await status.useKube({ context: msg.context, namespace: msg.namespace }); reply({ t: "kube-used" }); break;
                 case "git-list": reply({ t: "git-list", ...status.listRepos() }); break;
                 case "git-select": await status.selectRepo(String(msg.repo)); break;
+                // Réglages (espace admin) : enregistrés, puis renvoyés à toutes les pages
+                case "settings-save": broadcast({ t: "settings", settings: settings.update(msg.settings) }); reply({ t: "vault-ok", text: "réglages enregistrés", close: false }); break;
                 // Coffre (notes et secrets chiffrés)
                 case "vault-create": await vault.create(msg.password); break;
                 case "vault-unlock": await vault.unlock(msg.password); break;

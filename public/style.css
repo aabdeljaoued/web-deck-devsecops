@@ -4,6 +4,17 @@
     --border: #2a2f38;
     --text: #e6e6e6;
     --muted: #8b93a1;
+    /* Surfaces et touches : redéfinies en mode clair ([data-mode="light"] plus bas) */
+    --input-bg: #0b0d12;
+    --term-bg: #000;
+    --grid-bg: #07080b;
+    --bezel: #050608;
+    --screen-top: #161a22;
+    --screen-bottom: #07080b;
+    --slot-bg: #0a0b0e;
+    --key-text: #eef1f6;
+    --key-label: rgba(238, 241, 246, .82);
+    --tint-mix: #fff;   /* icônes : couleur de la rubrique éclaircie (sombre) ou assombrie (clair) */
     --run: #2ecc71;
     --type: #ffb300;
     --gap: 10px;
@@ -99,7 +110,7 @@ main {
 .key {
     /* --c : couleur de la touche ; --tint : version claire et lumineuse pour l'icône et le halo */
     /* Icône dans la couleur de la rubrique, à peine éclaircie (en espace oklab) pour rester lisible sur le fond sombre */
-    --tint: color-mix(in oklab, var(--c) 82%, #fff);
+    --tint: color-mix(in oklab, var(--c) 82%, var(--tint-mix));
     position: relative;
     width: var(--key);
     height: var(--key);
@@ -111,19 +122,19 @@ main {
     padding: 4px;
     border: none;
     border-radius: 13px;
-    color: #eef1f6;
+    color: var(--key-text);
     /* Écran : halo de la couleur de la touche qui monte du bas, sur un fond presque noir */
     background:
         radial-gradient(140% 95% at 50% 118%, color-mix(in srgb, var(--c) 80%, #fff) 0%, var(--c) 22%, color-mix(in srgb, var(--c) 60%, transparent) 50%, transparent 85%),
         radial-gradient(85% 60% at 50% 40%, color-mix(in srgb, var(--c) 35%, transparent), transparent 75%),
-        linear-gradient(180deg, #161a22, #07080b);
+        linear-gradient(180deg, var(--screen-top), var(--screen-bottom));
     cursor: pointer;
     font: inherit;
     /* Cadre : bord noir en relief autour de l'écran */
     box-shadow:
         inset 0 0 0 1px rgba(255, 255, 255, .07),
         inset 0 -6px 12px rgba(0, 0, 0, .55),
-        0 0 0 3px #050608,
+        0 0 0 3px var(--bezel),
         0 0 0 4px rgba(255, 255, 255, .06),
         0 4px 8px rgba(0, 0, 0, .7),
         0 6px 18px -4px color-mix(in srgb, var(--c) 55%, transparent);
@@ -150,7 +161,7 @@ main {
     width: var(--key);
     height: var(--key);
     border-radius: 13px;
-    background: #0a0b0e;
+    background: var(--slot-bg);
 }
 
 .key .sym {
@@ -174,7 +185,7 @@ main {
     font-weight: 600;
     line-height: 1.1;
     text-align: center;
-    color: rgba(238, 241, 246, .82);
+    color: var(--key-label);
 }
 
 /* Rubrique : liseré de la couleur de la touche et chevron */
@@ -182,7 +193,7 @@ main {
     box-shadow:
         inset 0 0 0 1.5px color-mix(in srgb, var(--tint) 55%, transparent),
         inset 0 -6px 12px rgba(0, 0, 0, .55),
-        0 0 0 3px #050608,
+        0 0 0 3px var(--bezel),
         0 0 0 4px rgba(255, 255, 255, .06),
         0 4px 8px rgba(0, 0, 0, .7),
         0 6px 18px -4px color-mix(in srgb, var(--c) 55%, transparent);
@@ -229,8 +240,8 @@ main {
 
 .key.ok { animation: flash-ok .6s; }
 .key.ko { animation: flash-ko .8s; }
-@keyframes flash-ok { 0%, 60% { box-shadow: inset 0 0 0 3px var(--run), 0 0 0 3px #050608; } }
-@keyframes flash-ko { 0%, 60% { box-shadow: inset 0 0 0 3px #ef5350, 0 0 0 3px #050608; } }
+@keyframes flash-ok { 0%, 60% { box-shadow: inset 0 0 0 3px var(--run), 0 0 0 3px var(--bezel); } }
+@keyframes flash-ko { 0%, 60% { box-shadow: inset 0 0 0 3px #ef5350, 0 0 0 3px var(--bezel); } }
 
 .legend {
     margin: 0;
@@ -277,7 +288,7 @@ main {
     cursor: pointer;
     white-space: nowrap;
 }
-.tab.active { background: #000; color: var(--text); }
+.tab.active { background: var(--term-bg); color: var(--text); }
 .tab.dragging { opacity: .45; }
 .tab.drop-before { box-shadow: inset 3px 0 0 var(--accent); }
 .tab.drop-after { box-shadow: inset -3px 0 0 var(--accent); }
@@ -286,7 +297,7 @@ main {
     font: inherit;
     font-size: 13px;
     color: var(--text);
-    background: #0b0d12;
+    background: var(--input-bg);
     border: 1px solid var(--accent);
     border-radius: 4px;
     padding: 1px 4px;
@@ -309,7 +320,7 @@ main {
 .tab-add { font-size: 16px; line-height: 1; }
 #shell { margin-left: auto; margin-bottom: 4px; background: var(--panel); }
 
-#screens { flex: 1; position: relative; background: #000; min-height: 0; }
+#screens { flex: 1; position: relative; background: var(--term-bg); min-height: 0; }
 .screen { position: absolute; inset: 6px; display: none; }
 .screen.shown { display: block; }
 
@@ -320,7 +331,7 @@ main {
     grid-template-rows: repeat(var(--rows, 2), 1fr);
     gap: 6px;
     padding: 6px;
-    background: #07080b;
+    background: var(--grid-bg);
 }
 #screens.grid .screen {
     position: relative;
@@ -331,7 +342,7 @@ main {
     padding: 4px;
     border: 1px solid var(--border);
     border-radius: 8px;
-    background: #000;
+    background: var(--term-bg);
     overflow: hidden;
 }
 #screens.grid .screen.active {
@@ -469,7 +480,7 @@ main {
     padding: 4px 8px;
     border: 1px solid var(--border);
     border-radius: 5px;
-    background: #0b0d12;
+    background: var(--input-bg);
     color: var(--text);
     font: inherit;
     font-size: 13px;
@@ -547,7 +558,7 @@ main {
     padding: 4px 8px 4px 10px;
     border: 1px solid var(--border);
     border-radius: 6px;
-    background: #0b0d12;
+    background: var(--input-bg);
     color: var(--muted);
     font: inherit;
     font-size: 12px;
@@ -598,6 +609,7 @@ main {
     cursor: pointer;
 }
 .palette-row.sel { background: var(--accent-strong); }
+.palette-row.sel .palette-label { color: #fff; }
 .palette-icon {
     flex: none;
     width: 22px;
@@ -635,7 +647,7 @@ main {
     color: #fff;
 }
 @keyframes wiggle { from { transform: rotate(-1.5deg); } to { transform: rotate(1.5deg); } }
-.key.fav-edit.on { box-shadow: inset 0 0 0 2px var(--accent), 0 0 0 3px #050608, 0 4px 8px rgba(0, 0, 0, .7); }
+.key.fav-edit.on { box-shadow: inset 0 0 0 2px var(--accent), 0 0 0 3px var(--bezel), 0 4px 8px rgba(0, 0, 0, .7); }
 
 .favform { padding: 16px 18px; display: flex; flex-direction: column; gap: 12px; }
 .favform h2 { margin: 0 0 2px; font-size: 16px; font-weight: 600; }
@@ -645,7 +657,7 @@ main {
     padding: 8px 10px;
     border: 1px solid var(--border);
     border-radius: 6px;
-    background: #0b0d12;
+    background: var(--input-bg);
     color: var(--text);
     font: inherit;
     font-size: 14px;
@@ -690,7 +702,7 @@ main {
     padding: 8px 10px;
     border: 1px solid var(--border);
     border-radius: 6px;
-    background: #0b0d12;
+    background: var(--input-bg);
     color: var(--text);
     font: inherit;
     font-size: 14px;
@@ -745,7 +757,7 @@ main {
     padding: 4px 8px;
     border: 1px solid var(--border);
     border-radius: 6px;
-    background: #0b0d12;
+    background: var(--input-bg);
     color: var(--muted);
     font: inherit;
     font-size: 12px;
@@ -782,8 +794,8 @@ main {
 
 /* Favoris : glisser-déposer */
 .key.fav-dragging { opacity: .35; }
-.key.fav-before { box-shadow: inset 4px 0 0 var(--accent), 0 0 0 3px #050608; }
-.key.fav-after { box-shadow: inset -4px 0 0 var(--accent), 0 0 0 3px #050608; }
+.key.fav-before { box-shadow: inset 4px 0 0 var(--accent), 0 0 0 3px var(--bezel); }
+.key.fav-after { box-shadow: inset -4px 0 0 var(--accent), 0 0 0 3px var(--bezel); }
 .key.fav-into { box-shadow: inset 0 0 0 3px var(--accent), 0 0 18px color-mix(in srgb, var(--accent) 60%, transparent); filter: brightness(1.3); }
 
 /* ---------- Coffre : notes et secrets ---------- */
@@ -828,7 +840,7 @@ main {
     padding: 8px 10px;
     border: 1px solid var(--border);
     border-radius: 6px;
-    background: #0b0d12;
+    background: var(--input-bg);
     color: var(--text);
     font: inherit;
     font-size: 14px;
@@ -845,6 +857,7 @@ main {
 .vault-item { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border-radius: 6px; cursor: pointer; }
 .vault-item:hover { background: rgba(255, 255, 255, .05); }
 .vault-item.on { background: var(--accent-strong); }
+.vault-item.on .vault-item-title, .vault-item.on .vault-item-sub { color: #fff; }
 .vault-item-title { font-size: 14px; color: var(--text); }
 .vault-item-sub { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .vault-empty { padding: 12px; font-size: 13px; color: var(--muted); }
@@ -880,3 +893,83 @@ main {
 .secret-form label { display: flex; flex-direction: column; gap: 5px; font-size: 12px; color: var(--muted); }
 .secret-value-row { display: flex; gap: 6px; }
 .secret-value-row input { flex: 1; min-width: 0; font-family: Consolas, Menlo, monospace; }
+
+/* Retour automatique à l'accueil : temps restant (bas de la barre des touches) */
+#deck { position: relative; }
+.autohome { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: rgba(255, 255, 255, .06); }
+.autohome[hidden] { display: none; }
+#autohome-bar { height: 100%; width: 100%; background: var(--accent); box-shadow: 0 0 8px var(--accent); transition: width .25s linear; }
+.autohome.paused #autohome-bar { background: var(--muted); box-shadow: none; }
+
+/* Réglages */
+.settings-open { padding: 4px 8px; }
+.settings-open svg { width: 15px; height: 15px; }
+.settings-box { width: min(520px, 92vw); }
+.settings-row { display: flex; align-items: center; gap: 8px; color: var(--text); font-size: 14px; }
+.settings-row input { width: 110px; }
+
+/* ---------- Mode clair ---------- */
+
+[data-mode="light"] {
+    --bg: #eef1f5;
+    --panel: #ffffff;
+    --border: #d3d9e2;
+    --text: #1c2330;
+    --muted: #5f6b7a;
+    --input-bg: #ffffff;
+    --term-bg: #ffffff;
+    --grid-bg: #e3e7ed;
+    --bezel: #c3cbd6;
+    --screen-top: #ffffff;
+    --screen-bottom: #e8ecf1;
+    --slot-bg: #e3e7ed;
+    --key-text: #1c2330;
+    --key-label: #344052;
+    --tint-mix: #000;
+    --accent: #1f6fd1;
+    --accent-strong: #1f6fd1;
+    --bar-bg: linear-gradient(180deg, #f8fafc, #e6ebf1);
+    --bar-blend: normal;
+    color-scheme: light;
+}
+[data-mode="light"] .key {
+    /* Tuile claire : halo de la rubrique plus discret, ombre douce */
+    background:
+        radial-gradient(140% 95% at 50% 118%, color-mix(in srgb, var(--c) 55%, transparent) 0%, color-mix(in srgb, var(--c) 18%, transparent) 50%, transparent 85%),
+        linear-gradient(180deg, var(--screen-top), var(--screen-bottom));
+    box-shadow:
+        inset 0 0 0 1px rgba(0, 0, 0, .06),
+        0 0 0 2px var(--bezel),
+        0 3px 8px rgba(30, 40, 60, .18),
+        0 6px 16px -6px color-mix(in srgb, var(--c) 45%, transparent);
+}
+[data-mode="light"] .key.folder {
+    box-shadow:
+        inset 0 0 0 1.5px color-mix(in srgb, var(--c) 55%, transparent),
+        0 0 0 2px var(--bezel),
+        0 3px 8px rgba(30, 40, 60, .18);
+}
+[data-mode="light"] .key::before {
+    background: linear-gradient(135deg, rgba(255, 255, 255, .7) 0%, rgba(255, 255, 255, .2) 34%, transparent 35%);
+}
+[data-mode="light"] .key .sym { filter: none; }
+[data-mode="light"] .key.status .line.big { text-shadow: none; }
+[data-mode="light"] .palette, [data-mode="light"] #favdialog, [data-mode="light"] #vault, [data-mode="light"] #settings, [data-mode="light"] #duplicate { background: rgba(30, 40, 60, .35); }
+[data-mode="light"] .searchbar, [data-mode="light"] .picker, [data-mode="light"] .secret-form { box-shadow: 0 10px 30px rgba(30, 40, 60, .25); }
+
+/* Thèmes de mission en mode clair : teinte légère de la marque ; --brand défini par chaque thème */
+[data-mode="light"][data-theme] {
+    --bar-bg: linear-gradient(90deg, color-mix(in srgb, var(--brand) 22%, #fff) 0%, color-mix(in srgb, var(--brand) 7%, #fff) 70%, #f8fafc 100%);
+    --header-bg: linear-gradient(90deg, color-mix(in srgb, var(--brand) 30%, #fff) 0%, var(--bg) 60%);
+    --bar-blend: normal;
+    --accent: var(--brand);
+    --accent-strong: var(--brand);
+}
+[data-theme="allianz"] { --brand: #003781; }
+[data-theme="bnp"] { --brand: #00965e; }
+[data-theme="estreem"] { --brand: #0f8a99; }
+[data-theme="laposte"] { --brand: #003da5; }
+
+/* Réglages : groupes */
+.settings-group { margin: 0; padding: 10px 12px 12px; border: 1px solid var(--border); border-radius: 8px; display: flex; flex-direction: column; gap: 10px; }
+.settings-group legend { padding: 0 6px; font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }

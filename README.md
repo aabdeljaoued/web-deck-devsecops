@@ -47,9 +47,14 @@ Linux fonctionne aussi (`./start.sh`) : sans bloc `linux` dans `paths.json`, cel
 - Les touches tapent la variante adaptée au shell de l'onglet actif (ex. `$env:VAULT_ADDR=` dans PowerShell, `export VAULT_ADDR=` dans bash/zsh, `set VAULT_ADDR=` dans cmd). Une touche sans variante pour ce shell affiche un message.
 - **Palette de commandes** (`⌘K` / `Ctrl+K`, ou « Rechercher » en haut à droite) : tape quelques lettres (`exec`, `plan`, `logs`…) pour trouver et lancer n'importe quelle touche, sans passer par les rubriques.
 
-### Thèmes
+### Apparence : mode sombre / clair et thèmes de mission
 
-La liste **Thème** en haut à droite habille le deck aux couleurs d'une mission : **Allianz**, **BNP Paribas**, **Estreem**, **La Poste** (ou défaut). Le thème colore l'en-tête, la barre des touches, le liseré et les éléments actifs (onglet, terminal sélectionné, boutons) ; les touches gardent leurs couleurs par outil pour rester repérables. Le choix est retenu par le navigateur.
+Dans **Réglages** (engrenage en haut à droite), rubrique **Apparence** :
+
+- **Mode** : **Sombre** (défaut), **Clair**, ou **Système** (suit le réglage de macOS / Windows, et change avec lui). En mode clair, toute l'interface passe en clair, terminal compris ; les touches deviennent des tuiles claires avec l'icône et le halo de leur rubrique.
+- **Thème de mission** : **Allianz**, **BNP Paribas**, **Estreem**, **La Poste** (ou aucun), dans les deux modes. Le thème colore l'en-tête, la barre des touches, le liseré et les éléments actifs (onglet, terminal sélectionné, boutons) ; les touches gardent leurs couleurs par outil pour rester repérables.
+
+Le choix s'affiche en aperçu immédiat et n'est gardé qu'avec **Enregistrer** (Annuler revient à l'apparence d'avant). Il est enregistré côté serveur dans `settings.json`, donc le même dans tous les navigateurs.
 
 | Thème | Couleurs | Source |
 |---|---|---|
@@ -85,6 +90,12 @@ Le bouton **Coffre** (en haut à droite, ou « coffre » dans la palette `⌘K`)
 - **Verrouillage** : bouton **Verrouiller**, automatiquement après 15 min d'inactivité, et à l'arrêt du serveur. Verrouillé, plus rien du contenu n'est gardé dans la page ni en mémoire du serveur.
 
 Sécurité : fichier `vault.enc` à la racine du projet, **exclu de Git**, lisible par l'utilisateur seul, chiffré en **AES-256-GCM** avec une clé dérivée du mot de passe maître par **scrypt** ; chaque échec de mot de passe ralentit la tentative suivante (jusqu'à 5 s). Les valeurs des secrets ne quittent le serveur que sur demande explicite (Copier, Afficher). Pour sauvegarder le coffre, copier `vault.enc` (il reste chiffré). Vérifier que la politique de sécurité du client autorise ce type de stockage pour ses identifiants.
+
+### Réglages et retour automatique à l'accueil
+
+Après une action dans une rubrique (Docker, K8s, Git, un groupe de favoris…), le deck revient tout seul à l'accueil si aucune autre action n'y est lancée pendant **60 secondes** ; chaque action relance le compte à rebours. Une fine barre en bas des touches montre le temps restant. Le décompte se met en pause (barre grise) tant qu'un formulaire, le coffre, la palette ou un sélecteur est ouvert, ou en mode Modifier des favoris.
+
+Le délai se règle dans **Réglages** (engrenage en haut à droite) : de 0 (jamais) à 3600 secondes. Les réglages sont enregistrés côté serveur dans `settings.json` (exclu de Git), les mêmes pour tous les onglets et navigateurs.
 
 ### Voyants
 

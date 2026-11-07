@@ -75,6 +75,12 @@ function text(label, sym, command, enter, color) {
     return withIcon({ type: "text", label, sym, color, tool: first.split(" ")[0], badge: enter ? "run" : "type", text: cmd, enter });
 }
 
+/** Touche "text" avec une icône précise (outils sans symbole partagé). */
+function textIcon(label, sym, command, enter, color, icon) {
+    const key = text(label, sym, command, enter, color);
+    return key && { ...key, icon };
+}
+
 function web(label, sym, url, color = C.web) {
     return withIcon({ type: "web", label, sym, color, url });
 }
@@ -157,9 +163,12 @@ function buildCatalog(ctx) {
         ]},
         git: { label: "Git", sym: "git", icon: "git", color: C.git, terminal: true, keys: [
             text("status", "git", "git status", true, C.git),
+            textIcon("lazygit", "lg", "lazygit", true, C.git, "lucide-panels-top-left"),
             text("pull rebase", "⬇", "git pull --rebase", true, C.git),
             text("log graph", "log", "git log --oneline --graph --decorate -20", true, C.git),
             text("diff stat", "±", "git diff --stat", true, C.git),
+            // delta : diff lisible (coloration, numéros de ligne), sans changer la config Git
+            textIcon("delta", "Δ", "git -c core.pager=delta diff", true, C.git, "lucide-git-compare"),
             text("fetch prune", "⟳", "git fetch --all --prune", true, C.git),
             text("commit signé", "✍", 'git commit -S -m "', false, C.git),
             text("push", "⬆", "git push", false, C.git),
@@ -167,6 +176,7 @@ function buildCatalog(ctx) {
             text("stash", "📥", "git stash", true, C.git),
             text("stash pop", "📤", "git stash pop", true, C.git),
             text("nouvelle branche", "➕", "git switch -c ", false, C.git),
+            textIcon("gitleaks", "leak", "gitleaks detect --source . -v", true, C.sec, "lucide-key-round"),
             text("restore", "↺", "git restore ", false, C.danger),
             text("amend", "✎", "git commit --amend", false, C.danger)
         ]},
@@ -177,11 +187,15 @@ function buildCatalog(ctx) {
             text("nodes", "▦", "kubectl get nodes -o wide", true, C.k8s),
             text("svc / ingress", "svc", "kubectl get svc,ingress", true, C.k8s),
             text("logs -f", "📜", "kubectl logs -f ", false, C.k8s),
+            // stern : logs de tous les pods dont le nom correspond ({} = nom ou expression régulière)
+            textIcon("stern", "st", "stern {} --since 15m", false, C.k8s, "lucide-logs"),
             text("describe", "🔍", "kubectl describe pod ", false, C.k8s),
             // {} = emplacement du pod : texte sélectionné, sinon position du curseur
             text("exec -it", ">_", "kubectl exec -it {} -- sh", false, C.k8s),
             text("RBAC can-i", "🛂", "kubectl auth can-i --list", true, C.sec),
             text("NetPol", "🧱", "kubectl get networkpolicies", true, C.sec),
+            // popeye : audit du cluster (ressources mal configurées, inutilisées...) sur le namespace courant
+            textIcon("popeye", "pop", "popeye", true, C.sec, "lucide-scan-heart"),
             text("oc whoami", "oc", sh("oc whoami; oc project", "oc whoami; oc project", "oc whoami & oc project"), true, C.k8s),
             shortcuts["crc-console"],
             text("top pods", "📊", "kubectl top pods", true, C.k8s)
@@ -281,6 +295,8 @@ function buildCatalog(ctx) {
             text("ps", "ps", "docker ps", true, C.docker),
             text("ps -a", "ps-a", "docker ps -a", true, C.docker),
             text("images", "🖼", "docker images", true, C.docker),
+            // dive : couches d'une image ({} = image sélectionnée dans le terminal)
+            textIcon("dive", "dive", "dive {}", false, C.docker, "lucide-layers-2"),
             text("logs -f", "📜", "docker logs -f ", false, C.docker),
             text("exec -it", ">_", "docker exec -it {} sh", false, C.docker),
             text("build", "🔨", "docker build -t ", false, C.docker),
@@ -377,6 +393,7 @@ function buildCatalog(ctx) {
 // 5 x 4 cases en ordre de lecture (l'accueil peut avoir jusqu'à 18 touches sur la ligne)
 const POSITIONS = [0, 1, 2, 3].flatMap((r) => [0, 1, 2, 3, 4].map((c) => `${c},${r}`));
 const ROOT_MAX = 18;
+const SECTION_MAX = 17;   // touches d'une rubrique, clear compris (Retour en plus)
 
 /** Place les touches à position fixe (pin) puis remplit les cases libres dans l'ordre. */
 function layout(keys, page = {}) {
@@ -521,7 +538,7 @@ export function buildDeck(ctx, favorites = []) {
         titles[s] = def.label;
         const keys = def.keys.filter(allowed);
         if (cfg.clearKey && def.terminal) keys.push(clear);
-        if (keys.length > 14) throw new Error(`la rubrique "${s}" a ${keys.length} touches (max 14).`);
+        if (keys.length > SECTION_MAX) throw new Error(`la rubrique "${s}" a ${keys.length} touches (max ${SECTION_MAX}).`);
         layouts[s] = layout(keys, { "0,0": back() });
         parents[s] = "root";
         // Favoris : une page par groupe et sous-groupe

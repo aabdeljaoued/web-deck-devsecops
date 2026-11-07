@@ -23,7 +23,8 @@ const state = {
     fontSize: Number(loadPref("deck-font")) || 14,        // taille du texte des terminaux
     favEdit: false,     // rubrique Favoris en mode Modifier : un clic sur un favori ouvre son formulaire
     parents: {},        // page -> page parente (fil d'Ariane, Retour)
-    vault: { exists: null, unlocked: false },   // coffre : notes et secrets (sans leur valeur) ; exists null = pas encore connu
+    vault: { exists: null, unlocked: false },
+    settings: { autoHomeSeconds: 60 },          // réglages de l'espace admin (serveur)   // coffre : notes et secrets (sans leur valeur) ; exists null = pas encore connu
     favGroups: []       // groupes de favoris { id, path, depth } pour le choix « Dans »
 };
 const requestId = crypto.randomUUID();
@@ -47,17 +48,42 @@ function loadPref(name) {
 function savePref(name, value) {
     try { localStorage.setItem(name, value); } catch { /* stockage refusé */ }
 }
-// Thème aux couleurs de la mission (couleurs dans style.css, [data-theme]) : appliqué dès le chargement
+// ---------- Apparence : mode sombre / clair / système et thème de mission (Réglages, côté serveur) ----------
+// Les couleurs sont dans style.css ([data-mode], [data-theme]). La dernière apparence est gardée dans le
+// navigateur pour l'appliquer dès le chargement (pas de flash), puis le serveur fait foi.
+
 const THEMES = ["allianz", "bnp", "estreem", "laposte"];
-function applyTheme(name) {
-    const theme = THEMES.includes(name) ? name : "";
-    if (theme) document.documentElement.dataset.theme = theme;
-    else delete document.documentElement.dataset.theme;
-    savePref("deck-theme", theme);
-    const select = document.querySelector("#theme");
-    if (select) select.value = theme;
+const systemDark = window.matchMedia("(prefers-color-scheme: dark)");
+
+/** Couleurs du terminal : sombre (défaut xterm) ou clair (palette lisible sur fond blanc). */
+const TERM_THEMES = {
+    dark: { background: "#000000" },
+    light: {
+        background: "#ffffff", foreground: "#1c2330", cursor: "#1c2330", cursorAccent: "#ffffff", selectionBackground: "#b3d4fc",
+        black: "#1c2330", red: "#c62828", green: "#2e7d32", yellow: "#8a6d00", blue: "#1565c0", magenta: "#8e24aa", cyan: "#00838f", white: "#5f6b7a",
+        brightBlack: "#5f6b7a", brightRed: "#e53935", brightGreen: "#43a047", brightYellow: "#a07c00", brightBlue: "#1e88e5", brightMagenta: "#ab47bc", brightCyan: "#0097a7", brightWhite: "#1c2330"
+    }
+};
+let currentMode = "dark";
+
+/** Applique un mode ("dark", "light", "system") et un thème de mission ("" = aucun). */
+function applyAppearance(appearance = "dark", theme = "") {
+    currentMode = appearance === "system" ? (systemDark.matches ? "dark" : "light") : appearance === "light" ? "light" : "dark";
+    const root = document.documentElement;
+    root.dataset.mode = currentMode;
+    if (THEMES.includes(theme)) root.dataset.theme = theme;
+    else delete root.dataset.theme;
+    savePref("deck-appearance", JSON.stringify({ appearance, theme }));
+    for (const t of state.terms?.values() ?? []) t.term.options.theme = TERM_THEMES[currentMode];
 }
-applyTheme(loadPref("deck-theme") ?? "");
+const termTheme = () => TERM_THEMES[currentMode];
+systemDark.addEventListener("change", () => {
+    if (state.settings?.appearance === "system") applyAppearance("system", state.settings.missionTheme);
+});
+try {
+    const cached = JSON.parse(loadPref("deck-appearance") ?? "null");
+    applyAppearance(cached?.appearance, cached?.theme);
+} catch { applyAppearance(); }
 
 // Navigateur sous macOS : Cmd+C / Cmd+V copient et collent déjà ; ailleurs, Ctrl+C / Ctrl+V sont gérés plus bas
 // (insensible à la casse : Chrome renvoie "macOS", Safari "MacIntel")
@@ -95,6 +121,10 @@ function handle(msg) {
             state.favGroups = msg.favGroups ?? [];
             state.status = msg.status ?? {};
             if (msg.vault) applyVault(msg.vault);
+            if (msg.settings) {
+                state.settings = msg.settings;
+                applyAppearance(msg.settings.appearance, msg.settings.missionTheme);
+            }
             state.windowsPty = msg.windowsPty ?? null;
             if (!state.pages[state.page]) state.page = "root";
             fillShells(msg.shells);
@@ -139,6 +169,11 @@ function handle(msg) {
         case "fav-saved":
             if (favMoving) favMoving = false;   // déplacement : le formulaire reste ouvert
             else closeFavForm();
+            break;
+        case "settings":
+            state.settings = msg.settings;
+            applyAppearance(msg.settings.appearance, msg.settings.missionTheme);
+            if (!$("#settings").hidden) $("#settings").hidden = true;
             break;
         case "vault":
             applyVault(msg);
@@ -328,11 +363,14 @@ const isFavPage = (page) => page === "favoris" || page.startsWith("fav-");
 function go(page) {
     state.page = page;
     if (!isFavPage(page)) state.favEdit = false;
+    if (worldOf(page) !== autoHome.world) cancelAutoHome();   // retour à l'accueil ou autre rubrique
     render();
 }
 
 function press(key, el) {
     pulse(el);
+    // Action dans une rubrique : (re)lance le compte à rebours du retour à l'accueil
+    if (key.type !== "back" && state.page !== "root" && (key.type !== "folder" || isFavPage(key.page))) armAutoHome();
     switch (key.type) {
         case "folder":
             if (key.fav && state.favEdit) return openFavForm(key);
@@ -452,7 +490,7 @@ function addTerm(sid, name, kind = "posix", replay = "", title = null) {
         fontFamily: "'Cascadia Mono', Consolas, 'SF Mono', Menlo, Monaco, 'DejaVu Sans Mono', monospace",
         fontSize: state.fontSize,
         scrollback: 5000,
-        theme: { background: "#000000" },
+        theme: termTheme(),
         ...(state.windowsPty ? { windowsPty: state.windowsPty } : {})
     });
     clipboardKeys(term);
@@ -1386,6 +1424,72 @@ function armOrRun(btn, text, run) {
     run();
 }
 
+// ---------- Retour automatique à l'accueil (délai réglable dans Réglages) ----------
+
+/** Rubrique ("monde") d'une page : les groupes de favoris font partie du monde Favoris. */
+const worldOf = (page) => (page === "root" ? null : isFavPage(page) ? "favoris" : page);
+const autoHome = { world: null, deadline: 0, total: 0, timer: null, last: 0 };
+
+function armAutoHome() {
+    const seconds = Number(state.settings.autoHomeSeconds) || 0;
+    if (!seconds || state.page === "root") return cancelAutoHome();
+    autoHome.world = worldOf(state.page);
+    autoHome.total = seconds * 1000;
+    autoHome.deadline = Date.now() + autoHome.total;
+    autoHome.last = Date.now();
+    $("#autohome").hidden = false;
+    clearInterval(autoHome.timer);
+    autoHome.timer = setInterval(tickAutoHome, 250);
+    tickAutoHome();
+}
+
+function cancelAutoHome() {
+    clearInterval(autoHome.timer);
+    autoHome.timer = null;
+    autoHome.world = null;
+    $("#autohome").hidden = true;
+}
+
+/** En pause tant qu'on édite quelque chose (formulaires, coffre, palette, sélecteur, renommage, mode Modifier). */
+function autoHomeBlocked() {
+    return state.favEdit || ["#favdialog", "#vault", "#palette", "#picker", "#settings"].some((id) => !$(id).hidden)
+        || document.activeElement?.classList.contains("tab-rename");
+}
+
+function tickAutoHome() {
+    const now = Date.now();
+    if (autoHomeBlocked()) autoHome.deadline += now - autoHome.last;   // le temps ne compte pas pendant la pause
+    autoHome.last = now;
+    const left = Math.max(0, autoHome.deadline - now);
+    $("#autohome-bar").style.width = `${(left / autoHome.total) * 100}%`;
+    $("#autohome").title = `retour à l'accueil dans ${Math.ceil(left / 1000)} s (Réglages pour changer le délai)`;
+    $("#autohome").classList.toggle("paused", autoHomeBlocked());
+    if (left > 0) return;
+    cancelAutoHome();
+    if (state.page !== "root") go("root");
+}
+
+// ---------- Réglages (espace admin) ----------
+
+function openSettings() {
+    $("#set-autohome").value = state.settings.autoHomeSeconds;
+    $("#set-appearance").value = state.settings.appearance ?? "dark";
+    $("#set-theme").value = state.settings.missionTheme ?? "";
+    $("#settings").hidden = false;
+    $("#set-appearance").focus();
+}
+
+/** Fermeture sans enregistrer : l'aperçu de l'apparence est annulé. */
+function closeSettings() {
+    $("#settings").hidden = true;
+    applyAppearance(state.settings.appearance, state.settings.missionTheme);
+}
+
+/** Aperçu immédiat du mode et du thème choisis (enregistrés seulement avec « Enregistrer »). */
+function previewAppearance() {
+    applyAppearance($("#set-appearance").value, $("#set-theme").value);
+}
+
 function refreshToolbar() {
     for (const [id, on] of [["#broadcast", state.broadcast], ["#notify", state.notify]]) {
         $(id).classList.toggle("on", on);
@@ -1395,8 +1499,7 @@ function refreshToolbar() {
 
 $("#new-tab").addEventListener("click", () => openTerm());
 $("#broadcast").addEventListener("click", toggleBroadcast);
-$("#theme").addEventListener("change", (ev) => applyTheme(ev.target.value));
-applyTheme(loadPref("deck-theme") ?? "");
+
 $("#notify").addEventListener("click", toggleNotify);
 $("#font-down").addEventListener("click", () => setFontSize(state.fontSize - 1));
 $("#font-up").addEventListener("click", () => setFontSize(state.fontSize + 1));
@@ -1429,6 +1532,23 @@ $("#palette-input").addEventListener("keydown", (ev) => {
 $("#palette").addEventListener("mousedown", (ev) => { if (ev.target.id === "palette") closePalette(); });
 $("#favform").addEventListener("submit", submitFav);
 $("#vault-open").addEventListener("click", openVault);
+$("#settings-open").addEventListener("click", openSettings);
+$("#settings-cancel").addEventListener("click", closeSettings);
+$("#set-appearance").addEventListener("change", previewAppearance);
+$("#set-theme").addEventListener("change", previewAppearance);
+$("#settings").addEventListener("mousedown", (ev) => { if (ev.target.id === "settings") closeSettings(); });
+$("#settings-form").addEventListener("keydown", (ev) => {
+    ev.stopPropagation();
+    if (ev.key === "Escape") { ev.preventDefault(); closeSettings(); }
+});
+$("#settings-form").addEventListener("submit", (ev) => {
+    ev.preventDefault();
+    send({ t: "settings-save", settings: {
+        autoHomeSeconds: Number($("#set-autohome").value),
+        appearance: $("#set-appearance").value,
+        missionTheme: $("#set-theme").value
+    } });
+});
 $("#vault-close").addEventListener("click", closeVault);
 $("#vault-lock").addEventListener("click", () => { flushNote(); send({ t: "vault-lock" }); });
 $("#vault").addEventListener("mousedown", (ev) => { if (ev.target.id === "vault") closeVault(); });
@@ -1516,7 +1636,7 @@ window.addEventListener("resize", () => { if (!$("#picker").hidden) placePicker(
 /** Raccourcis : Cmd/Ctrl+K palette, Cmd/Ctrl+F recherche, Cmd/Ctrl + / − / 0 taille du texte, Échap ferme. */
 document.addEventListener("keydown", (ev) => {
     // Coffre ou formulaire des favoris ouverts : leurs champs gardent les raccourcis du navigateur
-    if (!$("#vault").hidden || !$("#favdialog").hidden) return;
+    if (!$("#vault").hidden || !$("#favdialog").hidden || !$("#settings").hidden) return;
     const mod = macClient ? ev.metaKey : ev.ctrlKey;
     const key = ev.key.toLowerCase();
     let handled = true;

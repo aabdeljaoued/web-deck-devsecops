@@ -167,12 +167,14 @@ wss.on("connection", (ws) => {
                 case "fav-add":
                 case "fav-update":
                 case "fav-remove":
-                case "fav-move": {
+                case "fav-move":
+                case "fav-place": {
                     const def = { kind: msg.kind, label: msg.label, url: msg.url, icon: msg.icon, color: msg.color, ...("parent" in msg ? { parent: msg.parent } : {}) };
                     if (msg.t === "fav-add") favorites.add(def);
                     if (msg.t === "fav-update") favorites.update(String(msg.id), def);
                     if (msg.t === "fav-remove") favorites.remove(String(msg.id));
                     if (msg.t === "fav-move") favorites.move(String(msg.id), msg.delta);
+                    if (msg.t === "fav-place") favorites.place(String(msg.id), msg.parent ?? null, msg.before ?? null);
                     deck = buildDeck(ctx, favorites.list());
                     broadcast({ t: "deck", pages: deck.pages, titles: deck.titles, parents: deck.parents, favGroups: favorites.groups() });
                     reply({ t: "fav-saved" });

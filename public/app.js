@@ -246,6 +246,9 @@ function keyElement(key) {
         el.classList.add("editing");
         el.title = `Modifier « ${key.label} »`;
     }
+    // Favoris : glisser-déposer pour réordonner, entrer dans un groupe ou remonter (sur Retour)
+    if (key.fav) favDraggable(el, key);
+    if (key.type === "back" && state.page.startsWith("fav-")) favDropOnBack(el);
     if (key.type === "fav-edit") {
         el.classList.toggle("on", state.favEdit);
         el.querySelector(".label").textContent = state.favEdit ? "Terminé" : "Modifier";
@@ -932,6 +935,84 @@ function runPalette(i) {
     if (!entry) return;
     $("#palette").hidden = true;
     press(entry.key, document.querySelector(`[data-id="${CSS.escape(entry.key.id)}"]`));
+}
+
+// ---------- Favoris : glisser-déposer des touches ----------
+
+const FAV_DRAG = "text/x-deck-fav";
+let favDragged = null;   // touche du favori en cours de déplacement
+
+/** Groupe parent de la page affichée, vu depuis un de ses groupes (null = racine des favoris). */
+const parentGroupOf = (page) => {
+    const parent = state.parents[page];
+    return parent && parent.startsWith("fav-") ? parent.slice(4) : null;
+};
+
+/** Zone de dépôt sur une touche : avant / après (bords), ou dans le groupe (centre d'un groupe). */
+function dropZone(ev, el, key) {
+    const box = el.getBoundingClientRect();
+    const x = (ev.clientX - box.left) / box.width;
+    if (key.favGroup && x > 0.25 && x < 0.75) return "into";
+    return x < 0.5 ? "before" : "after";
+}
+
+function clearFavMarks() {
+    document.querySelectorAll(".key.fav-before, .key.fav-after, .key.fav-into, .key.fav-dragging")
+        .forEach((el) => el.classList.remove("fav-before", "fav-after", "fav-into", "fav-dragging"));
+}
+
+function favDraggable(el, key) {
+    el.draggable = true;
+    el.addEventListener("dragstart", (ev) => {
+        favDragged = key;
+        ev.dataTransfer.setData(FAV_DRAG, key.fav);
+        ev.dataTransfer.effectAllowed = "move";
+        el.classList.add("fav-dragging");
+    });
+    el.addEventListener("dragend", () => {
+        favDragged = null;
+        clearFavMarks();
+    });
+    el.addEventListener("dragover", (ev) => {
+        if (!favDragged || favDragged.fav === key.fav) return;
+        ev.preventDefault();
+        ev.dataTransfer.dropEffect = "move";
+        const zone = dropZone(ev, el, key);
+        el.classList.toggle("fav-before", zone === "before");
+        el.classList.toggle("fav-after", zone === "after");
+        el.classList.toggle("fav-into", zone === "into");
+    });
+    el.addEventListener("dragleave", () => el.classList.remove("fav-before", "fav-after", "fav-into"));
+    el.addEventListener("drop", (ev) => {
+        ev.preventDefault();
+        const moved = favDragged;
+        const zone = dropZone(ev, el, key);
+        clearFavMarks();
+        if (!moved || moved.fav === key.fav) return;
+        const here = currentFavGroup();
+        if (zone === "into") return send({ t: "fav-place", id: moved.fav, parent: key.fav, before: null });
+        // Avant / après dans la page affichée : "after" = avant l'élément suivant (ou à la fin)
+        const order = state.pages[state.page].filter((k) => k?.fav).map((k) => k.fav);
+        const next = order[order.indexOf(key.fav) + 1];
+        const before = zone === "before" ? key.fav : next === moved.fav ? order[order.indexOf(key.fav) + 2] ?? null : next ?? null;
+        send({ t: "fav-place", id: moved.fav, parent: here, before });
+    });
+}
+
+/** Retour dans un groupe : y déposer un favori le fait remonter d'un niveau. */
+function favDropOnBack(el) {
+    el.addEventListener("dragover", (ev) => {
+        if (!favDragged) return;
+        ev.preventDefault();
+        el.classList.add("fav-into");
+    });
+    el.addEventListener("dragleave", () => el.classList.remove("fav-into"));
+    el.addEventListener("drop", (ev) => {
+        ev.preventDefault();
+        const moved = favDragged;
+        clearFavMarks();
+        if (moved) send({ t: "fav-place", id: moved.fav, parent: parentGroupOf(state.page), before: null });
+    });
 }
 
 // ---------- Favoris : formulaire d'ajout / de modification ----------

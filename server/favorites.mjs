@@ -208,6 +208,26 @@ export class Favorites {
         this.save();
     }
 
+    /**
+     * Glisser-déposer : place un élément dans un contenant (parent null = racine), avant l'élément "before"
+     * (null = à la fin). Sert à réordonner, à entrer dans un groupe et à remonter d'un niveau.
+     */
+    place(id, parent, before) {
+        const found = this.find(id);
+        if (!found) throw new Error("favori introuvable");
+        const { node } = found;
+        const target = this.container(parent);
+        if (node.type === "group" && parent != null && (String(parent) === node.id || this.find(String(parent), node.items))) {
+            throw new Error("un groupe ne peut pas aller dans lui-même");
+        }
+        const sameList = target.list === found.list;
+        if (!sameList) this.checkFits(node, target);
+        found.list.splice(found.list.indexOf(node), 1);
+        const at = before == null ? -1 : target.list.findIndex((f) => f.id === String(before));
+        target.list.splice(at < 0 ? target.list.length : at, 0, node);
+        this.save();
+    }
+
     /** Déplace un élément d'une place vers la gauche (-1) ou la droite (+1) dans son contenant. */
     move(id, delta) {
         const found = this.find(id);

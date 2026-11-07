@@ -119,7 +119,7 @@ Dans **Réglages** (engrenage en haut à droite), rubrique Navigation : une case
 
 ### Outils non installés
 
-Les touches d'un outil installable absent (stern, popeye, dive, gitleaks, delta, lazygit, trivy, checkov, semgrep, ssh-audit, kubectl, helm, terraform, vault…) sont **grisées** avec la mention « à installer ». Un clic tape la commande d'installation sans l'exécuter (`brew install …` sur macOS, `scoop install …` ou `pip install …` sur Windows). La vérification se refait toutes les minutes et au retour sur l'onglet : une fois l'outil installé, la touche se rallume. Les commandes Linux faites pour un serveur distant (`systemctl`, `ss`…) ne sont pas concernées. Liste et paquets : `server/tools.mjs`.
+Les touches d'un outil installable absent (stern, popeye, dive, gitleaks, delta, lazygit, trivy, checkov, semgrep, ssh-audit, kubectl, helm, terraform, vault…) sont **grisées** avec la mention « à installer ». Un clic tape la commande d'installation sans l'exécuter (`brew install …` sur macOS, `scoop install …` ou `pip install …` sur Windows). Après ce clic, le serveur surveille l'installation (toutes les 3 s pendant 5 min) : la touche se rallume dès la fin de l'installation. Sinon, la vérification se refait toutes les minutes, au retour sur l'onglet et à l'ouverture d'une rubrique qui contient des touches grisées. Les commandes Linux faites pour un serveur distant (`systemctl`, `ss`…) ne sont pas concernées. Liste et paquets : `server/tools.mjs`.
 
 ### Sauvegardes automatiques
 

@@ -418,6 +418,8 @@ const isFavPage = (page) => page === "favoris" || page.startsWith("fav-");
 
 function go(page) {
     state.page = page;
+    // Rubrique avec des outils « à installer » : vérification immédiate (installés depuis ?)
+    if (state.tools.missing.size && (state.pages[page] ?? []).some((k) => k?.needs && state.tools.missing.has(k.needs))) send({ t: "tools-check" });
     if (!isFavPage(page)) state.favEdit = false;
     if (worldOf(page) !== autoHome.world) cancelAutoHome();   // retour à l'accueil ou autre rubrique
     render();
@@ -430,7 +432,7 @@ function press(key, el) {
     // Outil absent : la touche propose son installation au lieu de lancer une commande qui échouerait
     if (key.needs && state.tools.missing.has(key.needs)) {
         const install = state.tools.install[key.needs];
-        send({ t: "tools-check" });   // déjà installé entre-temps ? la touche se rallume
+        send({ t: "tools-check", watch: true });   // le serveur surveille l'installation : la touche se rallume à la fin
         if (!install) return toast(`${key.needs} n'est pas installé : installe-le avec le gestionnaire de paquets du système`);
         toast(`${key.needs} n'est pas installé : commande d'installation tapée, valide avec Entrée`, "ok");
         return typeInTerminal(install);

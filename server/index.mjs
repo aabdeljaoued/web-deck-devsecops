@@ -52,6 +52,18 @@ async function checkTools() {
     }
 }
 setInterval(checkTools, 60 * 1000).unref();
+// Après un clic sur une touche « à installer » : vérification toutes les 3 s pendant 5 min (la touche se rallume
+// dès la fin de l'installation), arrêtée plus tôt s'il ne manque plus rien
+let toolsWatch = null;
+function watchTools() {
+    clearInterval(toolsWatch);
+    const until = Date.now() + 5 * 60 * 1000;
+    toolsWatch = setInterval(async () => {
+        await checkTools();
+        if (Date.now() > until || !tools.missing.length) { clearInterval(toolsWatch); toolsWatch = null; }
+    }, 3000);
+    toolsWatch.unref();
+}
 
 /** Message "deck" envoyé aux pages après une reconstruction. */
 const deckMessage = () => (setImmediate(checkTools), { t: "deck", pages: deck.pages, titles: deck.titles, parents: deck.parents, favGroups: favorites.groups(), worlds: deck.worlds });
@@ -255,7 +267,11 @@ wss.on("connection", (ws) => {
                 // Sauvegardes automatiques (Réglages) : liste et restauration (la version actuelle est sauvegardée avant)
                 // Redémarrage demandé depuis les Réglages (terminaux rouverts au démarrage suivant)
                 case "restart": restart(); break;
-                case "tools-check": await checkTools(); reply({ t: "tools", ...tools.view() }); break;
+                case "tools-check":
+                    if (msg.watch) watchTools();
+                    await checkTools();
+                    reply({ t: "tools", ...tools.view() });
+                    break;
                 case "backup-list": reply({ t: "backup-list", backups: backups.all() }); break;
                 case "backup-restore": {
                     const name = String(msg.name);

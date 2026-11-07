@@ -1,6 +1,6 @@
 # Web Deck DevSecOps
 
-Le deck DevSecOps dans le navigateur, **sans Stream Deck ni droits administrateur** : une grille de touches (Git, Kubernetes, Docker, Helm, Terraform, Ansible, Brew / Scoop, SSH, OpenSSL, veille sécurité…), des voyants en direct (contexte kubectl, branche Git, conteneurs) et un **vrai terminal intégré** (PowerShell, Git Bash, cmd ou zsh) dans lequel les touches tapent leurs commandes.
+Le deck DevSecOps dans le navigateur, **sans Stream Deck ni droits administrateur** : une grille de touches (Git, Kubernetes, Docker, Helm, Terraform, Ansible, Brew / Scoop, SSH, OpenSSL, Linux / Unix, veille sécurité…), des voyants en direct (contexte kubectl, branche Git, conteneurs) et un **vrai terminal intégré** (PowerShell, Git Bash, cmd ou zsh) dans lequel les touches tapent leurs commandes.
 
 ```
 config.jsonc   QUOI afficher : rubriques, raccourcis, outils exclus, port
@@ -45,6 +45,7 @@ Linux fonctionne aussi (`./start.sh`) : sans bloc `linux` dans `paths.json`, cel
 - **Texte sélectionné** : sur une touche orange, le texte sélectionné dans le terminal est ajouté à la commande (à l'emplacement `{}` s'il y en a un, ex. `kubectl exec -it {} -- sh`) ; sans sélection, le curseur est placé sur `{}`. Rien n'est jamais exécuté sans Entrée.
 - **Retour** à gauche ; **Verrouiller** et **clear** collés au bord droit.
 - Les touches tapent la variante adaptée au shell de l'onglet actif (ex. `$env:VAULT_ADDR=` dans PowerShell, `export VAULT_ADDR=` dans bash/zsh, `set VAULT_ADDR=` dans cmd). Une touche sans variante pour ce shell affiche un message.
+- **Linux / Unix** : l'administration courante d'un serveur, le plus souvent après un `ssh` (commandes Linux, tapées telles quelles quel que soit le shell local). Exécutées : système (`uname`, `/etc/os-release`, `uptime`), top (`htop` sinon `top`), mémoire (`free -h`), disque (`df -h`), gros dossiers (`du | sort -h`), ports (`ss -tulpn`), services en cours (`systemctl`), erreurs du démarrage (`journalctl -p err -b`). À compléter, avec le texte sélectionné : processus (`pgrep -af`), kill, statut / restart / logs d'un service (`systemctl`, `journalctl -u … -f`), `tail -f`, find, grep.
 - **Palette de commandes** (`⌘K` / `Ctrl+K`, ou « Rechercher » en haut à droite) : tape quelques lettres (`exec`, `plan`, `logs`…) pour trouver et lancer n'importe quelle touche, sans passer par les rubriques.
 
 ### Apparence : mode sombre / clair et thèmes de mission

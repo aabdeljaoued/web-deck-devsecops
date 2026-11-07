@@ -19,6 +19,7 @@
         "brew",
         "ssh",
         "openssl",
+        "linux",
         "veille",
         "favoris"
         // "sec",

@@ -11,7 +11,8 @@ import { platform } from "./platform.mjs";
 export const COLORS = {
     git: "#F05032", k8s: "#326CE5", sec: "#C62828", terraform: "#7B42BC", vault: "#FFC107",
     ssh: "#2E7D32", openssl: "#AD1457", docker: "#0898C8", helm: "#1E88E5", vscode: "#007ACC",
-    tool: "#37474F", web: "#00897B", danger: "#B71C1C", brew: "#FBB040", ansible: "#5BBDBF", fav: "#9CCC65"
+    tool: "#37474F", web: "#00897B", danger: "#B71C1C", brew: "#FBB040", ansible: "#5BBDBF", fav: "#9CCC65",
+    linux: "#FCC624"
 };
 const C = COLORS;
 
@@ -356,6 +357,26 @@ function buildCatalog(ctx) {
             text("oublier hôte", "✖", "ssh-keygen -R ", false, C.danger),
             text("éditer config", "⚙", sshConfig, true, C.tool),
             text("ssh-audit", "🔎", "ssh-audit ", false, C.sec)
+        ]},
+        // Linux / Unix : commandes d'administration d'un serveur (souvent après un ssh) ; tapées telles quelles,
+        // quel que soit le shell local. Lecture seule = exécutée (vert) ; le reste est à compléter (orange).
+        linux: { label: "Linux / Unix", sym: "🐧", icon: "linux", color: C.linux, terminal: true, keys: [
+            textIcon("système", "ℹ", "uname -a; cat /etc/os-release 2>/dev/null | head -4; uptime", true, C.linux, "lucide-info"),
+            textIcon("top", "📊", "htop 2>/dev/null || top", true, C.linux, "lucide-activity"),
+            textIcon("processus", "🔍", "pgrep -af {}", false, C.linux, "lucide-list-tree"),
+            textIcon("kill", "✖", "kill {}", false, C.danger, "lucide-octagon-x"),
+            textIcon("mémoire", "▦", "free -h", true, C.linux, "lucide-memory-stick"),
+            textIcon("disque", "▦", "df -h", true, C.linux, "lucide-hard-drive"),
+            textIcon("gros dossiers", "📁", "du -sh -- * .[!.]* 2>/dev/null | sort -h | tail -15", true, C.linux, "lucide-folder-search"),
+            textIcon("ports", "🔌", "ss -tulpn", true, C.linux, "lucide-plug"),
+            textIcon("services", "⚙", "systemctl list-units --type=service --state=running --no-pager", true, C.linux, "lucide-server-cog"),
+            textIcon("statut svc", "🩺", "systemctl status {} --no-pager", false, C.linux, "lucide-stethoscope"),
+            textIcon("restart svc", "⟳", "sudo systemctl restart {}", false, C.danger, "lucide-refresh-cw"),
+            textIcon("logs svc", "📜", "journalctl -u {} -f", false, C.linux, "lucide-scroll-text"),
+            textIcon("erreurs", "⚠", "journalctl -p err -b -n 50 --no-pager", true, C.linux, "lucide-triangle-alert"),
+            textIcon("tail -f", "📄", "tail -f {}", false, C.linux, "lucide-file-text"),
+            textIcon("find", "🔎", 'find . -iname "*{}*" 2>/dev/null', false, C.linux, "lucide-file-search"),
+            textIcon("grep", "🔍", 'grep -rIn --color=auto "{}" .', false, C.linux, "lucide-text-search")
         ]},
         openssl: { label: "OpenSSL", sym: "🔏", icon: "certificate", color: C.openssl, terminal: true, keys: [
             text("version", "ver", "openssl version -a", true, C.openssl),

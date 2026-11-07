@@ -32,8 +32,8 @@
     "shortcuts": [
         "kube-status",
         "git-status",
-        "container-status",
-        "lock"
+        "container-status"
+        // "lock" : Verrouiller le poste (à droite de l'accueil à la place de clear si clearKey est false)
     ],
 
     // Voyant kubectl : passe en rouge si le contexte ou le namespace

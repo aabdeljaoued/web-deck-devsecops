@@ -24,7 +24,19 @@ const COOKIE = "deck_token";
 
 const ctx = loadConfig();
 const favorites = new Favorites(path.join(ROOT, "favoris.json"));
-let deck = buildDeck(ctx, favorites.list());
+const settings = new Settings(path.join(ROOT, "settings.json"));
+/** Deck avec les favoris et les rubriques choisies dans les Réglages. */
+const makeDeck = (worlds = settings.get().worlds) => buildDeck(ctx, favorites.list(), worlds);
+let deck;
+try {
+    deck = makeDeck();
+} catch (err) {
+    // Réglages incompatibles avec config.jsonc (ex. trop de touches sur l'accueil) : rubriques de config.jsonc
+    console.warn(`  Rubriques des Réglages ignorées : ${err.message}`);
+    deck = makeDeck({});
+}
+/** Message "deck" envoyé aux pages après une reconstruction. */
+const deckMessage = () => ({ t: "deck", pages: deck.pages, titles: deck.titles, parents: deck.parents, favGroups: favorites.groups(), worlds: deck.worlds });
 const port = ctx.port;
 const token = loadToken();
 const deckUrl = `http://${HOST}:${port}/?token=${token}`;
@@ -112,7 +124,6 @@ const terminals = new Terminals(ctx, path.join(ROOT, ".deck-sessions.json"));
 const status = new StatusHub(ctx);
 const restored = terminals.restore();
 const vault = new Vault(path.join(ROOT, "vault.enc"));
-const settings = new Settings(path.join(ROOT, "settings.json"));
 const wss = new WebSocketServer({ noServer: true, maxPayload: 1024 * 1024 });
 
 server.on("upgrade", (req, socket, head) => {
@@ -143,6 +154,7 @@ wss.on("connection", (ws) => {
         titles: deck.titles,
         parents: deck.parents,
         favGroups: favorites.groups(),
+        worlds: deck.worlds,
         shells: ctx.shells.map(({ name, kind }) => ({ name, kind })),
         windowsPty: windowsPty(),
         sessions: terminals.list(),
@@ -172,7 +184,16 @@ wss.on("connection", (ws) => {
                 case "git-list": reply({ t: "git-list", ...status.listRepos() }); break;
                 case "git-select": await status.selectRepo(String(msg.repo)); break;
                 // Réglages (espace admin) : enregistrés, puis renvoyés à toutes les pages
-                case "settings-save": broadcast({ t: "settings", settings: settings.update(msg.settings) }); reply({ t: "vault-ok", text: "réglages enregistrés", close: false }); break;
+                case "settings-save": {
+                    // Vérifiés d'abord (rubriques : le deck doit tenir sur l'accueil), enregistrés ensuite
+                    const next = settings.check(msg.settings);
+                    const worldsChanged = JSON.stringify(next.worlds) !== JSON.stringify(settings.get().worlds);
+                    const nextDeck = worldsChanged ? makeDeck(next.worlds) : deck;
+                    broadcast({ t: "settings", settings: settings.save(next) });
+                    if (worldsChanged) { deck = nextDeck; broadcast(deckMessage()); }
+                    reply({ t: "vault-ok", text: "réglages enregistrés", close: false });
+                    break;
+                }
                 // Coffre (notes et secrets chiffrés)
                 case "vault-create": await vault.create(msg.password); break;
                 case "vault-unlock": await vault.unlock(msg.password); break;
@@ -205,8 +226,8 @@ wss.on("connection", (ws) => {
                     if (msg.t === "fav-remove") favorites.remove(String(msg.id));
                     if (msg.t === "fav-move") favorites.move(String(msg.id), msg.delta);
                     if (msg.t === "fav-place") favorites.place(String(msg.id), msg.parent ?? null, msg.before ?? null);
-                    deck = buildDeck(ctx, favorites.list());
-                    broadcast({ t: "deck", pages: deck.pages, titles: deck.titles, parents: deck.parents, favGroups: favorites.groups() });
+                    deck = makeDeck();
+                    broadcast(deckMessage());
                     reply({ t: "fav-saved" });
                     break;
                 }
@@ -214,8 +235,8 @@ wss.on("connection", (ws) => {
                 case "fav-export": reply({ t: "fav-export", data: favorites.export() }); break;
                 case "fav-import": {
                     const stats = favorites.import(msg.data, msg.mode === "replace" ? "replace" : "merge");
-                    deck = buildDeck(ctx, favorites.list());
-                    broadcast({ t: "deck", pages: deck.pages, titles: deck.titles, parents: deck.parents, favGroups: favorites.groups() });
+                    deck = makeDeck();
+                    broadcast(deckMessage());
                     reply({ t: "fav-imported", mode: msg.mode, ...stats });
                     break;
                 }

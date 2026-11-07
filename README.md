@@ -32,7 +32,7 @@ Shells détectés sous Windows : PowerShell 7 (`pwsh`), Windows PowerShell, Git 
 
 Sans les outils de ligne de commande Xcode, `git` est considéré comme absent (sinon macOS ouvrirait une fenêtre d'installation à chaque rafraîchissement du voyant) : `xcode-select --install`.
 
-La touche **Verrouiller** met l'écran en veille (`pmset displaysleepnow`) : elle ne verrouille que si *Réglages Système › Écran verrouillé › Exiger un mot de passe* est réglé sur « Immédiatement ».
+La touche **Verrouiller** (raccourci `lock`, à ajouter dans `shortcuts` de `config.jsonc`) met l'écran en veille (`pmset displaysleepnow`) : elle ne verrouille que si *Réglages Système › Écran verrouillé › Exiger un mot de passe* est réglé sur « Immédiatement ».
 
 Linux fonctionne aussi (`./start.sh`) : sans bloc `linux` dans `paths.json`, celui de `mac` est utilisé.
 
@@ -43,7 +43,7 @@ Linux fonctionne aussi (`./start.sh`) : sans bloc `linux` dans `paths.json`, cel
 - **Pastille verte** : la commande est tapée **et exécutée** dans le terminal actif.
 - **Pastille orange** : la commande est seulement tapée, tu complètes ou valides toi-même (commandes à compléter ou risquées).
 - **Texte sélectionné** : sur une touche orange, le texte sélectionné dans le terminal est ajouté à la commande (à l'emplacement `{}` s'il y en a un, ex. `kubectl exec -it {} -- sh`) ; sans sélection, le curseur est placé sur `{}`. Rien n'est jamais exécuté sans Entrée.
-- **Retour** à gauche ; **Verrouiller** et **clear** collés au bord droit.
+- **Retour** à gauche ; **clear** collé au bord droit, sur l'accueil comme dans les rubriques.
 - Les touches tapent la variante adaptée au shell de l'onglet actif (ex. `$env:VAULT_ADDR=` dans PowerShell, `export VAULT_ADDR=` dans bash/zsh, `set VAULT_ADDR=` dans cmd). Une touche sans variante pour ce shell affiche un message.
 - **Linux / Unix** : l'administration courante d'un serveur, le plus souvent après un `ssh` (commandes Linux, tapées telles quelles quel que soit le shell local). Exécutées : système (`uname`, `/etc/os-release`, `uptime`), top (`htop` sinon `top`), mémoire (`free -h`), disque (`df -h`), gros dossiers (`du | sort -h`), ports (`ss -tulpn`), services en cours (`systemctl`), erreurs du démarrage (`journalctl -p err -b`). À compléter, avec le texte sélectionné : processus (`pgrep -af`), kill, statut / restart / logs d'un service (`systemctl`, `journalctl -u … -f`), `tail -f`, find, grep.
 - **Palette de commandes** (`⌘K` / `Ctrl+K`, ou « Rechercher » en haut à droite) : tape quelques lettres (`exec`, `plan`, `logs`…) pour trouver et lancer n'importe quelle touche, sans passer par les rubriques.
@@ -105,6 +105,12 @@ Un mauvais mot de passe ne modifie rien (et ralentit l'essai suivant, comme le d
 Après une action dans une rubrique (Docker, K8s, Git, un groupe de favoris…), le deck revient tout seul à l'accueil si aucune autre action n'y est lancée pendant **60 secondes** ; chaque action relance le compte à rebours. Une fine barre en bas des touches montre le temps restant. Le décompte se met en pause (barre grise) tant qu'un formulaire, le coffre, la palette ou un sélecteur est ouvert, ou en mode Modifier des favoris.
 
 Dans **Réglages** (engrenage en haut à droite), rubrique Navigation : une case active ou désactive le retour automatique, et le délai (de 5 à 3600 secondes) s'affiche quand il est activé. Désactiver garde le délai choisi pour la prochaine réactivation, et arrête un compte à rebours en cours. Les réglages sont enregistrés côté serveur dans `settings.json` (exclu de Git), les mêmes pour tous les onglets et navigateurs.
+
+### Rubriques activées
+
+Dans **Réglages › Rubriques**, une case par monde (VS Code, Git, K8s, Docker…) l'affiche ou le masque sur l'accueil ; masqué, il disparaît aussi de la palette ⌘K. Les rubriques du catalogue absentes de `config.jsonc` (ex. **Sécurité**, **Vault**) apparaissent décochées et peuvent être activées sans éditer le fichier. Un compteur indique les touches de l'accueil (18 au plus, raccourcis compris) ; un choix qui dépasse est refusé sans rien modifier.
+
+`config.jsonc` reste la référence (ordre et rubriques par défaut) : seuls les écarts sont enregistrés dans `settings.json` (`"worlds": { "brew": false, "sec": true }`). Si `config.jsonc` change et que ces écarts ne tiennent plus sur l'accueil, le serveur démarre avec les rubriques du fichier et le signale.
 
 ### Voyants
 

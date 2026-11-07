@@ -21,6 +21,19 @@ const SCHEMA = {
             return v;
         }
     },
+    /** Rubriques activées ou non, en écart avec config.jsonc : { "<id>": true | false }. */
+    worlds: {
+        default: {},
+        clean(v) {
+            if (!v || typeof v !== "object" || Array.isArray(v)) throw new Error("rubriques : objet { identifiant: true | false } attendu");
+            const entries = Object.entries(v);
+            if (entries.length > 60) throw new Error("rubriques : 60 au plus");
+            for (const [id, on] of entries) {
+                if (!/^[a-z0-9_-]{1,40}$/i.test(id) || typeof on !== "boolean") throw new Error(`rubriques : entrée invalide "${id}"`);
+            }
+            return Object.fromEntries(entries);
+        }
+    },
     autoHomeSeconds: {
         default: 60,
         clean(v) {
@@ -56,15 +69,25 @@ export class Settings {
         return { ...this.values };
     }
 
-    /** Met à jour les réglages connus (tout ou rien) et les enregistre. */
-    update(changes) {
+    /** Réglages après ces changements (vérifiés, tout ou rien), sans les enregistrer. */
+    check(changes) {
         const next = { ...this.values };
         for (const [k, v] of Object.entries(changes ?? {})) {
             if (!SCHEMA[k]) continue;
             next[k] = SCHEMA[k].clean(v);
         }
+        return next;
+    }
+
+    /** Enregistre des réglages déjà vérifiés par check(). */
+    save(next) {
         this.values = next;
         writeFileSync(this.file, `${JSON.stringify(this.values, null, 2)}\n`);
         return this.get();
+    }
+
+    /** Met à jour les réglages connus (tout ou rien) et les enregistre. */
+    update(changes) {
+        return this.save(this.check(changes));
     }
 }

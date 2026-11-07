@@ -122,6 +122,7 @@ function handle(msg) {
             state.titles = msg.titles;
             state.parents = msg.parents ?? {};
             state.favGroups = msg.favGroups ?? [];
+            state.worlds = msg.worlds ?? null;
             state.status = msg.status ?? {};
             if (msg.vault) applyVault(msg.vault);
             if (msg.settings) {
@@ -165,6 +166,9 @@ function handle(msg) {
             const oldParents = state.parents;
             state.parents = msg.parents ?? {};
             state.favGroups = msg.favGroups ?? [];
+            if (msg.worlds) state.worlds = msg.worlds;
+            // Rubrique désactivée pendant qu'on était dedans : retour à l'accueil (comme un groupe supprimé)
+            if (autoHome.world && !state.pages[autoHome.world]) cancelAutoHome();
             // Groupe supprimé pendant qu'on était dedans : on remonte au premier niveau qui existe encore
             while (!state.pages[state.page]) state.page = oldParents[state.page] ?? "root";
             render();
@@ -1499,12 +1503,51 @@ function tickAutoHome() {
 
 // ---------- Réglages (espace admin) ----------
 
+/** Rubriques à cocher (Réglages) : toutes celles disponibles sur ce système, dans l'ordre de l'accueil. */
+function renderWorldChoices() {
+    const w = state.worlds;
+    const list = $("#set-worlds");
+    if (!w) { list.replaceChildren(); return; }
+    list.replaceChildren(...w.list.map((world) => {
+        const label = Object.assign(document.createElement("label"), { className: "world-choice", title: world.byDefault ? "rubrique de config.jsonc" : "rubrique du catalogue, absente de config.jsonc" });
+        label.style.setProperty("--c", world.color);
+        const box = Object.assign(document.createElement("input"), { type: "checkbox", checked: world.on });
+        box.dataset.id = world.id;
+        box.dataset.default = world.byDefault ? "1" : "";
+        box.addEventListener("change", updateWorldCount);
+        const icon = Object.assign(document.createElement("span"), { className: "world-icon" });
+        if (world.icon) icon.style.setProperty("--logo", `url("/icons/${world.icon}.svg")`);
+        label.append(box, icon, Object.assign(document.createElement("span"), { textContent: world.label }));
+        return label;
+    }));
+    updateWorldCount();
+}
+
+/** Touches de l'accueil avec les rubriques cochées (limite du serveur : max). */
+function updateWorldCount() {
+    const w = state.worlds;
+    if (!w) return;
+    const checked = [...$("#set-worlds").querySelectorAll("input:checked")].length;
+    const total = checked + w.shortcuts;
+    const count = $("#set-worlds-count");
+    count.textContent = `${total} / ${w.max} touches sur l'accueil (${checked} rubriques + ${w.shortcuts} raccourcis)`;
+    count.classList.toggle("over", total > w.max);
+}
+
+/** Écarts avec config.jsonc seulement : une rubrique remise comme dans le fichier n'est plus forcée. */
+function worldChoices() {
+    return Object.fromEntries([...$("#set-worlds").querySelectorAll("input")]
+        .filter((box) => box.checked !== Boolean(box.dataset.default))
+        .map((box) => [box.dataset.id, box.checked]));
+}
+
 function openSettings() {
     $("#set-autohome").value = state.settings.autoHomeSeconds;
     $("#set-autohome-on").checked = state.settings.autoHomeEnabled !== false;
     toggleAutoHomeRow();
     $("#set-appearance").value = state.settings.appearance ?? "dark";
     $("#set-theme").value = state.settings.missionTheme ?? "";
+    renderWorldChoices();
     $("#settings").hidden = false;
     refreshVaultIo();
     // Pas de focus sur un champ : le premier clic doit agir directement (sinon il ne sert qu'à quitter ce champ)
@@ -1731,7 +1774,8 @@ $("#settings-form").addEventListener("submit", (ev) => {
         autoHomeEnabled: $("#set-autohome-on").checked,
         ...($("#set-autohome-on").checked ? { autoHomeSeconds: Number($("#set-autohome").value) } : {}),
         appearance: $("#set-appearance").value,
-        missionTheme: $("#set-theme").value
+        missionTheme: $("#set-theme").value,
+        ...(state.worlds ? { worlds: worldChoices() } : {})
     } });
 });
 $("#vault-close").addEventListener("click", closeVault);

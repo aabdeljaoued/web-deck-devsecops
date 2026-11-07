@@ -516,7 +516,10 @@ function favoritesSection(favorites) {
  * Pages du deck : { root: [touches ou null], <rubrique>: [...] }, et l'index des touches par id
  * (le serveur ne lance que des commandes "run" de ce catalogue, jamais une commande venue du navigateur).
  */
-export function buildDeck(ctx, favorites = []) {
+/**
+ * @param worlds rubriques activées / désactivées dans les Réglages, en écart avec cfg.sections ({ id: bool })
+ */
+export function buildDeck(ctx, favorites = [], worlds = {}) {
     const { cfg } = ctx;
     const { shortcuts: SHORTCUTS, sections: SECTIONS, clear } = buildCatalog(ctx);
     SECTIONS.favoris = favoritesSection(favorites);
@@ -539,14 +542,26 @@ export function buildDeck(ctx, favorites = []) {
     const allowed = (key) => key && !(key.tool && exclude.has(key.tool));
     const skipped = (cfg.shortcuts ?? []).filter((s) => !SHORTCUTS[s]);
     const shortcuts = (cfg.shortcuts ?? []).filter((s) => allowed(SHORTCUTS[s]));
-    // Rubrique sans aucune touche sur ce système (ex. Ansible sous Windows) : pas de dossier vide
-    // (sauf Favoris, qui a toujours Ajouter)
-    const sections = (cfg.sections ?? []).filter((s) => {
+    // Rubriques : celles de config.jsonc (dans leur ordre), puis les autres du catalogue (désactivées par défaut) ;
+    // les Réglages peuvent activer ou désactiver chacune. Une rubrique sans aucune touche sur ce système
+    // (ex. Ansible sous Windows) n'est pas proposée (Favoris a toujours Ajouter).
+    const configured = cfg.sections ?? [];
+    const order = [...configured, ...Object.keys(SECTIONS).filter((s) => !configured.includes(s))];
+    const usable = order.filter((s) => {
         const empty = !SECTIONS[s].keys.some(allowed);
-        if (empty) skipped.push(s);
+        if (empty && configured.includes(s)) skipped.push(s);
         return !empty;
     });
-    const total = sections.length + shortcuts.length;
+    const enabled = (s) => (typeof worlds?.[s] === "boolean" ? worlds[s] : configured.includes(s));
+    const sections = usable.filter(enabled);
+    const worldList = usable.map((s) => {
+        const icon = pick(SECTIONS[s].icon);
+        if (icon && iconFile(icon)) ICONS.add(icon);
+        return { id: s, label: pick(SECTIONS[s].label), icon: icon ?? null, color: SECTIONS[s].color, on: enabled(s), byDefault: configured.includes(s) };
+    });
+    // clear sur l'accueil aussi (bord droit), comme dans les rubriques qui tapent dans le terminal
+    const rootClear = cfg.clearKey ? 1 : 0;
+    const total = sections.length + shortcuts.length + rootClear;
     if (total > ROOT_MAX) throw new Error(`${total} touches demandées sur la page d'accueil (max ${ROOT_MAX}). Retire des rubriques ou des raccourcis.`);
 
     const layouts = {};
@@ -572,6 +587,7 @@ export function buildDeck(ctx, favorites = []) {
         }
     }
     for (const s of shortcuts) rootKeys.push(SHORTCUTS[s]);
+    if (rootClear) rootKeys.push(clear);
     layouts.root = layout(rootKeys);
 
     // Identifiants stables "page/colonne,ligne" ; la commande des touches "run" n'est pas envoyée au navigateur
@@ -588,5 +604,5 @@ export function buildDeck(ctx, favorites = []) {
             return { id, ...visible };
         });
     }
-    return { pages, titles, parents, index, skipped };
+    return { pages, titles, parents, index, skipped, worlds: { list: worldList, shortcuts: shortcuts.length + rootClear, max: ROOT_MAX } };
 }

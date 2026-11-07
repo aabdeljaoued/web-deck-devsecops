@@ -201,6 +201,12 @@
                 </label>
             </fieldset>
             <fieldset class="settings-group">
+                <legend>Rubriques</legend>
+                <span class="hint">Mondes affichés sur l'accueil ; décochés, ils sont masqués partout (palette ⌘K comprise). Les rubriques du catalogue absentes de <code>config.jsonc</code> (ex. Sécurité, Vault) peuvent être activées ici.</span>
+                <div id="set-worlds" class="world-choices"></div>
+                <span id="set-worlds-count" class="hint world-count"></span>
+            </fieldset>
+            <fieldset class="settings-group">
                 <legend>Navigation</legend>
                 <label class="settings-check"><input id="set-autohome-on" type="checkbox"> Retour automatique à l'accueil</label>
                 <span class="hint">Après une action dans une rubrique (Docker, K8s, Git…), le deck revient à l'accueil si aucune autre action n'y est lancée pendant ce délai ; chaque action relance le compte à rebours.</span>

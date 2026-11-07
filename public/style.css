@@ -1009,3 +1009,18 @@ main {
     border-top: 1px solid var(--border);
     z-index: 1;
 }
+
+/* Réglages : rubriques à cocher */
+.world-choices { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 6px; }
+.favform label.world-choice {
+    flex-direction: row; align-items: center; gap: 7px; padding: 6px 8px;
+    border: 1px solid var(--border); border-radius: 6px; font-size: 13px; color: var(--text); cursor: pointer;
+}
+.favform label.world-choice:has(input:checked) { border-color: color-mix(in srgb, var(--c) 60%, transparent); background: color-mix(in srgb, var(--c) 12%, transparent); }
+.favform label.world-choice:has(input:not(:checked)) { opacity: .6; }
+.favform .world-choice input { width: 15px; height: 15px; margin: 0; padding: 0; accent-color: var(--c); cursor: pointer; }
+.world-icon { width: 16px; height: 16px; flex: none; background: color-mix(in oklab, var(--c) 82%, var(--tint-mix)); -webkit-mask: var(--logo) center / contain no-repeat; mask: var(--logo) center / contain no-repeat; }
+.world-count.over { color: #ef5350; opacity: 1; font-weight: 600; }
+
+/* Messages au-dessus des panneaux (Réglages, coffre, favoris) : une erreur reste lisible */
+#toast { z-index: 100; }

@@ -23,8 +23,8 @@ const state = {
     fontSize: Number(loadPref("deck-font")) || 14,        // taille du texte des terminaux
     favEdit: false,     // rubrique Favoris en mode Modifier : un clic sur un favori ouvre son formulaire
     parents: {},        // page -> page parente (fil d'Ariane, Retour)
-    vault: { exists: null, unlocked: false },
-    settings: { autoHomeSeconds: 60 },          // réglages de l'espace admin (serveur)   // coffre : notes et secrets (sans leur valeur) ; exists null = pas encore connu
+    vault: { exists: null, unlocked: false },   // coffre : notes et secrets (sans leur valeur) ; exists null = pas encore connu
+    settings: { autoHomeEnabled: true, autoHomeSeconds: 60 },   // réglages de l'espace admin (serveur)
     favGroups: []       // groupes de favoris { id, path, depth } pour le choix « Dans »
 };
 const requestId = crypto.randomUUID();
@@ -74,7 +74,10 @@ function applyAppearance(appearance = "dark", theme = "") {
     if (THEMES.includes(theme)) root.dataset.theme = theme;
     else delete root.dataset.theme;
     savePref("deck-appearance", JSON.stringify({ appearance, theme }));
-    for (const t of state.terms?.values() ?? []) t.term.options.theme = TERM_THEMES[currentMode];
+    // Un terminal en cours de fermeture ne doit pas bloquer la suite (fermeture des Réglages, etc.)
+    for (const t of state.terms?.values() ?? []) {
+        try { t.term.options.theme = TERM_THEMES[currentMode]; } catch (err) { console.warn("thème du terminal", err); }
+    }
 }
 const termTheme = () => TERM_THEMES[currentMode];
 systemDark.addEventListener("change", () => {
@@ -172,8 +175,9 @@ function handle(msg) {
             break;
         case "settings":
             state.settings = msg.settings;
+            if (msg.settings.autoHomeEnabled === false) cancelAutoHome();
+            settingsPending = false;
             applyAppearance(msg.settings.appearance, msg.settings.missionTheme);
-            if (!$("#settings").hidden) $("#settings").hidden = true;
             break;
         case "vault":
             applyVault(msg);
@@ -251,6 +255,8 @@ function handle(msg) {
             if (!msg.ok) toast(msg.error ?? "échec");
             break;
         case "error":
+            // Réglages refusés par le serveur : le panneau revient pour corriger
+            if (settingsPending) { settingsPending = false; $("#settings").hidden = false; }
             toast(msg.error);
             break;
     }
@@ -1453,7 +1459,7 @@ const worldOf = (page) => (page === "root" ? null : isFavPage(page) ? "favoris" 
 const autoHome = { world: null, deadline: 0, total: 0, timer: null, last: 0 };
 
 function armAutoHome() {
-    const seconds = Number(state.settings.autoHomeSeconds) || 0;
+    const seconds = state.settings.autoHomeEnabled === false ? 0 : Number(state.settings.autoHomeSeconds) || 0;
     if (!seconds || state.page === "root") return cancelAutoHome();
     autoHome.world = worldOf(state.page);
     autoHome.total = seconds * 1000;
@@ -1495,16 +1501,21 @@ function tickAutoHome() {
 
 function openSettings() {
     $("#set-autohome").value = state.settings.autoHomeSeconds;
+    $("#set-autohome-on").checked = state.settings.autoHomeEnabled !== false;
+    toggleAutoHomeRow();
     $("#set-appearance").value = state.settings.appearance ?? "dark";
     $("#set-theme").value = state.settings.missionTheme ?? "";
     $("#settings").hidden = false;
     refreshVaultIo();
-    $("#set-appearance").focus();
+    // Pas de focus sur un champ : le premier clic doit agir directement (sinon il ne sert qu'à quitter ce champ)
+    document.activeElement?.blur();
+    $(".settings-box").scrollTop = 0;
 }
 
 // ---------- Export / import des favoris (Réglages) ----------
 
 let pendingImport = null;
+let settingsPending = false;   // réglages envoyés, en attente de la confirmation du serveur
 
 function downloadJson(data, filename, what = "favoris exportés") {
     const url = URL.createObjectURL(new Blob([`${JSON.stringify(data, null, 2)}\n`], { type: "application/json" }));
@@ -1617,6 +1628,13 @@ function importVault(mode) {
     $("#vault-import-pass").value = "";
 }
 
+/** Délai affiché seulement si le retour automatique est activé (désactivé : le délai n'est pas exigé). */
+function toggleAutoHomeRow() {
+    const on = $("#set-autohome-on").checked;
+    $("#set-autohome-row").hidden = !on;
+    $("#set-autohome").disabled = !on;
+}
+
 /** Fermeture sans enregistrer : l'aperçu de l'apparence est annulé. */
 function closeSettings() {
     $("#settings").hidden = true;
@@ -1675,6 +1693,7 @@ $("#vault-open").addEventListener("click", openVault);
 $("#settings-open").addEventListener("click", openSettings);
 $("#settings-cancel").addEventListener("click", closeSettings);
 $("#set-appearance").addEventListener("change", previewAppearance);
+$("#set-autohome-on").addEventListener("change", () => { toggleAutoHomeRow(); if ($("#set-autohome-on").checked) $("#set-autohome").focus(); });
 $("#fav-export").addEventListener("click", () => send({ t: "fav-export" }));
 $("#fav-import").addEventListener("click", () => $("#fav-import-file").click());
 $("#fav-import-file").addEventListener("change", (ev) => readImportFile(ev.target.files[0]));
@@ -1703,8 +1722,14 @@ $("#settings-form").addEventListener("keydown", (ev) => {
 });
 $("#settings-form").addEventListener("submit", (ev) => {
     ev.preventDefault();
+    // Fermeture immédiate (sans attendre le serveur) ; rouvert si le serveur refuse
+    settingsPending = true;
+    $("#settings").hidden = true;
+    hideImportConfirm();
+    hideVaultImport();
     send({ t: "settings-save", settings: {
-        autoHomeSeconds: Number($("#set-autohome").value),
+        autoHomeEnabled: $("#set-autohome-on").checked,
+        ...($("#set-autohome-on").checked ? { autoHomeSeconds: Number($("#set-autohome").value) } : {}),
         appearance: $("#set-appearance").value,
         missionTheme: $("#set-theme").value
     } });
@@ -1796,6 +1821,8 @@ window.addEventListener("resize", () => { if (!$("#picker").hidden) placePicker(
 /** Raccourcis : Cmd/Ctrl+K palette, Cmd/Ctrl+F recherche, Cmd/Ctrl + / − / 0 taille du texte, Échap ferme. */
 document.addEventListener("keydown", (ev) => {
     // Coffre ou formulaire des favoris ouverts : leurs champs gardent les raccourcis du navigateur
+    // Réglages ouverts sans champ actif : Échap ferme le panneau
+    if (!$("#settings").hidden && ev.key === "Escape") { ev.preventDefault(); closeSettings(); return; }
     if (!$("#vault").hidden || !$("#favdialog").hidden || !$("#settings").hidden) return;
     const mod = macClient ? ev.metaKey : ev.ctrlKey;
     const key = ev.key.toLowerCase();

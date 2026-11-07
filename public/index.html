@@ -202,10 +202,9 @@
             </fieldset>
             <fieldset class="settings-group">
                 <legend>Navigation</legend>
-            <label>Retour automatique à l'accueil
-                <span class="hint">Après une action dans une rubrique (Docker, K8s, Git…), le deck revient à l'accueil si aucune autre action n'y est lancée pendant ce délai ; chaque action relance le compte à rebours. 0 = jamais.</span>
-                <span class="settings-row"><input id="set-autohome" type="number" min="0" max="3600" step="5" required> secondes</span>
-            </label>
+                <label class="settings-check"><input id="set-autohome-on" type="checkbox"> Retour automatique à l'accueil</label>
+                <span class="hint">Après une action dans une rubrique (Docker, K8s, Git…), le deck revient à l'accueil si aucune autre action n'y est lancée pendant ce délai ; chaque action relance le compte à rebours.</span>
+                <label id="set-autohome-row" class="settings-row">Délai <input id="set-autohome" type="number" min="5" max="3600" step="5" required> secondes</label>
             </fieldset>
             <fieldset class="settings-group">
                 <legend>Favoris</legend>

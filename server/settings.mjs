@@ -13,12 +13,19 @@ const SCHEMA = {
     appearance: { default: "dark", clean: oneOf("mode d'affichage", ["dark", "light", "system"]) },
     /** Thème aux couleurs d'une mission ("" = aucun). */
     missionTheme: { default: "", clean: oneOf("thème de mission", ["", "allianz", "bnp", "estreem", "laposte"]) },
-    /** Retour automatique à l'accueil après une action dans une rubrique (secondes, 0 = jamais). */
+    /** Retour automatique à l'accueil après une action dans une rubrique : activé ou non, et délai. */
+    autoHomeEnabled: {
+        default: true,
+        clean(v) {
+            if (typeof v !== "boolean") throw new Error("retour automatique à l'accueil : activé (true) ou non (false)");
+            return v;
+        }
+    },
     autoHomeSeconds: {
         default: 60,
         clean(v) {
             const n = Number(v);
-            if (!Number.isInteger(n) || n < 0 || n > 3600) throw new Error("délai de retour à l'accueil : nombre entier de 0 à 3600 secondes");
+            if (!Number.isInteger(n) || n < 5 || n > 3600) throw new Error("délai de retour à l'accueil : nombre entier de 5 à 3600 secondes");
             return n;
         }
     }
@@ -31,6 +38,11 @@ export class Settings {
         if (!existsSync(file)) return;
         try {
             const saved = JSON.parse(readFileSync(file, "utf8"));
+            // Ancien format : délai 0 = désactivé (le délai par défaut est gardé pour une future réactivation)
+            if (saved.autoHomeSeconds === 0 && !("autoHomeEnabled" in saved)) {
+                saved.autoHomeEnabled = false;
+                delete saved.autoHomeSeconds;
+            }
             for (const [k, s] of Object.entries(SCHEMA)) {
                 if (!(k in saved)) continue;
                 try { this.values[k] = s.clean(saved[k]); } catch (err) { console.warn(`  settings.json : ${err.message} (valeur par défaut gardée)`); }

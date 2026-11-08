@@ -150,9 +150,12 @@ function send(msg) {
     if (state.ws?.readyState === WebSocket.OPEN) state.ws.send(JSON.stringify(msg));
 }
 
+/** Pastille de connexion au serveur (verte / rouge) ; l'état en clair dans l'infobulle. */
 function setConn(text, cls) {
     const el = $("#conn");
-    el.textContent = text;
+    const label = `Serveur du deck : ${text}`;
+    el.title = label;
+    el.setAttribute("aria-label", label);
     el.className = `conn ${cls}`;
 }
 

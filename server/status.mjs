@@ -86,7 +86,7 @@ export class StatusHub extends EventEmitter {
             const out = await run(kubectl, ["config", "view", "--minify", "-o", "jsonpath={.current-context}|{..namespace}"]);
             const [context = "", namespace = ""] = out.trim().split("|");
             if (!context) return this.publish("kube", { bg: "#455A64", title: "K8S", lines: ["aucun", "contexte"] });
-            const isProd = new RegExp(this.ctx.cfg.prodPattern || "prod", "i").test(`${context} ${namespace}`);
+            const isProd = new RegExp(this.prodPattern || this.ctx.cfg.prodPattern || "prod", "i").test(`${context} ${namespace}`);
             this.publish("kube", {
                 bg: isProd ? "#C62828" : "#326CE5",
                 title: isProd ? "⚠ PROD" : "K8S",
@@ -117,7 +117,7 @@ export class StatusHub extends EventEmitter {
         } catch (err) {
             nsError = err.message.split("\n")[0].slice(0, 160);
         }
-        const prod = new RegExp(this.ctx.cfg.prodPattern || "prod", "i");
+        const prod = new RegExp(this.prodPattern || this.ctx.cfg.prodPattern || "prod", "i");
         return {
             contexts: contexts.map((name) => ({ name, prod: prod.test(name) })),
             current,

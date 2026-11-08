@@ -197,6 +197,36 @@ const remote = new RemoteWatch(terminals);
 remote.on("change", (state) => broadcast({ t: "remote", remote: state }));
 remote.start();
 
+// ---------- Missions : thème, rubriques, motif de production, dossier de travail, groupe de favoris ----------
+
+const activeMission = () => {
+    const s = settings.get();
+    return s.missions.find((m) => m.id === s.activeMission) ?? null;
+};
+
+/** Effets côté serveur de la mission active : motif de production du voyant kubectl, dossier des nouveaux terminaux. */
+function applyMissionEffects() {
+    const m = activeMission();
+    status.prodPattern = m?.prodPattern || null;
+    terminals.workspaceOverride = m?.workspace || null;
+    status.refreshKube?.().catch(() => {});
+}
+applyMissionEffects();
+
+/** Active une mission ("" = aucune) : ses thème et rubriques remplacent les réglages, après vérification de l'accueil. */
+function activateMission(id) {
+    const m = settings.get().missions.find((x) => x.id === id);
+    if (id && !m) throw new Error("mission introuvable");
+    const next = settings.check(m ? { activeMission: id, missionTheme: m.theme, worlds: m.worlds, worldOrder: m.worldOrder } : { activeMission: "" });
+    const nextDeck = makeDeck(next.worlds, next.worldOrder);   // refus si l'accueil dépasse 18 touches
+    settings.save(next);
+    deck = nextDeck;
+    applyMissionEffects();
+    broadcast({ t: "settings", settings: settings.get() });
+    broadcast(deckMessage());
+    return m;
+}
+
 // Session verrouillée (écran de verrouillage) : le coffre se verrouille aussitôt
 const screenLock = new ScreenLock(remote);
 screenLock.on("change", (locked) => { if (locked) vault.lock("écran verrouillé"); });
@@ -216,6 +246,8 @@ wss.on("connection", (ws) => {
         worlds: deck.worlds,
         tools: tools.view(),
         localUnix: LOCAL_UNIX,
+        workspace: ctx.workspace,
+        prodPattern: ctx.cfg.prodPattern || "prod",
         signature: signatureVersion(),
         remote: remote.view(),
         server: { supervisor: SUPERVISOR, log: SUPERVISOR ? null : LOG_FILE },
@@ -305,6 +337,37 @@ wss.on("connection", (ws) => {
                 // Sauvegardes automatiques (Réglages) : liste et restauration (la version actuelle est sauvegardée avant)
                 // Redémarrage demandé depuis les Réglages (terminaux rouverts au démarrage suivant)
                 case "restart": restart(); break;
+                // Missions : enregistrer (rubriques actuelles reprises si demandé), supprimer, activer
+                case "mission-save": {
+                    const s = settings.get();
+                    const input = msg.mission ?? {};
+                    const id = input.id || `m-${randomBytes(4).toString("hex")}`;
+                    const old = s.missions.find((m) => m.id === id);
+                    if (input.workspace && !existsSync(String(input.workspace))) throw new Error(`dossier introuvable : ${input.workspace}`);
+                    const mission = {
+                        ...old, ...input, id,
+                        ...(input.captureWorlds || !old ? { worlds: s.worlds, worldOrder: s.worldOrder } : {})
+                    };
+                    delete mission.captureWorlds;
+                    const missions = old ? s.missions.map((m) => (m.id === id ? mission : m)) : [...s.missions, mission];
+                    settings.update({ missions });
+                    if (s.activeMission === id) activateMission(id);
+                    else broadcast({ t: "settings", settings: settings.get() });
+                    reply({ t: "vault-ok", text: `mission « ${mission.name} » enregistrée`, close: false });
+                    break;
+                }
+                case "mission-delete": {
+                    const s = settings.get();
+                    settings.update({ missions: s.missions.filter((m) => m.id !== msg.id), activeMission: s.activeMission === msg.id ? "" : s.activeMission });
+                    applyMissionEffects();
+                    broadcast({ t: "settings", settings: settings.get() });
+                    break;
+                }
+                case "mission-activate": {
+                    const m = activateMission(String(msg.id ?? ""));
+                    reply({ t: "vault-ok", text: m ? `mission « ${m.name} » activée` : "aucune mission active", close: false });
+                    break;
+                }
                 // Nouveau jeton : l'ancien ne vaut plus rien. La page qui le demande bascule sur le nouveau ;
                 // les autres connexions sont fermées (celles du même navigateur reviennent avec le cookie mis à jour).
                 case "token-renew": {

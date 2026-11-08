@@ -38,3 +38,16 @@ test("ordre des rubriques : liste d'identifiants, doublons retirés", () => {
     assert.throws(() => s.update({ worldOrder: "git" }), /ordre des rubriques/);
     assert.throws(() => s.update({ worldOrder: ["../x"] }), /ordre des rubriques/);
 });
+
+test("missions : validation (nom, motif de production, doublons), mission active", () => {
+    const s = new Settings(path.join(tmpDir(), "settings.json"));
+    const bnp = { id: "m-bnp", name: "BNP", theme: "bnp", prodPattern: "prd|prod", worlds: { brew: false }, worldOrder: ["k8s"], workspace: "/tmp", favGroup: "" };
+    const saved = s.update({ missions: [bnp], activeMission: "m-bnp" });
+    assert.equal(saved.missions[0].name, "BNP");
+    assert.equal(saved.activeMission, "m-bnp");
+    assert.throws(() => s.update({ missions: [{ ...bnp, name: " " }] }), /nom/);
+    assert.throws(() => s.update({ missions: [{ ...bnp, prodPattern: "prod(" }] }), /motif/);
+    assert.throws(() => s.update({ missions: [bnp, bnp] }), /double/);
+    assert.throws(() => s.update({ missions: [{ ...bnp, theme: "acme" }] }), /thème/);
+    assert.equal(s.update({ missions: [{ ...bnp, favGroup: "../x" }] }).missions[0].favGroup, "", "groupe de favoris invalide ignoré");
+});

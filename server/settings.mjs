@@ -8,7 +8,45 @@ const oneOf = (name, allowed) => (v) => {
     return v;
 };
 
+/** Profil de mission : thème, rubriques et ordre, motif de production, dossier de travail, groupe de favoris. */
+function cleanMission(m) {
+    if (!m || typeof m !== "object") throw new Error("mission invalide");
+    const id = String(m.id ?? "");
+    if (!/^[a-z0-9-]{1,40}$/.test(id)) throw new Error("mission : identifiant invalide");
+    const name = String(m.name ?? "").replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, 40);
+    if (!name) throw new Error("mission : le nom est obligatoire");
+    const prodPattern = String(m.prodPattern ?? "").trim().slice(0, 100);
+    try { new RegExp(prodPattern, "i"); } catch { throw new Error(`mission « ${name} » : motif de production invalide (${prodPattern})`); }
+    return {
+        id,
+        name,
+        theme: SCHEMA.missionTheme.clean(m.theme ?? ""),
+        worlds: SCHEMA.worlds.clean(m.worlds ?? {}),
+        worldOrder: SCHEMA.worldOrder.clean(m.worldOrder ?? []),
+        prodPattern,
+        workspace: String(m.workspace ?? "").replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, 300),
+        favGroup: /^[0-9a-f-]{0,64}$/i.test(String(m.favGroup ?? "")) ? String(m.favGroup ?? "") : ""
+    };
+}
+
 const SCHEMA = {
+    /** Profils de mission (20 au plus) et mission active ("" = aucune). */
+    missions: {
+        default: [],
+        clean(v) {
+            if (!Array.isArray(v) || v.length > 20) throw new Error("missions : 20 au plus");
+            const list = v.map(cleanMission);
+            if (new Set(list.map((m) => m.id)).size !== list.length) throw new Error("missions : identifiants en double");
+            return list;
+        }
+    },
+    activeMission: {
+        default: "",
+        clean(v) {
+            if (typeof v !== "string" || !/^[a-z0-9-]{0,40}$/.test(v)) throw new Error("mission active invalide");
+            return v;
+        }
+    },
     /** Mode d'affichage : sombre, clair, ou celui du système. */
     appearance: { default: "dark", clean: oneOf("mode d'affichage", ["dark", "light", "system"]) },
     /** Signature en filigrane au fond des terminaux ("" = aucune). */

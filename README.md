@@ -138,6 +138,10 @@ Avant chaque modification de `favoris.json`, `vault.enc` ou `settings.json`, la 
 
 Quand le voyant kubectl est en **production** (contexte ou namespace qui correspond à `prodPattern` de `config.jsonc`, par défaut `prod|prd`), les touches qui agissent sur le cluster (**exec -it**, **helm upgrade -i**, **rollback**, **uninstall**) sont entourées de rouge avec la mention **PROD** : le premier clic affiche le contexte et arme la touche, le **deuxième clic** (dans les 5 s) la lance.
 
+### Missions (un profil par client)
+
+**Réglages › Missions › Nouvelle mission…** enregistre un profil : nom, **thème**, **rubriques affichées et leur ordre** (reprises des réglages actuels), **motif de production** du voyant kubectl (vide = `prodPattern` de `config.jsonc`), **dossier des nouveaux terminaux** et **groupe de favoris** ouvert directement par la touche Favoris. Le sélecteur **Mission** de l'en-tête (affiché dès qu'une mission existe) l'active en un clic : thème et rubriques appliqués (refusé si l'accueil dépasse 18 touches), voyant kubectl et garde-fou production avec le motif de la mission. « Mission : aucune » rend le motif et le dossier par défaut. Les missions sont enregistrées dans `settings.json` (hors Git).
+
 ### Rubriques activées
 
 Dans **Réglages › Rubriques**, une case par monde (VS Code, Git, K8s, Docker…) l'affiche ou le masque sur l'accueil ; masqué, il disparaît aussi de la palette ⌘K. Les rubriques du catalogue absentes de `config.jsonc` (ex. **Sécurité**, **Vault**) apparaissent décochées et peuvent être activées sans éditer le fichier. Un compteur indique les touches de l'accueil (18 au plus, raccourcis compris) ; un choix qui dépasse est refusé sans rien modifier.
@@ -234,6 +238,8 @@ text("VAULT_ADDR", "🌐", sh('export VAULT_ADDR="http://127.0.0.1:8200"', '$env
 Types de touches : `text` (tape dans le terminal), `web` (ouvre un onglet), `run` (lance un programme sur la machine), `status` (voyant).
 
 ## Tests
+
+Ils tournent aussi sur **GitHub Actions** à chaque push, sur Windows, macOS et Linux (`.github/workflows/tests.yml`).
 
 `npm test` lance les tests automatiques (`test/`, lanceur intégré à Node 22 ou plus, sans dépendance) en moins d'une seconde : favoris (ajout, groupes, glisser-déposer, import), coffre (chiffrement, notes en couleur, export / import), réglages (validation, ancien format), sauvegardes, catalogue (limite de l'accueil, rubriques, descriptions, garde-fou production) et détection ssh / wsl. Ils travaillent dans des dossiers temporaires : les vrais favoris, coffre et réglages ne sont jamais touchés. À lancer avant chaque commit.
 

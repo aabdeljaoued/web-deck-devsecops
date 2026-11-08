@@ -1132,3 +1132,16 @@ main {
 .favform label.world-choice.drop-before { box-shadow: inset 4px 0 0 var(--accent); }
 .favform label.world-choice.drop-after { box-shadow: inset -4px 0 0 var(--accent); }
 .settings-actions .grow { flex: 1; }
+
+/* Missions : sélecteur de l'en-tête et liste des Réglages */
+.mission-switch { padding: 4px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--input-bg); color: var(--text); font: inherit; font-size: 12px; max-width: 200px; }
+.mission-switch[hidden] { display: none; }
+.mission-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.mission-list li { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; align-items: center; padding: 7px 10px; border: 1px solid var(--border); border-radius: 6px; }
+.mission-list li > strong { font-size: 13px; color: var(--text); }
+.mission-list li > .hint { grid-column: 1; }
+.mission-list li > .settings-actions { grid-column: 2; grid-row: 1 / span 2; }
+.mission-list li.active { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.mission-list button.armed { color: #fff; background: #c62828; border-color: #c62828; }
+.mission-form { gap: 10px; }
+.mission-form input, .mission-form select { padding: 6px 9px; border: 1px solid var(--border); border-radius: 6px; background: var(--input-bg); color: var(--text); font: inherit; font-size: 13px; }

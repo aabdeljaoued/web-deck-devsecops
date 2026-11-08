@@ -17,6 +17,7 @@
             <span class="dot run"></span> exécutée
             <span class="dot type"></span> tapée, à compléter
         </p>
+        <select id="mission-switch" class="mission-switch" title="Mission active : thème, rubriques, motif de production, dossier de travail, groupe de favoris" hidden></select>
         <button id="settings-open" class="palette-open settings-open" title="Réglages"><svg viewBox="0 0 24 24" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></g></svg></button>
         <button id="vault-open" class="palette-open vault-open" title="Coffre : notes et secrets chiffrés"><svg viewBox="0 0 24 24" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10.5" width="16" height="11" rx="2.5"/><path d="M7.5 10.5V7.2a4.5 4.5 0 0 1 9 0v3.3"/></g></svg><span>Coffre</span></button>
         <button id="palette-open" class="palette-open" title="Chercher une touche ou une commande"><svg viewBox="0 0 24 24" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></g></svg><span>Rechercher</span><kbd class="kbd-mod">⌘K</kbd></button>
@@ -209,6 +210,38 @@
                     <button type="button" id="set-signature-remove">Retirer l'image</button>
                     <input id="set-signature-file" type="file" accept="image/png" hidden>
                     <span id="set-signature-state" class="hint"></span>
+                </div>
+            </fieldset>
+            <fieldset class="settings-group">
+                <legend>Missions</legend>
+                <span class="hint">Un profil par client : thème, rubriques affichées et leur ordre, motif de production du voyant kubectl, dossier des nouveaux terminaux, groupe de favoris ouvert par la touche Favoris. Activation par le sélecteur « Mission » de l'en-tête.</span>
+                <ul id="mission-list" class="mission-list"></ul>
+                <div class="settings-actions"><button type="button" id="mission-new">Nouvelle mission…</button></div>
+                <div id="mission-form" class="fav-import-confirm mission-form" hidden>
+                    <label>Nom <input id="mission-name" type="text" maxlength="40" placeholder="ex. BNP Paribas"></label>
+                    <label>Thème
+                        <select id="mission-theme">
+                            <option value="">Aucun</option>
+                            <option value="allianz">Allianz</option>
+                            <option value="bnp">BNP Paribas</option>
+                            <option value="estreem">Estreem</option>
+                            <option value="laposte">La Poste</option>
+                        </select>
+                    </label>
+                    <label>Motif de production (voyant kubectl en rouge, garde-fou)
+                        <input id="mission-prod" type="text" maxlength="100" spellcheck="false">
+                    </label>
+                    <label>Dossier des nouveaux terminaux
+                        <input id="mission-workspace" type="text" maxlength="300" spellcheck="false">
+                    </label>
+                    <label>Groupe de favoris ouvert par la touche Favoris
+                        <select id="mission-fav"></select>
+                    </label>
+                    <label class="settings-check"><input id="mission-capture" type="checkbox" checked> Reprendre les rubriques et l'ordre affichés actuellement</label>
+                    <span class="settings-actions">
+                        <button type="button" id="mission-save" class="primary">Enregistrer la mission</button>
+                        <button type="button" id="mission-cancel">Annuler</button>
+                    </span>
                 </div>
             </fieldset>
             <fieldset class="settings-group">

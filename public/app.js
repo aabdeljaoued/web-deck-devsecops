@@ -166,6 +166,8 @@ function handle(msg) {
             state.worlds = msg.worlds ?? null;
             state.server = msg.server ?? null;
             state.localUnix = msg.localUnix ?? true;
+            state.workspace = msg.workspace ?? "";
+            state.prodPatternDefault = msg.prodPattern ?? "prod";
             state.signature = msg.signature ?? null;
             applyWatermark();
             state.remote = msg.remote ?? {};
@@ -174,6 +176,7 @@ function handle(msg) {
             if (msg.vault) applyVault(msg.vault);
             if (msg.settings) {
                 state.settings = msg.settings;
+                setTimeout(renderMissionSwitch);
                 applyWatermark();
                 applyAppearance(msg.settings.appearance, msg.settings.missionTheme);
             }
@@ -229,6 +232,8 @@ function handle(msg) {
             break;
         case "settings":
             state.settings = msg.settings;
+            renderMissionSwitch();
+            if (!$("#settings").hidden) renderMissions();
             applyWatermark();
             if (msg.settings.autoHomeEnabled === false) cancelAutoHome();
             settingsPending = false;
@@ -531,9 +536,13 @@ function press(key, el) {
         return typeInTerminal(install);
     }
     switch (key.type) {
-        case "folder":
+        case "folder": {
             if (key.fav && state.favEdit) return openFavForm(key);
+            // Touche Favoris de l'accueil : groupe de la mission active ouvert directement (s'il existe)
+            const group = key.page === "favoris" && activeMission()?.favGroup;
+            if (group && state.pages[`fav-${group}`]) return go(`fav-${group}`);
             return go(key.page);
+        }
         case "back": return go(key.page ?? "root");
         case "web":
             if (key.fav && state.favEdit) return openFavForm(key);
@@ -1875,6 +1884,87 @@ function renderBackups(all) {
     }));
 }
 
+// ---------- Missions : profils par client (Réglages › Missions, sélecteur de l'en-tête) ----------
+
+let missionEditing = null;   // mission modifiée (null = nouvelle)
+
+const activeMission = () => (state.settings?.missions ?? []).find((m) => m.id === state.settings?.activeMission) ?? null;
+
+/** Sélecteur de l'en-tête : affiché dès qu'une mission existe. */
+function renderMissionSwitch() {
+    const sel = $("#mission-switch");
+    const missions = state.settings?.missions ?? [];
+    sel.hidden = !missions.length;
+    sel.replaceChildren(new Option("Mission : aucune", ""), ...missions.map((m) => new Option(`Mission : ${m.name}`, m.id)));
+    sel.value = state.settings?.activeMission ?? "";
+}
+
+function renderMissions() {
+    const missions = state.settings?.missions ?? [];
+    const list = $("#mission-list");
+    if (!missions.length) {
+        list.replaceChildren(Object.assign(document.createElement("li"), { className: "hint", textContent: "aucune mission : « Nouvelle mission… » enregistre le thème et les rubriques actuels avec un nom" }));
+        return;
+    }
+    list.replaceChildren(...missions.map((m) => {
+        const li = document.createElement("li");
+        const active = m.id === state.settings.activeMission;
+        const details = [m.theme || "sans thème", `prod : ${m.prodPattern || state.prodPatternDefault}`, m.workspace || "dossier par défaut"].join(" · ");
+        const button = (text, fn, cls = "") => {
+            const b = Object.assign(document.createElement("button"), { type: "button", textContent: text, className: cls });
+            b.addEventListener("click", fn);
+            return b;
+        };
+        const del = button("Supprimer", () => {
+            if (!del.classList.contains("armed")) { del.classList.add("armed"); del.textContent = "Confirmer"; return; }
+            send({ t: "mission-delete", id: m.id });
+        });
+        li.append(
+            Object.assign(document.createElement("strong"), { textContent: m.name + (active ? " (active)" : "") }),
+            Object.assign(document.createElement("span"), { className: "hint", textContent: details }),
+            Object.assign(document.createElement("span"), { className: "settings-actions" })
+        );
+        li.lastChild.append(
+            active ? button("Désactiver", () => send({ t: "mission-activate", id: "" })) : button("Activer", () => send({ t: "mission-activate", id: m.id }), "primary"),
+            button("Modifier", () => openMissionForm(m)),
+            del
+        );
+        if (active) li.classList.add("active");
+        return li;
+    }));
+}
+
+function openMissionForm(m = null) {
+    missionEditing = m;
+    $("#mission-name").value = m?.name ?? "";
+    $("#mission-theme").value = m?.theme ?? state.settings?.missionTheme ?? "";
+    $("#mission-prod").value = m?.prodPattern ?? "";
+    $("#mission-prod").placeholder = `vide = ${state.prodPatternDefault} (config.jsonc)`;
+    $("#mission-workspace").value = m?.workspace ?? "";
+    $("#mission-workspace").placeholder = `vide = ${state.workspace}`;
+    const fav = $("#mission-fav");
+    fav.replaceChildren(new Option("Aucun (page Favoris)", ""), ...(state.favGroups ?? []).map((g) => new Option(g.path, g.id)));
+    fav.value = m?.favGroup ?? "";
+    $("#mission-capture").checked = !m;
+    $("#mission-form").hidden = false;
+    $("#mission-name").focus();
+}
+
+function saveMission() {
+    const name = $("#mission-name").value.trim();
+    if (!name) { toast("donne un nom à la mission"); return $("#mission-name").focus(); }
+    send({ t: "mission-save", mission: {
+        ...(missionEditing ? { id: missionEditing.id } : {}),
+        name,
+        theme: $("#mission-theme").value,
+        prodPattern: $("#mission-prod").value.trim(),
+        workspace: $("#mission-workspace").value.trim(),
+        favGroup: $("#mission-fav").value,
+        captureWorlds: $("#mission-capture").checked
+    } });
+    $("#mission-form").hidden = true;
+}
+
 /** Rubriques à cocher (Réglages) : toutes celles disponibles sur ce système, dans l'ordre de l'accueil. */
 function renderWorldChoices() {
     const w = state.worlds;
@@ -1977,6 +2067,8 @@ function openSettings() {
     $("#set-theme").value = state.settings.missionTheme ?? "";
     $("#set-watermark").value = state.settings.watermark ?? "";
     renderWorldChoices();
+    renderMissions();
+    $("#mission-form").hidden = true;
     renderServer();
     send({ t: "backup-list" });
     $("#settings").hidden = false;
@@ -2166,6 +2258,11 @@ $("#palette").addEventListener("mousedown", (ev) => { if (ev.target.id === "pale
 $("#favform").addEventListener("submit", submitFav);
 $("#vault-open").addEventListener("click", openVault);
 $("#settings-open").addEventListener("click", openSettings);
+$("#mission-switch").addEventListener("change", (ev) => send({ t: "mission-activate", id: ev.target.value }));
+$("#mission-new").addEventListener("click", () => openMissionForm());
+$("#mission-save").addEventListener("click", saveMission);
+$("#mission-cancel").addEventListener("click", () => { $("#mission-form").hidden = true; });
+$("#mission-form").addEventListener("keydown", (ev) => { if (ev.key === "Enter" && ev.target.tagName === "INPUT") { ev.preventDefault(); saveMission(); } });
 $("#set-worlds-reset").addEventListener("click", resetWorldOrder);
 $("#server-restart").addEventListener("click", restartServer);
 $("#server-token").addEventListener("click", renewToken);

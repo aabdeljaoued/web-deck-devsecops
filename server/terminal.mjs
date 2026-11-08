@@ -41,7 +41,8 @@ export class Terminals extends EventEmitter {
     open(shellIndex = 0, cols = 100, rows = 30, { cwd, title } = {}) {
         const shell = this.ctx.shells[shellIndex] ?? this.ctx.shells[0];
         if (!shell) throw new Error("aucun shell trouvé (voir \"shells\" dans paths.json)");
-        const dir = cwd && existsSync(cwd) ? cwd : this.ctx.workspace;
+        // Dossier de départ : demandé, sinon celui de la mission active (s'il existe), sinon le workspace
+        const dir = cwd && existsSync(cwd) ? cwd : this.workspaceOverride && existsSync(this.workspaceOverride) ? this.workspaceOverride : this.ctx.workspace;
         const [exe, ...args] = shell.command;
         const proc = pty.spawn(exe, args, {
             name: "xterm-256color",

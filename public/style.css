@@ -1036,7 +1036,7 @@ main {
 .key.missing .badge { display: none; }
 
 /* Réglages : serveur et sauvegardes */
-#server-restart.armed, .backup-row button.armed { color: #fff; background: #c62828; border-color: #c62828; }
+#server-restart.armed, #server-token.armed, .backup-row button.armed { color: #fff; background: #c62828; border-color: #c62828; }
 .backup-rows { display: flex; flex-direction: column; gap: 6px; }
 .backup-row { display: grid; grid-template-columns: 110px 1fr auto; align-items: center; gap: 8px; font-size: 13px; }
 .backup-row select { padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--input-bg); color: var(--text); font: inherit; font-size: 12px; }
@@ -1125,3 +1125,10 @@ main {
 .diag-results li.warn .diag-mark { color: var(--type); }
 .diag-results li.ko .diag-mark, .diag-results li.ko strong { color: #ef5350; }
 .diag-detail { color: var(--muted); overflow-wrap: anywhere; }
+
+/* Réglages › Rubriques : glisser-déposer pour l'ordre de l'accueil */
+.favform label.world-choice { cursor: grab; }
+.favform label.world-choice.dragging { opacity: .35; }
+.favform label.world-choice.drop-before { box-shadow: inset 4px 0 0 var(--accent); }
+.favform label.world-choice.drop-after { box-shadow: inset -4px 0 0 var(--accent); }
+.settings-actions .grow { flex: 1; }

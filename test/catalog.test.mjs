@@ -39,3 +39,11 @@ test("Ansible : touches marquées unix ; la commande des touches run n'est pas e
     assert.ok(all.filter((k) => k.page === "ansible" && k.type === "text").every((k) => k.unix));
     assert.ok(all.filter((k) => k.type === "run").every((k) => !("command" in k)));
 });
+
+test("ordre des rubriques des Réglages : respecté, identifiants inconnus ignorés, les autres à la suite", () => {
+    const deck = buildDeck(ctx, [], {}, ["favoris", "linux", "inconnu"]);
+    const roots = deck.pages.root.filter((k) => k?.type === "folder").map((k) => k.page);
+    assert.deepEqual(roots.slice(0, 2), ["favoris", "linux"]);
+    assert.equal(new Set(roots).size, roots.length, "aucune rubrique en double");
+    assert.deepEqual(buildDeck(ctx, []).worlds.defaultOrder.slice(0, 2), (ctx.cfg.sections ?? []).slice(0, 2));
+});

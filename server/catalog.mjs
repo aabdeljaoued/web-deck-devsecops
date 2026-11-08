@@ -528,8 +528,9 @@ function favoritesSection(favorites) {
  */
 /**
  * @param worlds rubriques activées / désactivées dans les Réglages, en écart avec cfg.sections ({ id: bool })
+ * @param worldOrder ordre des rubriques choisi dans les Réglages ([] = celui de config.jsonc)
  */
-export function buildDeck(ctx, favorites = [], worlds = {}) {
+export function buildDeck(ctx, favorites = [], worlds = {}, worldOrder = []) {
     const { cfg } = ctx;
     const { shortcuts: SHORTCUTS, sections: SECTIONS, clear } = buildCatalog(ctx);
     SECTIONS.favoris = favoritesSection(favorites);
@@ -556,7 +557,10 @@ export function buildDeck(ctx, favorites = [], worlds = {}) {
     // les Réglages peuvent activer ou désactiver chacune. Une rubrique sans aucune touche sur ce système
     // (ex. Ansible sous Windows) n'est pas proposée (Favoris a toujours Ajouter).
     const configured = cfg.sections ?? [];
-    const order = [...configured, ...Object.keys(SECTIONS).filter((s) => !configured.includes(s))];
+    const defaultOrder = [...configured, ...Object.keys(SECTIONS).filter((s) => !configured.includes(s))];
+    // Ordre des Réglages d'abord (identifiants connus), puis les autres dans l'ordre par défaut
+    const chosen = (worldOrder ?? []).filter((s) => SECTIONS[s]);
+    const order = [...chosen, ...defaultOrder.filter((s) => !chosen.includes(s))];
     const usable = order.filter((s) => {
         const empty = !SECTIONS[s].keys.some(allowed);
         if (empty && configured.includes(s)) skipped.push(s);
@@ -619,5 +623,5 @@ export function buildDeck(ctx, favorites = [], worlds = {}) {
             return { id, ...visible };
         });
     }
-    return { pages, titles, parents, index, skipped, worlds: { list: worldList, shortcuts: shortcuts.length + rootClear, max: ROOT_MAX } };
+    return { pages, titles, parents, index, skipped, worlds: { list: worldList, shortcuts: shortcuts.length + rootClear, max: ROOT_MAX, defaultOrder: defaultOrder.filter((s) => worldList.some((w) => w.id === s)) } };
 }

@@ -7,14 +7,16 @@
 // DECK_SUPERVISOR=launchd|windows : lancé en service (service/), qui le relance s'il s'arrête sur un code ≠ 0.
 import { spawn } from "node:child_process";
 import { randomBytes, timingSafeEqual } from "node:crypto";
-import { existsSync, openSync, readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, openSync, readFileSync, statSync, truncateSync, unlinkSync, writeFileSync } from "node:fs";
+import os from "node:os";
 import http from "node:http";
 import path from "node:path";
 import { WebSocketServer } from "ws";
 
 import { buildDeck, ICONS } from "./catalog.mjs";
 import { Backups } from "./backups.mjs";
-import { copyTemporarily } from "./clipboard.mjs";
+import { copyTemporarily, flushClipboard } from "./clipboard.mjs";
+import { ScreenLock } from "./screenlock.mjs";
 import { runDiagnostic } from "./diagnostic.mjs";
 import { Favorites } from "./favorites.mjs";
 import { Vault } from "./vault.mjs";
@@ -35,14 +37,14 @@ const backups = new Backups(path.join(ROOT, ".deck-backups"));
 const favorites = new Favorites(path.join(ROOT, "favoris.json"), backups);
 const settings = new Settings(path.join(ROOT, "settings.json"), backups);
 /** Deck avec les favoris et les rubriques choisies dans les Réglages. */
-const makeDeck = (worlds = settings.get().worlds) => buildDeck(ctx, favorites.list(), worlds);
+const makeDeck = (worlds = settings.get().worlds, order = settings.get().worldOrder) => buildDeck(ctx, favorites.list(), worlds, order);
 let deck;
 try {
     deck = makeDeck();
 } catch (err) {
     // Réglages incompatibles avec config.jsonc (ex. trop de touches sur l'accueil) : rubriques de config.jsonc
     console.warn(`  Rubriques des Réglages ignorées : ${err.message}`);
-    deck = makeDeck({});
+    deck = makeDeck({}, []);
 }
 // Outils installables manquants : vérifiés au démarrage, toutes les minutes et à la demande de la page
 const tools = new Tools();
@@ -77,8 +79,9 @@ const signatureVersion = () => (existsSync(SIGNATURE_FILE) ? Math.round(statSync
 /** Message "deck" envoyé aux pages après une reconstruction. */
 const deckMessage = () => (setImmediate(checkTools), { t: "deck", pages: deck.pages, titles: deck.titles, parents: deck.parents, favGroups: favorites.groups(), worlds: deck.worlds });
 const port = ctx.port;
-const token = loadToken();
-const deckUrl = `http://${HOST}:${port}/?token=${token}`;
+let token = loadToken();
+const deckUrlFor = () => `http://${HOST}:${port}/?token=${token}`;
+const deckUrl = deckUrlFor();
 
 /** Jeton conservé entre deux démarrages (favori possible), dans un fichier lisible par l'utilisateur seul. */
 function loadToken() {
@@ -193,6 +196,11 @@ const LOCAL_UNIX = platform !== "windows" && process.env.DECK_LOCAL_UNIX !== "0"
 const remote = new RemoteWatch(terminals);
 remote.on("change", (state) => broadcast({ t: "remote", remote: state }));
 remote.start();
+
+// Session verrouillée (écran de verrouillage) : le coffre se verrouille aussitôt
+const screenLock = new ScreenLock(remote);
+screenLock.on("change", (locked) => { if (locked) vault.lock("écran verrouillé"); });
+screenLock.start();
 status.on("update", (id, state) => broadcast({ t: "status", id, state }));
 // Coffre : état et contenu (secrets sans leur valeur) renvoyés à toutes les pages à chaque changement
 vault.on("change", (reason) => broadcast({ t: "vault", ...vault.view(), ...(reason ? { reason } : {}) }));
@@ -243,8 +251,9 @@ wss.on("connection", (ws) => {
                 case "settings-save": {
                     // Vérifiés d'abord (rubriques : le deck doit tenir sur l'accueil), enregistrés ensuite
                     const next = settings.check(msg.settings);
-                    const worldsChanged = JSON.stringify(next.worlds) !== JSON.stringify(settings.get().worlds);
-                    const nextDeck = worldsChanged ? makeDeck(next.worlds) : deck;
+                    const current = settings.get();
+                    const worldsChanged = JSON.stringify([next.worlds, next.worldOrder]) !== JSON.stringify([current.worlds, current.worldOrder]);
+                    const nextDeck = worldsChanged ? makeDeck(next.worlds, next.worldOrder) : deck;
                     broadcast({ t: "settings", settings: settings.save(next) });
                     if (worldsChanged) { deck = nextDeck; broadcast(deckMessage()); }
                     reply({ t: "vault-ok", text: "réglages enregistrés", close: false });
@@ -296,6 +305,20 @@ wss.on("connection", (ws) => {
                 // Sauvegardes automatiques (Réglages) : liste et restauration (la version actuelle est sauvegardée avant)
                 // Redémarrage demandé depuis les Réglages (terminaux rouverts au démarrage suivant)
                 case "restart": restart(); break;
+                // Nouveau jeton : l'ancien ne vaut plus rien. La page qui le demande bascule sur le nouveau ;
+                // les autres connexions sont fermées (celles du même navigateur reviennent avec le cookie mis à jour).
+                case "token-renew": {
+                    token = randomBytes(32).toString("hex");
+                    writeFileSync(path.join(ROOT, ".deck-token"), token, { mode: 0o600 });
+                    console.log(`Jeton d'accès renouvelé depuis la page : ${deckUrlFor()}`);
+                    reply({ t: "token-renewed", token });
+                    for (const client of wss.clients) {
+                        if (client === ws) continue;
+                        client.send(JSON.stringify({ t: "token-revoked" }));
+                        client.close(4001, "jeton renouvelé");
+                    }
+                    break;
+                }
                 case "diagnostic":
                     reply({ t: "diagnostic", checks: await runDiagnostic({ ctx, remote, tools, backups, supervisor: SUPERVISOR, localUnix: LOCAL_UNIX, deckTools }) });
                     break;
@@ -330,7 +353,7 @@ wss.on("connection", (ws) => {
                     } else if (name === "settings.json") {
                         backups.restore(settings.file, String(msg.id));
                         settings.reload();
-                        try { deck = makeDeck(); } catch (err) { deck = makeDeck({}); console.warn(`  Rubriques des Réglages ignorées : ${err.message}`); }
+                        try { deck = makeDeck(); } catch (err) { deck = makeDeck({}, []); console.warn(`  Rubriques des Réglages ignorées : ${err.message}`); }
                         broadcast({ t: "settings", settings: settings.get() });
                         broadcast(deckMessage());
                     } else if (name === "vault.enc") {
@@ -389,6 +412,20 @@ const LOG_FILE = path.join(ROOT, ".deck.log");
 const RESTART_EXIT_CODE = 75;   // « relance-moi » pour le service (launchd : KeepAlive si la sortie n'est pas un succès)
 let listenTries = 0;
 
+/**
+ * Journal trop gros (plus de 1 Mo) : copié en .1 (le précédent est remplacé) puis vidé. Vidé plutôt que renommé :
+ * le service (launchd) garde le fichier ouvert en ajout, ses écritures repartent ainsi du début.
+ */
+function rotateLog(file) {
+    try {
+        if (!existsSync(file) || statSync(file).size < 1024 * 1024) return;
+        copyFileSync(file, `${file}.1`);
+        truncateSync(file, 0);
+    } catch { /* journal occupé ou illisible : on laisse tel quel */ }
+}
+// Service macOS : journal ~/Library/Logs ; sous Windows, la boucle du service s'en charge avant chaque lancement
+if (SUPERVISOR === "launchd") rotateLog(path.join(os.homedir(), "Library", "Logs", "web-deck-devsecops.log"));
+
 server.on("error", (err) => {
     // Relancé par Redémarrer : l'ancien serveur libère le port dans la seconde, on réessaie jusqu'à 15 s
     if (err.code === "EADDRINUSE" && RESTARTING && ++listenTries < 50) {
@@ -427,12 +464,15 @@ server.listen(port, HOST, () => {
 function restart() {
     broadcast({ t: "restarting" });
     console.log("Redémarrage demandé depuis la page…");
-    setTimeout(() => {
+    setTimeout(async () => {
+        await Promise.race([flushClipboard().catch(() => {}), new Promise((r) => setTimeout(r, 2000))]);
         remote.stop();
+        screenLock.stop();
         vault.lock();
         terminals.closeAll();
         server.close();
         if (SUPERVISOR) process.exit(RESTART_EXIT_CODE);
+        rotateLog(LOG_FILE);
         const log = openSync(LOG_FILE, "a", 0o600);
         const child = spawn(process.execPath, [process.argv[1], "--no-open", "--restarting"], {
             cwd: ROOT, env: process.env, detached: true, stdio: ["ignore", log, log], windowsHide: true
@@ -442,8 +482,11 @@ function restart() {
     }, 300);
 }
 
-function shutdown() {
+/** Arrêt : presse-papiers vidé s'il contient encore un secret copié (au plus 2 s d'attente), puis fermeture. */
+async function shutdown() {
+    await Promise.race([flushClipboard().catch(() => {}), new Promise((r) => setTimeout(r, 2000))]);
     remote.stop();
+    screenLock.stop();
     vault.lock();
     terminals.closeAll();
     process.exit(0);

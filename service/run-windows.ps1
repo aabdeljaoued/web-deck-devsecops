@@ -16,6 +16,8 @@ while ($true) {
         & npm install --omit=dev *>> $log
         & node server\needs-install.mjs --done
     }
+    # Journal de plus de 1 Mo : mis de côté (.1, le précédent est remplacé) avant le lancement
+    if ((Test-Path $log) -and ((Get-Item $log).Length -gt 1MB)) { Move-Item -Force $log "$log.1" }
     & node server\index.mjs --no-open *>> $log
     if ($LASTEXITCODE -eq 0) { break }   # arrêt normal (ou deck déjà lancé ailleurs) : pas de relance
     Add-Content -Path $log -Value "--- arrêt (code $LASTEXITCODE), relance dans 3 s"

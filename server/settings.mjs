@@ -42,6 +42,16 @@ const SCHEMA = {
             return Object.fromEntries(entries);
         }
     },
+    /** Ordre des rubriques sur l'accueil ([] = celui de config.jsonc) : identifiants, les absents à la suite. */
+    worldOrder: {
+        default: [],
+        clean(v) {
+            if (!Array.isArray(v) || v.length > 60 || !v.every((id) => typeof id === "string" && /^[a-z0-9_-]{1,40}$/i.test(id))) {
+                throw new Error("ordre des rubriques : liste d'identifiants attendue");
+            }
+            return [...new Set(v)];
+        }
+    },
     autoHomeSeconds: {
         default: 60,
         clean(v) {

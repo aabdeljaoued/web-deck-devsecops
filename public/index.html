@@ -213,9 +213,13 @@
             </fieldset>
             <fieldset class="settings-group">
                 <legend>Rubriques</legend>
-                <span class="hint">Mondes affichés sur l'accueil ; décochés, ils sont masqués partout (palette ⌘K comprise). Les rubriques du catalogue absentes de <code>config.jsonc</code> (ex. Sécurité, Vault) peuvent être activées ici.</span>
+                <span class="hint">Mondes affichés sur l'accueil ; décochés, ils sont masqués partout (palette ⌘K comprise). Les rubriques du catalogue absentes de <code>config.jsonc</code> (ex. Sécurité, Vault) peuvent être activées ici. <strong>Glisse une case</strong> pour changer l'ordre de l'accueil.</span>
                 <div id="set-worlds" class="world-choices"></div>
-                <span id="set-worlds-count" class="hint world-count"></span>
+                <div class="settings-actions">
+                    <span id="set-worlds-count" class="hint world-count"></span>
+                    <span class="grow"></span>
+                    <button type="button" id="set-worlds-reset" title="Ordre de config.jsonc (les cases cochées restent cochées)">Ordre par défaut</button>
+                </div>
             </fieldset>
             <fieldset class="settings-group">
                 <legend>Navigation</legend>
@@ -228,6 +232,7 @@
                 <span id="server-mode" class="hint"></span>
                 <div class="settings-actions">
                     <button type="button" id="server-restart" title="Les commandes en cours dans les terminaux s'arrêtent ; les terminaux sont rouverts">Redémarrer le deck</button>
+                    <button type="button" id="server-token" title="Nouveau jeton d'accès : l'ancien (adresses ?token=…, autres navigateurs) ne fonctionne plus">Renouveler le jeton</button>
                     <button type="button" id="server-diagnostic" title="Vérifie presse-papiers, détection ssh / wsl, outils, sauvegardes (le presse-papiers est remis tel quel, en texte)">Diagnostic</button>
                 </div>
                 <ul id="diag-results" class="diag-results" hidden></ul>

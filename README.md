@@ -39,6 +39,8 @@ Pour que le deck démarre avec la session, tourne **sans fenêtre** et **redéma
 | macOS | double-clic sur `service/installer.command` (LaunchAgent) | `service/desinstaller.command` | `~/Library/Logs/web-deck-devsecops.log` |
 | Windows | double-clic sur `service\installer.cmd` (dossier Démarrage, lancement caché) | `service\desinstaller.cmd` | `%LOCALAPPDATA%\web-deck-devsecops\deck.log` |
 
+Journaux : au démarrage, un journal de plus de 1 Mo est mis de côté (`.1`, le précédent est remplacé) et un nouveau commence.
+
 L'installation arrête un deck lancé à la main (ses terminaux sont rouverts) et ouvre le navigateur. Lancé à la main avec `start.command` / `start.cmd`, fermer la fenêtre arrête le deck. **Réglages › Serveur** indique le mode de lancement et propose **Redémarrer le deck** (deux clics ; les commandes en cours s'arrêtent, les terminaux sont rouverts) : en service, c'est le service qui le relance ; lancé à la main, une nouvelle copie détachée de la fenêtre démarre (journal `.deck.log`).
 
 Sans les outils de ligne de commande Xcode, `git` est considéré comme absent (sinon macOS ouvrirait une fenêtre d'installation à chaque rafraîchissement du voyant) : `xcode-select --install`.
@@ -100,10 +102,10 @@ Le bouton **Coffre** (en haut à droite, ou « coffre » dans la palette `⌘K`)
 - **Création** : au premier usage, choisir un **mot de passe maître** (8 caractères minimum). **Mot de passe oublié = contenu perdu** : il n'existe aucune récupération.
 - **Notes** : liste à gauche, éditeur à droite, enregistrement automatique pendant la frappe, recherche. Une **couleur** par note (pastilles sous le titre, ou couleur libre) : bandeau dans la liste et en haut de l'éditeur ; chiffrée avec le reste du coffre.
 - **Secrets** : nom, identifiant, valeur (bouton **Générer** : 24 caractères aléatoires), adresse, note. La liste n'affiche que les noms, valeurs masquées :
-  - **Copier** : le serveur copie la valeur dans le presse-papiers du système (`pbcopy` sous macOS, PowerShell sous Windows, `wl-copy` / `xclip` sous Linux) sans qu'elle passe par la page, puis l'efface au bout de 30 s si le presse-papiers la contient toujours ;
+  - **Copier** : le serveur copie la valeur dans le presse-papiers du système (`pbcopy` sous macOS, PowerShell sous Windows, `wl-copy` / `xclip` sous Linux) sans qu'elle passe par la page, puis l'efface au bout de 30 s si le presse-papiers la contient toujours (tout de suite si le deck s'arrête ou redémarre avant) ;
   - **Taper ▸** : écrit la valeur dans le terminal actif, sans Entrée, **côté serveur** (elle ne passe pas par la page). À utiliser devant une demande de mot de passe (saisie masquée) : devant une invite de commande ordinaire, la valeur s'afficherait en clair et irait dans l'historique du shell après Entrée ;
   - **Afficher** : montre la valeur 15 s.
-- **Verrouillage** : bouton **Verrouiller**, automatiquement après 15 min d'inactivité, et à l'arrêt du serveur. Verrouillé, plus rien du contenu n'est gardé dans la page ni en mémoire du serveur.
+- **Verrouillage** : bouton **Verrouiller**, automatiquement après 15 min d'inactivité, **quand la session est verrouillée** (écran de verrouillage macOS ou Windows), et à l'arrêt du serveur. Verrouillé, plus rien du contenu n'est gardé dans la page ni en mémoire du serveur.
 
 Sécurité : fichier `vault.enc` à la racine du projet, **exclu de Git**, lisible par l'utilisateur seul, chiffré en **AES-256-GCM** avec une clé dérivée du mot de passe maître par **scrypt** ; chaque échec de mot de passe ralentit la tentative suivante (jusqu'à 5 s). Les valeurs des secrets ne quittent le serveur que sur demande explicite (Afficher) ; Copier et Taper les écrivent côté serveur. Pour sauvegarder le coffre, copier `vault.enc` (il reste chiffré).
 
@@ -140,7 +142,9 @@ Quand le voyant kubectl est en **production** (contexte ou namespace qui corresp
 
 Dans **Réglages › Rubriques**, une case par monde (VS Code, Git, K8s, Docker…) l'affiche ou le masque sur l'accueil ; masqué, il disparaît aussi de la palette ⌘K. Les rubriques du catalogue absentes de `config.jsonc` (ex. **Sécurité**, **Vault**) apparaissent décochées et peuvent être activées sans éditer le fichier. Un compteur indique les touches de l'accueil (18 au plus, raccourcis compris) ; un choix qui dépasse est refusé sans rien modifier.
 
-`config.jsonc` reste la référence (ordre et rubriques par défaut) : seuls les écarts sont enregistrés dans `settings.json` (`"worlds": { "brew": false, "sec": true }`). Si `config.jsonc` change et que ces écarts ne tiennent plus sur l'accueil, le serveur démarre avec les rubriques du fichier et le signale.
+**Glisser une case** change l'ordre des rubriques sur l'accueil ; **Ordre par défaut** remet celui de `config.jsonc`.
+
+`config.jsonc` reste la référence (ordre et rubriques par défaut) : seuls les écarts sont enregistrés dans `settings.json` (`"worlds": { "brew": false, "sec": true }`, `"worldOrder": [...]`). Si `config.jsonc` change et que ces écarts ne tiennent plus sur l'accueil, le serveur démarre avec les rubriques du fichier et le signale.
 
 ### Voyants
 
@@ -260,6 +264,7 @@ Le terminal donne un shell complet : l'accès est verrouillé.
 
 ## Dépannage
 
+- **Une adresse `?token=…` a pu fuiter** (capture, message, autre poste) : **Réglages › Serveur › Renouveler le jeton** (deux clics). L'ancien jeton ne fonctionne plus nulle part, les autres navigateurs sont déconnectés ; la page qui renouvelle bascule seule sur le nouveau (le fichier `.deck-token` est mis à jour).
 - **Le deck s'arrête tout seul** : lancé avec `start.command` / `start.cmd`, fermer sa fenêtre l'arrête. Installer le service (voir *Lancement automatique*) ; en cas de plantage, le journal du service en donne la cause.
 - **« Accès refusé »** : ouvrir l'adresse complète affichée dans la fenêtre du serveur (avec `?token=…`).
 - **Un outil est « introuvable »** au démarrage alors qu'il marche dans un terminal : indiquer son chemin complet dans `paths.<machine>.json`.

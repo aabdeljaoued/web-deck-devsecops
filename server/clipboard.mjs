@@ -41,6 +41,16 @@ export function read() {
 
 const digest = (text) => createHash("sha256").update(text, "utf8").digest("hex");
 let clearTimer = null;
+let pendingClear = null;   // effacement prévu (fonction), exécuté tout de suite si le serveur s'arrête avant
+
+/** Effacement en attente exécuté maintenant (arrêt ou redémarrage du serveur avant les 30 s). */
+export async function flushClipboard() {
+    if (!pendingClear) return;
+    clearTimeout(clearTimer);
+    const run = pendingClear;
+    pendingClear = null;
+    await run();
+}
 
 /**
  * Copie une valeur, puis l'efface au bout de `seconds` si le presse-papiers la contient toujours
@@ -50,12 +60,13 @@ export async function copyTemporarily(text, seconds = 30) {
     await write(text);
     const expected = digest(text);
     clearTimeout(clearTimer);
-    clearTimer = setTimeout(async () => {
+    pendingClear = async () => {
         const current = await read();
         // Windows ajoute parfois une fin de ligne à la lecture
         if (current != null && (digest(current) === expected || digest(current.replace(/\r?\n$/, "")) === expected)) {
             await write("").catch(() => {});
         }
-    }, seconds * 1000);
+    };
+    clearTimer = setTimeout(() => { const run = pendingClear; pendingClear = null; run?.(); }, seconds * 1000);
     clearTimer.unref();
 }

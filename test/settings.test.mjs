@@ -31,3 +31,10 @@ test("ancien format : délai 0 = retour automatique désactivé", () => {
     assert.equal(s.autoHomeSeconds, 60);
     assert.equal(s.appearance, "dark", "valeur invalide du fichier ignorée");
 });
+
+test("ordre des rubriques : liste d'identifiants, doublons retirés", () => {
+    const s = new Settings(path.join(tmpDir(), "settings.json"));
+    assert.deepEqual(s.update({ worldOrder: ["git", "k8s", "git"] }).worldOrder, ["git", "k8s"]);
+    assert.throws(() => s.update({ worldOrder: "git" }), /ordre des rubriques/);
+    assert.throws(() => s.update({ worldOrder: ["../x"] }), /ordre des rubriques/);
+});

@@ -102,6 +102,7 @@ while ($true) {
 
     /** Calcule l'état de chaque terminal à partir de la liste des processus ; émet "change" s'il a changé. */
     update(procs) {
+        this.emit("procs", procs);   // aussi utilisé par server/screenlock.mjs (écran de verrouillage Windows)
         const byPid = new Map(procs.map((p) => [p.pid, p]));
         const children = new Map();
         for (const p of procs) {

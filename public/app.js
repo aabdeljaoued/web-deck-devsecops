@@ -237,6 +237,7 @@ function handle(msg) {
         case "vault":
             applyVault(msg);
             if (!msg.unlocked && msg.reason === "inactivité") toast("coffre verrouillé après 15 min d'inactivité", "ok");
+            if (!msg.unlocked && msg.reason === "écran verrouillé") toast("coffre verrouillé avec la session", "ok");
             break;
         case "note-saved":
             if (msg.req === noteReq && !vaultUi.noteId) {
@@ -261,6 +262,14 @@ function handle(msg) {
             state.remote = msg.remote ?? {};
             markRemoteTabs();
             refreshUnixKeys();
+            break;
+        case "token-renewed":
+            // Échange du nouveau jeton contre le cookie, puis retour sur la page (adresse propre)
+            toast("jeton renouvelé : l'ancien ne fonctionne plus", "ok");
+            setTimeout(() => location.replace(`/?token=${msg.token}`), 600);
+            break;
+        case "token-revoked":
+            toast("jeton d'accès renouvelé depuis une autre page : rouvre le deck avec la nouvelle adresse si la connexion ne revient pas");
             break;
         case "restarting":
             closeSettings();
@@ -1793,9 +1802,25 @@ function renderServer() {
     const btn = $("#server-restart");
     btn.classList.remove("armed");
     btn.textContent = "Redémarrer le deck";
+    const tok = $("#server-token");
+    tok.classList.remove("armed");
+    tok.disabled = false;
+    tok.textContent = "Renouveler le jeton";
 }
 
 /** Redémarrer arrête les commandes en cours : deuxième clic de confirmation. */
+/** Renouveler le jeton : deuxième clic de confirmation (les autres navigateurs perdent l'accès). */
+function renewToken() {
+    const btn = $("#server-token");
+    if (!btn.classList.contains("armed")) {
+        btn.classList.add("armed");
+        btn.textContent = "Confirmer (les autres navigateurs perdent l'accès)";
+        return;
+    }
+    btn.disabled = true;
+    send({ t: "token-renew" });
+}
+
 function restartServer() {
     const btn = $("#server-restart");
     if (!btn.classList.contains("armed")) {
@@ -1865,9 +1890,65 @@ function renderWorldChoices() {
         const icon = Object.assign(document.createElement("span"), { className: "world-icon" });
         if (world.icon) icon.style.setProperty("--logo", `url("/icons/${world.icon}.svg")`);
         label.append(box, icon, Object.assign(document.createElement("span"), { textContent: world.label }));
+        worldDraggable(label, world.id);
         return label;
     }));
     updateWorldCount();
+}
+
+// Ordre des rubriques : glisser une case avant / après une autre (trait de couleur = emplacement)
+let worldDragId = null;
+
+function worldDraggable(label, id) {
+    label.draggable = true;
+    label.dataset.world = id;
+    label.addEventListener("dragstart", (ev) => {
+        worldDragId = id;
+        ev.dataTransfer.effectAllowed = "move";
+        ev.dataTransfer.setData("text/plain", id);
+        label.classList.add("dragging");
+    });
+    label.addEventListener("dragend", () => {
+        worldDragId = null;
+        label.classList.remove("dragging");
+        clearWorldDropMarks();
+    });
+    label.addEventListener("dragover", (ev) => {
+        if (!worldDragId || worldDragId === id) return;
+        ev.preventDefault();
+        const r = label.getBoundingClientRect();
+        const after = ev.clientX > r.left + r.width / 2;
+        clearWorldDropMarks();
+        label.classList.add(after ? "drop-after" : "drop-before");
+    });
+    label.addEventListener("dragleave", () => label.classList.remove("drop-before", "drop-after"));
+    label.addEventListener("drop", (ev) => {
+        ev.preventDefault();
+        const moved = $("#set-worlds").querySelector(`[data-world="${worldDragId}"]`);
+        if (!moved || moved === label) return;
+        const after = label.classList.contains("drop-after");
+        label[after ? "after" : "before"](moved);
+        clearWorldDropMarks();
+    });
+}
+
+function clearWorldDropMarks() {
+    for (const el of $("#set-worlds").querySelectorAll(".drop-before, .drop-after")) el.classList.remove("drop-before", "drop-after");
+}
+
+/** Ordre affiché ; [] s'il est identique à celui de config.jsonc (rien de forcé). */
+function worldOrderChoice() {
+    const order = [...$("#set-worlds").querySelectorAll("[data-world]")].map((el) => el.dataset.world);
+    return order.join() === (state.worlds?.defaultOrder ?? []).join() ? [] : order;
+}
+
+/** Ordre par défaut : celui de config.jsonc (les cases cochées restent cochées). */
+function resetWorldOrder() {
+    const list = $("#set-worlds");
+    for (const id of state.worlds?.defaultOrder ?? []) {
+        const el = list.querySelector(`[data-world="${id}"]`);
+        if (el) list.append(el);
+    }
 }
 
 /** Touches de l'accueil avec les rubriques cochées (limite du serveur : max). */
@@ -2085,7 +2166,9 @@ $("#palette").addEventListener("mousedown", (ev) => { if (ev.target.id === "pale
 $("#favform").addEventListener("submit", submitFav);
 $("#vault-open").addEventListener("click", openVault);
 $("#settings-open").addEventListener("click", openSettings);
+$("#set-worlds-reset").addEventListener("click", resetWorldOrder);
 $("#server-restart").addEventListener("click", restartServer);
+$("#server-token").addEventListener("click", renewToken);
 $("#server-diagnostic").addEventListener("click", () => {
     $("#server-diagnostic").disabled = true;
     $("#server-diagnostic").textContent = "Diagnostic…";
@@ -2137,7 +2220,7 @@ $("#settings-form").addEventListener("submit", (ev) => {
         appearance: $("#set-appearance").value,
         missionTheme: $("#set-theme").value,
         watermark: $("#set-watermark").value,
-        ...(state.worlds ? { worlds: worldChoices() } : {})
+        ...(state.worlds ? { worlds: worldChoices(), worldOrder: worldOrderChoice() } : {})
     } });
 });
 $("#vault-close").addEventListener("click", closeVault);

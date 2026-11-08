@@ -202,6 +202,10 @@ Pour une machine précise, créer `paths.<nom-de-la-machine>.json` (nom affiché
 { "windows": { "workspace": "D:\\dev", "gitRoots": ["D:\\dev"] } }
 ```
 
+### Mes actions (depuis le deck)
+
+**Réglages › Mes actions** : **Nouvelle rubrique…** (nom, icône, couleur), puis **+ Action** dans la rubrique : une **commande** (exécutée tout de suite, ou à compléter ; `{}` = texte sélectionné dans le terminal) ou un **lien**, avec un nom, une icône (vide = automatique) et une infobulle. Flèches pour l'ordre, Modifier, Supprimer (deux clics). Une rubrique créée s'affiche sur l'accueil si elle y tient (sinon : la cocher dans « Rubriques » après en avoir décoché une). Tout est enregistré dans `actions.json`, **hors Git** (les commandes propres à un client ne partent pas sur le dépôt), et sauvegardé automatiquement. Une erreur (commande sur plusieurs lignes, lien non http(s), icône inconnue…) s'affiche dans le formulaire sans perdre la saisie.
+
 ### Tes propres rubriques et touches (`config.jsonc`)
 
 Sans toucher au code : `customSections` (rubriques) et `customShortcuts` (raccourcis de l'accueil), puis ajouter leur identifiant dans `sections` / `shortcuts`.

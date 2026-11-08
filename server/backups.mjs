@@ -5,7 +5,7 @@
 import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, statSync, unlinkSync } from "node:fs";
 import path from "node:path";
 
-export const BACKUP_FILES = ["favoris.json", "vault.enc", "settings.json"];
+export const BACKUP_FILES = ["favoris.json", "vault.enc", "settings.json", "actions.json"];
 const KEEP = 10;
 const MIN_INTERVAL_MS = 10 * 60 * 1000;
 

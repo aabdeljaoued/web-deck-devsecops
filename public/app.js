@@ -167,6 +167,7 @@ function handle(msg) {
             state.server = msg.server ?? null;
             state.localUnix = msg.localUnix ?? true;
             state.workspace = msg.workspace ?? "";
+            state.actions = msg.actions ?? [];
             state.prodPatternDefault = msg.prodPattern ?? "prod";
             state.signature = msg.signature ?? null;
             applyWatermark();
@@ -255,6 +256,18 @@ function handle(msg) {
             break;
         case "secret-value":
             useSecretValue(msg);
+            break;
+        case "actions":
+            state.actions = msg.sections ?? [];
+            if (!$("#settings").hidden) renderActions();
+            break;
+        case "action-saved":
+            actionDone();
+            $("#act-section-form").hidden = true;
+            $("#act-form").hidden = true;
+            if (msg.created && !msg.shown) toast("rubrique créée, mais l'accueil est plein (18 touches) : décoche une rubrique dans « Rubriques » pour l'afficher");
+            else toast(msg.created ? "rubrique créée et affichée sur l'accueil" : "enregistré", "ok");
+            if (!$("#settings").hidden) renderWorldChoices();
             break;
         case "mission-saved":
             missionDone();
@@ -361,6 +374,7 @@ function handle(msg) {
             // Réglages refusés par le serveur : le panneau revient pour corriger
             if (settingsPending) { settingsPending = false; $("#settings").hidden = false; }
             if (missionPending) { missionDone(); showMissionError(msg.error); }
+            if (actionPending) { actionDone(); showActionError(msg.error); }
             toast(msg.error);
             break;
     }
@@ -1865,7 +1879,7 @@ function renderDiagnostic(checks) {
     toast(failed ? `diagnostic : ${failed} problème(s), voir Réglages › Serveur` : "diagnostic : tout fonctionne", failed ? "ko" : "ok");
 }
 
-const BACKUP_LABELS = { "favoris.json": "Favoris", "settings.json": "Réglages", "vault.enc": "Coffre (chiffré)" };
+const BACKUP_LABELS = { "favoris.json": "Favoris", "actions.json": "Mes actions", "settings.json": "Réglages", "vault.enc": "Coffre (chiffré)" };
 
 function renderBackups(all) {
     $("#backup-rows").replaceChildren(...Object.entries(BACKUP_LABELS).map(([name, label]) => {
@@ -1888,6 +1902,151 @@ function renderBackups(all) {
         row.append(Object.assign(document.createElement("span"), { className: "backup-name", textContent: label }), select, btn);
         return row;
     }));
+}
+
+// ---------- Mes actions : rubriques et touches créées depuis les Réglages (actions.json, hors Git) ----------
+
+let actionPending = false;          // envoi en cours : le formulaire reste ouvert jusqu'à la réponse
+let actSectionEditing = null;       // rubrique modifiée (null = nouvelle)
+let actEditing = null;              // { section, action } : action modifiée (action null = nouvelle)
+
+function actButton(text, title, fn, cls = "") {
+    const b = Object.assign(document.createElement("button"), { type: "button", textContent: text, title, className: cls });
+    b.addEventListener("click", fn);
+    return b;
+}
+
+/** Bouton de suppression : deuxième clic pour confirmer. */
+function actDelete(fn) {
+    const b = actButton("Supprimer", "Deux clics pour confirmer", () => {
+        if (!b.classList.contains("armed")) { b.classList.add("armed"); b.textContent = "Confirmer"; return; }
+        fn();
+    });
+    return b;
+}
+
+function renderActions() {
+    const list = $("#act-list");
+    const sections = state.actions ?? [];
+    if (!sections.length) {
+        list.replaceChildren(Object.assign(document.createElement("p"), { className: "hint", textContent: "aucune rubrique pour l'instant : « Nouvelle rubrique… », puis « + Action »" }));
+        return;
+    }
+    list.replaceChildren(...sections.map((s) => {
+        const box = Object.assign(document.createElement("div"), { className: "act-section" });
+        box.style.setProperty("--c", s.color);
+        const head = Object.assign(document.createElement("div"), { className: "act-head" });
+        const icon = Object.assign(document.createElement("span"), { className: "world-icon" });
+        icon.style.setProperty("--logo", `url("/icons/${s.icon}.svg")`);
+        head.append(icon,
+            Object.assign(document.createElement("strong"), { textContent: s.label }),
+            Object.assign(document.createElement("span"), { className: "hint", textContent: `${s.actions.length} action(s)` }),
+            Object.assign(document.createElement("span"), { className: "grow" }),
+            actButton("+ Action", "Ajouter une touche dans cette rubrique", () => openActionForm(s), "primary"),
+            actButton("Modifier", "Nom, icône, couleur", () => openSectionForm(s)),
+            actDelete(() => send({ t: "action-section-delete", id: s.id })));
+        const ul = Object.assign(document.createElement("ul"), { className: "act-actions" });
+        ul.append(...s.actions.map((a, i) => {
+            const li = document.createElement("li");
+            const what = a.kind === "url" ? a.url : a.command;
+            const textBox = Object.assign(document.createElement("span"), { className: "act-text" });
+            textBox.append(
+                Object.assign(document.createElement("strong"), { textContent: a.label }),
+                Object.assign(document.createElement("code"), { textContent: what, title: a.description ?? what }));
+            li.append(
+                Object.assign(document.createElement("span"), { className: `dot ${a.kind === "url" ? "url" : a.enter ? "run" : "type"}`, title: a.kind === "url" ? "lien" : a.enter ? "exécutée" : "à compléter" }),
+                textBox,
+                Object.assign(document.createElement("span"), { className: "settings-actions" }));
+            const up = actButton("↑", "Monter", () => send({ t: "action-move", section: s.id, id: a.id, delta: -1 }));
+            const down = actButton("↓", "Descendre", () => send({ t: "action-move", section: s.id, id: a.id, delta: 1 }));
+            up.disabled = i === 0;
+            down.disabled = i === s.actions.length - 1;
+            li.lastChild.append(up, down,
+                actButton("Modifier", "", () => openActionForm(s, a)),
+                actDelete(() => send({ t: "action-delete", section: s.id, id: a.id })));
+            return li;
+        }));
+        box.append(head, ul);
+        return box;
+    }));
+}
+
+function openSectionForm(s = null) {
+    actSectionEditing = s;
+    $("#act-form").hidden = true;
+    $("#act-section-title").textContent = s ? `Rubrique « ${s.label} »` : "Nouvelle rubrique";
+    $("#act-section-label").value = s?.label ?? "";
+    $("#act-section-icon").value = s?.icon ?? "";
+    $("#act-section-color").value = s?.color ?? "#607d8b";
+    showActionError("");
+    $("#act-section-form").hidden = false;
+    $("#act-section-label").focus();
+}
+
+function openActionForm(section, a = null) {
+    actEditing = { section, action: a };
+    $("#act-section-form").hidden = true;
+    $("#act-title").textContent = a ? `Action « ${a.label} » (${section.label})` : `Nouvelle action dans « ${section.label} »`;
+    for (const r of document.querySelectorAll('input[name="act-kind"]')) r.checked = r.value === (a?.kind ?? "command");
+    $("#act-label").value = a?.label ?? "";
+    $("#act-command").value = a?.command ?? "";
+    $("#act-enter").checked = a?.enter ?? false;
+    $("#act-url").value = a?.url ?? "";
+    $("#act-icon").value = a?.icon ?? "";
+    $("#act-description").value = a?.description ?? "";
+    syncActionKind();
+    showActionError("");
+    $("#act-form").hidden = false;
+    $("#act-label").focus();
+}
+
+/** Commande : champ commande et case « exécuter » ; lien : champ adresse. */
+function syncActionKind() {
+    const url = document.querySelector('input[name="act-kind"]:checked')?.value === "url";
+    $("#act-command-row").hidden = url;
+    $("#act-enter-row").hidden = url;
+    $("#act-url-row").hidden = !url;
+}
+
+function saveSection() {
+    send({ t: "action-section-save", section: { ...(actSectionEditing ? { id: actSectionEditing.id } : {}), label: $("#act-section-label").value, icon: $("#act-section-icon").value, color: $("#act-section-color").value } });
+    actionSending("#act-section-save");
+}
+
+function saveAction() {
+    const kind = document.querySelector('input[name="act-kind"]:checked')?.value ?? "command";
+    send({ t: "action-save", section: actEditing.section.id, action: {
+        ...(actEditing.action ? { id: actEditing.action.id } : {}),
+        kind, label: $("#act-label").value, command: $("#act-command").value, enter: $("#act-enter").checked,
+        url: $("#act-url").value, icon: $("#act-icon").value, description: $("#act-description").value
+    } });
+    actionSending("#act-save");
+}
+
+function actionSending(button) {
+    actionPending = true;
+    $(button).disabled = true;
+}
+
+function actionDone() {
+    actionPending = false;
+    $("#act-section-save").disabled = false;
+    $("#act-save").disabled = false;
+}
+
+/** Erreur affichée dans le formulaire ouvert (saisie gardée), champ concerné sélectionné. */
+function showActionError(text) {
+    const sectionForm = !$("#act-section-form").hidden;
+    for (const id of ["#act-error", "#act-section-error"]) { $(id).hidden = true; $(id).textContent = ""; }
+    if (!text) return;
+    const el = $(sectionForm ? "#act-section-error" : "#act-error");
+    el.textContent = text;
+    el.hidden = false;
+    const field = /icône/i.test(text) ? (sectionForm ? "#act-section-icon" : "#act-icon")
+        : /couleur/i.test(text) ? "#act-section-color"
+        : /nom/i.test(text) ? (sectionForm ? "#act-section-label" : "#act-label")
+        : /commande/i.test(text) ? "#act-command" : /adresse/i.test(text) ? "#act-url" : null;
+    if (field) $(field).focus();
 }
 
 // ---------- Missions : profils par client (Réglages › Missions, sélecteur de l'en-tête) ----------
@@ -2096,6 +2255,9 @@ function openSettings() {
     renderWorldChoices();
     renderMissions();
     $("#mission-form").hidden = true;
+    renderActions();
+    $("#act-section-form").hidden = true;
+    $("#act-form").hidden = true;
     renderServer();
     send({ t: "backup-list" });
     $("#settings").hidden = false;
@@ -2287,6 +2449,19 @@ $("#vault-open").addEventListener("click", openVault);
 $("#settings-open").addEventListener("click", openSettings);
 $("#mission-switch").addEventListener("change", (ev) => send({ t: "mission-activate", id: ev.target.value }));
 $("#mission-new").addEventListener("click", () => openMissionForm());
+$("#act-section-new").addEventListener("click", () => openSectionForm());
+$("#act-section-save").addEventListener("click", saveSection);
+$("#act-section-cancel").addEventListener("click", () => { $("#act-section-form").hidden = true; });
+$("#act-save").addEventListener("click", saveAction);
+$("#act-cancel").addEventListener("click", () => { $("#act-form").hidden = true; });
+for (const r of document.querySelectorAll('input[name="act-kind"]')) r.addEventListener("change", syncActionKind);
+for (const id of ["#act-section-form", "#act-form"]) {
+    $(id).addEventListener("keydown", (ev) => {
+        if (ev.key !== "Enter" || ev.target.tagName !== "INPUT" || ev.target.type === "radio" || ev.target.type === "checkbox") return;
+        ev.preventDefault();
+        (id === "#act-form" ? saveAction : saveSection)();
+    });
+}
 $("#mission-save").addEventListener("click", saveMission);
 $("#mission-cancel").addEventListener("click", () => { $("#mission-form").hidden = true; });
 $("#mission-form").addEventListener("keydown", (ev) => { if (ev.key === "Enter" && ev.target.tagName === "INPUT") { ev.preventDefault(); saveMission(); } });

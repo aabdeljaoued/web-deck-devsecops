@@ -14,6 +14,7 @@ import path from "node:path";
 import { WebSocketServer } from "ws";
 
 import { buildDeck, ICONS } from "./catalog.mjs";
+import { Actions } from "./actions.mjs";
 import { Backups } from "./backups.mjs";
 import { copyTemporarily, flushClipboard } from "./clipboard.mjs";
 import { ScreenLock } from "./screenlock.mjs";
@@ -36,8 +37,9 @@ const ctx = loadConfig();
 const backups = new Backups(path.join(ROOT, ".deck-backups"));
 const favorites = new Favorites(path.join(ROOT, "favoris.json"), backups);
 const settings = new Settings(path.join(ROOT, "settings.json"), backups);
+const actions = new Actions(path.join(ROOT, "actions.json"), backups);
 /** Deck avec les favoris et les rubriques choisies dans les Réglages. */
-const makeDeck = (worlds = settings.get().worlds, order = settings.get().worldOrder) => buildDeck(ctx, favorites.list(), worlds, order);
+const makeDeck = (worlds = settings.get().worlds, order = settings.get().worldOrder) => buildDeck(ctx, favorites.list(), worlds, order, actions.list());
 let deck;
 try {
     deck = makeDeck();
@@ -245,6 +247,7 @@ wss.on("connection", (ws) => {
         favGroups: favorites.groups(),
         worlds: deck.worlds,
         tools: tools.view(),
+        actions: actions.list(),
         localUnix: LOCAL_UNIX,
         workspace: ctx.workspace,
         prodPattern: ctx.cfg.prodPattern || "prod",
@@ -338,6 +341,41 @@ wss.on("connection", (ws) => {
                 // Redémarrage demandé depuis les Réglages (terminaux rouverts au démarrage suivant)
                 case "restart": restart(); break;
                 // Missions : enregistrer (rubriques actuelles reprises si demandé), supprimer, activer
+                // Mes actions : rubriques et touches créées depuis les Réglages (actions.json, hors Git)
+                case "action-section-save":
+                case "action-section-delete":
+                case "action-save":
+                case "action-delete":
+                case "action-move": {
+                    let created = null;
+                    if (msg.t === "action-section-save") {
+                        const isNew = !msg.section?.id;
+                        const id = actions.saveSection(msg.section);
+                        if (isNew) created = id;
+                    }
+                    if (msg.t === "action-section-delete") {
+                        actions.deleteSection(String(msg.id));
+                        const s = settings.get();
+                        const { [msg.id]: _removed, ...worlds } = s.worlds;
+                        settings.update({ worlds, worldOrder: s.worldOrder.filter((w) => w !== msg.id) });
+                    }
+                    if (msg.t === "action-save") actions.saveAction(String(msg.section), msg.action);
+                    if (msg.t === "action-delete") actions.deleteAction(String(msg.section), String(msg.id));
+                    if (msg.t === "action-move") actions.moveAction(String(msg.section), String(msg.id), msg.delta);
+                    // Nouvelle rubrique : affichée sur l'accueil si elle y tient (18 touches au plus)
+                    let shown = true;
+                    if (created) {
+                        const worlds = { ...settings.get().worlds, [created]: true };
+                        try { deck = makeDeck(worlds); settings.update({ worlds }); } catch { shown = false; deck = makeDeck(); }
+                    } else {
+                        deck = makeDeck();
+                    }
+                    broadcast({ t: "settings", settings: settings.get() });
+                    broadcast({ t: "actions", sections: actions.list() });
+                    broadcast(deckMessage());
+                    reply({ t: "action-saved", created, shown });
+                    break;
+                }
                 case "mission-save": {
                     const s = settings.get();
                     const input = msg.mission ?? {};
@@ -418,6 +456,12 @@ wss.on("connection", (ws) => {
                         settings.reload();
                         try { deck = makeDeck(); } catch (err) { deck = makeDeck({}, []); console.warn(`  Rubriques des Réglages ignorées : ${err.message}`); }
                         broadcast({ t: "settings", settings: settings.get() });
+                        broadcast(deckMessage());
+                    } else if (name === "actions.json") {
+                        backups.restore(actions.file, String(msg.id));
+                        actions.reload();
+                        deck = makeDeck();
+                        broadcast({ t: "actions", sections: actions.list() });
                         broadcast(deckMessage());
                     } else if (name === "vault.enc") {
                         vault.lock("restauré");

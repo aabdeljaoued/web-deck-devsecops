@@ -1147,3 +1147,23 @@ main {
 .mission-form input, .mission-form select { padding: 6px 9px; border: 1px solid var(--border); border-radius: 6px; background: var(--input-bg); color: var(--text); font: inherit; font-size: 13px; }
 .mission-error { padding: 6px 9px; border-radius: 6px; font-size: 12px; color: #fff; background: #c62828; }
 .mission-error[hidden] { display: none; }
+
+/* Réglages › Mes actions */
+.act-list { display: flex; flex-direction: column; gap: 8px; }
+.act-section { border: 1px solid color-mix(in srgb, var(--c) 45%, var(--border)); border-radius: 8px; padding: 8px 10px; background: color-mix(in srgb, var(--c) 7%, transparent); }
+.act-head { display: flex; align-items: center; gap: 8px; }
+.act-head strong { font-size: 14px; color: var(--text); }
+.act-head .grow { flex: 1; }
+.act-head button, .act-actions button { padding: 4px 9px; border: 1px solid var(--border); border-radius: 6px; background: none; color: var(--text); font: inherit; font-size: 12px; cursor: pointer; }
+.act-head button.primary { color: #fff; background: var(--accent-strong); border-color: var(--accent); }
+.act-head button.armed, .act-actions button.armed { color: #fff; background: #c62828; border-color: #c62828; }
+.act-actions button:disabled { opacity: .35; cursor: default; }
+.act-actions { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.act-actions li { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; align-items: center; gap: 8px; font-size: 12px; padding: 3px 0; }
+.act-text { display: flex; flex-direction: column; min-width: 0; }
+.act-actions strong { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.act-actions code { font-family: Consolas, Menlo, monospace; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.act-actions .dot { width: 8px; height: 8px; border-radius: 50%; }
+.act-actions .dot.url { background: var(--accent); }
+.act-kind { gap: 16px; }
+.mission-form input[type="color"] { width: 48px; height: 28px; padding: 2px; }

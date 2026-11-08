@@ -529,11 +529,26 @@ function favoritesSection(favorites) {
 /**
  * @param worlds rubriques activées / désactivées dans les Réglages, en écart avec cfg.sections ({ id: bool })
  * @param worldOrder ordre des rubriques choisi dans les Réglages ([] = celui de config.jsonc)
+ * @param userSections rubriques créées dans Réglages › Mes actions (server/actions.mjs)
  */
-export function buildDeck(ctx, favorites = [], worlds = {}, worldOrder = []) {
+export function buildDeck(ctx, favorites = [], worlds = {}, worldOrder = [], userSections = []) {
     const { cfg } = ctx;
     const { shortcuts: SHORTCUTS, sections: SECTIONS, clear } = buildCatalog(ctx);
     SECTIONS.favoris = favoritesSection(favorites);
+    // Mes actions : une rubrique par entrée, touches commande (exécutée / à compléter) ou lien
+    for (const s of userSections) {
+        SECTIONS[s.id] = {
+            label: s.label, sym: s.label.slice(0, 3), icon: iconFile(s.icon) ? s.icon : "lucide-star", color: s.color, terminal: true,
+            keys: s.actions.map((a) => {
+                const sym = a.label.slice(0, 3);
+                const key = a.kind === "url" ? web(a.label, sym, a.url, s.color) : text(a.label, sym, a.command, a.enter, s.color);
+                if (!key) return null;
+                // Sans icône choisie : globe pour un lien, terminal pour une commande
+                const icon = a.icon && iconFile(a.icon) ? a.icon : a.kind === "url" ? "lucide-globe" : "lucide-square-terminal";
+                return { ...key, icon, ...(a.description ? { desc: a.description } : {}), userAction: a.id };
+            })
+        };
+    }
     const custom = customCatalog(cfg);
     for (const [id, def] of Object.entries(custom.sections)) {
         if (SECTIONS[id]) throw new Error(`customSections : "${id}" existe déjà, choisis un autre identifiant`);

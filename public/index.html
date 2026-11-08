@@ -246,6 +246,47 @@
                 </div>
             </fieldset>
             <fieldset class="settings-group">
+                <legend>Mes actions</legend>
+                <span class="hint">Tes propres rubriques et touches, sans éditer de fichier : une commande (exécutée tout de suite, ou à compléter ; <code>{}</code> = texte sélectionné dans le terminal) ou un lien. Enregistrées dans <code>actions.json</code>, hors Git. Une rubrique créée apparaît aussi dans « Rubriques » ci-dessous.</span>
+                <div id="act-list" class="act-list"></div>
+                <div class="settings-actions"><button type="button" id="act-section-new">Nouvelle rubrique…</button></div>
+                <div id="act-section-form" class="fav-import-confirm mission-form" hidden>
+                    <strong id="act-section-title">Nouvelle rubrique</strong>
+                    <label>Nom <input id="act-section-label" type="text" maxlength="30" placeholder="ex. Mission BNP"></label>
+                    <label>Icône <span class="hint">lucide-&lt;nom&gt; (lucide.dev/icons) ou un logo (simpleicons.org, ex. github) ; vide = étoile</span>
+                        <input id="act-section-icon" type="text" maxlength="60" placeholder="lucide-star" spellcheck="false">
+                    </label>
+                    <label class="settings-row">Couleur <input id="act-section-color" type="color" value="#607d8b"></label>
+                    <span id="act-section-error" class="mission-error" role="alert" hidden></span>
+                    <span class="settings-actions">
+                        <button type="button" id="act-section-save" class="primary">Enregistrer la rubrique</button>
+                        <button type="button" id="act-section-cancel">Annuler</button>
+                    </span>
+                </div>
+                <div id="act-form" class="fav-import-confirm mission-form" hidden>
+                    <strong id="act-title">Nouvelle action</strong>
+                    <span class="settings-actions act-kind">
+                        <label class="settings-check"><input type="radio" name="act-kind" value="command" checked> Commande</label>
+                        <label class="settings-check"><input type="radio" name="act-kind" value="url"> Lien</label>
+                    </span>
+                    <label>Nom de la touche <input id="act-label" type="text" maxlength="30" placeholder="ex. port-forward"></label>
+                    <label id="act-command-row">Commande <span class="hint">une ligne ; {} = texte sélectionné dans le terminal (ou emplacement du curseur)</span>
+                        <input id="act-command" type="text" maxlength="500" placeholder="ex. kubectl port-forward {} 8080:80" spellcheck="false">
+                    </label>
+                    <label id="act-enter-row" class="settings-check"><input id="act-enter" type="checkbox"> Exécuter tout de suite (pastille verte) ; sinon tapée, à compléter (orange)</label>
+                    <label id="act-url-row" hidden>Adresse <input id="act-url" type="text" maxlength="500" placeholder="https://…" spellcheck="false"></label>
+                    <label>Icône <span class="hint">vide = symbole automatique</span>
+                        <input id="act-icon" type="text" maxlength="60" placeholder="lucide-rocket" spellcheck="false">
+                    </label>
+                    <label>Infobulle <input id="act-description" type="text" maxlength="120" placeholder="ce que fait l'action, en quelques mots"></label>
+                    <span id="act-error" class="mission-error" role="alert" hidden></span>
+                    <span class="settings-actions">
+                        <button type="button" id="act-save" class="primary">Enregistrer l'action</button>
+                        <button type="button" id="act-cancel">Annuler</button>
+                    </span>
+                </div>
+            </fieldset>
+            <fieldset class="settings-group">
                 <legend>Rubriques</legend>
                 <span class="hint">Mondes affichés sur l'accueil ; décochés, ils sont masqués partout (palette ⌘K comprise). Les rubriques du catalogue absentes de <code>config.jsonc</code> (ex. Sécurité, Vault) peuvent être activées ici. <strong>Glisse une case</strong> pour changer l'ordre de l'accueil.</span>
                 <div id="set-worlds" class="world-choices"></div>

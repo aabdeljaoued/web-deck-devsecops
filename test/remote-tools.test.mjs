@@ -24,8 +24,13 @@ test("ssh lancé par git push ou scp : ignoré", () => {
 });
 
 test("outils vérifiés : ceux qui ont une commande d'installation sur ce système", () => {
+    assert.equal(neededTool({ tool: "systemctl" }), null);
+    if (process.platform === "linux") {
+        // Linux : aucune commande proposée (apt, dnf, pacman… selon la distribution), donc rien n'est vérifié
+        assert.equal(neededTool({ tool: "lazygit" }), null);
+        return;
+    }
     assert.equal(neededTool({ tool: "lazygit" }), "lazygit");
     assert.equal(neededTool({ tool: "git", needs: "delta" }), "delta");
-    assert.equal(neededTool({ tool: "systemctl" }), null);
     if (process.platform === "win32") assert.equal(neededTool({ tool: "ansible-lint" }), null);
 });

@@ -353,7 +353,7 @@ wss.on("connection", (ws) => {
                     settings.update({ missions });
                     if (s.activeMission === id) activateMission(id);
                     else broadcast({ t: "settings", settings: settings.get() });
-                    reply({ t: "vault-ok", text: `mission « ${mission.name} » enregistrée`, close: false });
+                    reply({ t: "mission-saved", name: mission.name });
                     break;
                 }
                 case "mission-delete": {

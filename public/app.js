@@ -256,6 +256,11 @@ function handle(msg) {
         case "secret-value":
             useSecretValue(msg);
             break;
+        case "mission-saved":
+            missionDone();
+            $("#mission-form").hidden = true;
+            toast(`mission « ${msg.name} » enregistrée`, "ok");
+            break;
         case "tools":
             applyTools(msg);
             break;
@@ -355,6 +360,7 @@ function handle(msg) {
         case "error":
             // Réglages refusés par le serveur : le panneau revient pour corriger
             if (settingsPending) { settingsPending = false; $("#settings").hidden = false; }
+            if (missionPending) { missionDone(); showMissionError(msg.error); }
             toast(msg.error);
             break;
     }
@@ -1887,6 +1893,7 @@ function renderBackups(all) {
 // ---------- Missions : profils par client (Réglages › Missions, sélecteur de l'en-tête) ----------
 
 let missionEditing = null;   // mission modifiée (null = nouvelle)
+let missionPending = false;  // enregistrement envoyé : le formulaire reste ouvert jusqu'à la réponse
 
 const activeMission = () => (state.settings?.missions ?? []).find((m) => m.id === state.settings?.activeMission) ?? null;
 
@@ -1946,13 +1953,14 @@ function openMissionForm(m = null) {
     fav.replaceChildren(new Option("Aucun (page Favoris)", ""), ...(state.favGroups ?? []).map((g) => new Option(g.path, g.id)));
     fav.value = m?.favGroup ?? "";
     $("#mission-capture").checked = !m;
+    showMissionError("");
     $("#mission-form").hidden = false;
     $("#mission-name").focus();
 }
 
 function saveMission() {
     const name = $("#mission-name").value.trim();
-    if (!name) { toast("donne un nom à la mission"); return $("#mission-name").focus(); }
+    if (!name) return showMissionError("le nom est obligatoire");
     send({ t: "mission-save", mission: {
         ...(missionEditing ? { id: missionEditing.id } : {}),
         name,
@@ -1962,7 +1970,26 @@ function saveMission() {
         favGroup: $("#mission-fav").value,
         captureWorlds: $("#mission-capture").checked
     } });
-    $("#mission-form").hidden = true;
+    // Pas de fermeture ici : seulement quand le serveur confirme (une erreur garde la saisie)
+    missionPending = true;
+    $("#mission-save").disabled = true;
+    $("#mission-save").textContent = "Enregistrement…";
+}
+
+function missionDone() {
+    missionPending = false;
+    $("#mission-save").disabled = false;
+    $("#mission-save").textContent = "Enregistrer la mission";
+}
+
+/** Erreur dans le formulaire (saisie gardée), champ concerné sélectionné. */
+function showMissionError(text) {
+    const el = $("#mission-error");
+    el.textContent = text;
+    el.hidden = !text;
+    if (!text) return;
+    const field = /dossier/i.test(text) ? "#mission-workspace" : /motif/i.test(text) ? "#mission-prod" : /nom/i.test(text) ? "#mission-name" : null;
+    if (field) { $(field).focus(); $(field).select(); }
 }
 
 /** Rubriques à cocher (Réglages) : toutes celles disponibles sur ce système, dans l'ordre de l'accueil. */

@@ -1145,3 +1145,5 @@ main {
 .mission-list button.armed { color: #fff; background: #c62828; border-color: #c62828; }
 .mission-form { gap: 10px; }
 .mission-form input, .mission-form select { padding: 6px 9px; border: 1px solid var(--border); border-radius: 6px; background: var(--input-bg); color: var(--text); font: inherit; font-size: 13px; }
+.mission-error { padding: 6px 9px; border-radius: 6px; font-size: 12px; color: #fff; background: #c62828; }
+.mission-error[hidden] { display: none; }

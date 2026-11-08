@@ -5,7 +5,8 @@
     "description": "Deck DevSecOps dans le navigateur : grille de touches et terminal intégré, sans droits administrateur",
     "scripts": {
         "start": "node server/index.mjs",
-        "dev": "node --watch-path=server server/index.mjs --no-open"
+        "dev": "node --watch-path=server server/index.mjs --no-open",
+        "test": "node --test \"test/*.test.mjs\""
     },
     "engines": {
         "node": ">=20"

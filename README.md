@@ -229,6 +229,10 @@ text("VAULT_ADDR", "🌐", sh('export VAULT_ADDR="http://127.0.0.1:8200"', '$env
 
 Types de touches : `text` (tape dans le terminal), `web` (ouvre un onglet), `run` (lance un programme sur la machine), `status` (voyant).
 
+## Tests
+
+`npm test` lance les tests automatiques (`test/`, lanceur intégré à Node 22 ou plus, sans dépendance) en moins d'une seconde : favoris (ajout, groupes, glisser-déposer, import), coffre (chiffrement, notes en couleur, export / import), réglages (validation, ancien format), sauvegardes, catalogue (limite de l'accueil, rubriques, descriptions, garde-fou production) et détection ssh / wsl. Ils travaillent dans des dossiers temporaires : les vrais favoris, coffre et réglages ne sont jamais touchés. À lancer avant chaque commit.
+
 ## Différences avec la version Stream Deck
 
 - Les commandes sont tapées dans le **terminal intégré**, pas dans la fenêtre active : un navigateur ne peut pas envoyer de frappes à une autre application.

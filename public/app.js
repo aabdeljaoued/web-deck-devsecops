@@ -9,6 +9,8 @@ const $ = (sel) => document.querySelector(sel);
 const state = {
     ws: null,
     tools: { missing: new Set(), install: {} },   // outils installables absents (server/tools.mjs)
+    localUnix: true,                              // poste Linux / macOS (sinon : rubriques "unix" via ssh / wsl)
+    remote: {},                                   // sid -> "ssh" | "wsl" : terminaux connectés (server/remote.mjs)
     server: null,                                 // mode de lancement (service ou à la main)
     pages: {},
     titles: {},
@@ -126,6 +128,8 @@ function handle(msg) {
             state.favGroups = msg.favGroups ?? [];
             state.worlds = msg.worlds ?? null;
             state.server = msg.server ?? null;
+            state.localUnix = msg.localUnix ?? true;
+            state.remote = msg.remote ?? {};
             if (msg.tools) applyTools(msg.tools);
             state.status = msg.status ?? {};
             if (msg.vault) applyVault(msg.vault);
@@ -139,6 +143,7 @@ function handle(msg) {
             // Reconnexion ou rechargement : on repart des sessions du serveur, sortie rejouée
             for (const sid of [...state.terms.keys()]) removeTerm(sid);
             for (const s of msg.sessions) addTerm(s.sid, s.name, s.kind, s.replay, s.title);
+            markRemoteTabs();
             if (msg.sessions.length) activate(msg.sessions.at(-1).sid);
             layoutScreens();
             if (layout().size > 1) fillGrid();
@@ -150,6 +155,7 @@ function handle(msg) {
             if (!state.terms.has(msg.sid)) {
                 addTerm(msg.sid, msg.name, msg.kind, "", msg.title);
                 layoutScreens();
+                markRemoteTabs();
             }
             if (msg.by === requestId) {
                 activate(msg.sid);
@@ -205,6 +211,11 @@ function handle(msg) {
             break;
         case "tools":
             applyTools(msg);
+            break;
+        case "remote":
+            state.remote = msg.remote ?? {};
+            markRemoteTabs();
+            refreshUnixKeys();
             break;
         case "restarting":
             closeSettings();
@@ -288,6 +299,7 @@ function handle(msg) {
 // ---------- Grille ----------
 
 function render() {
+    hideKeyTip();
     const grid = $("#grid");
     const { left, right } = rowOrder(state.pages[state.page]);
     // L'espace extensible pousse Verrouiller et clear contre le bord droit de la fenêtre
@@ -344,7 +356,10 @@ function keyElement(key) {
     label.textContent = key.label;
     el.append(sym, label);
 
-    if (key.needs && state.tools.missing.has(key.needs)) {
+    if (key.unix && !unixReady()) {
+        el.classList.add("unavailable");
+        el.append(Object.assign(document.createElement("span"), { className: "missing-tag", textContent: "ssh requis" }));
+    } else if (key.needs && localTool(key) && state.tools.missing.has(key.needs)) {
         el.classList.add("missing");
         const install = state.tools.install[key.needs];
         el.title = `${key.needs} n'est pas installé.\n${install ? `Clic : tape « ${install} » (à valider avec Entrée)` : "Installe-le avec le gestionnaire de paquets du système."}`;
@@ -366,7 +381,8 @@ function keyElement(key) {
         el.classList.toggle("on", state.favEdit);
         el.querySelector(".label").textContent = state.favEdit ? "Terminé" : "Modifier";
     }
-    el.addEventListener("click", () => press(key, el));
+    el.addEventListener("click", () => { hideKeyTip(); press(key, el); });
+    attachKeyTip(el, key);
     return el;
 }
 
@@ -429,8 +445,10 @@ function press(key, el) {
     pulse(el);
     // Action dans une rubrique : (re)lance le compte à rebours du retour à l'accueil
     if (key.type !== "back" && state.page !== "root" && (key.type !== "folder" || isFavPage(key.page))) armAutoHome();
+    // Rubrique Linux / macOS (Ansible) sur un poste Windows : seulement dans un terminal connecté en ssh / wsl
+    if (key.unix && !unixReady()) return toast(`${UNIX_HINT} (terminal actif : ${state.terms.size ? "pas de session ssh / wsl" : "aucun"})`);
     // Outil absent : la touche propose son installation au lieu de lancer une commande qui échouerait
-    if (key.needs && state.tools.missing.has(key.needs)) {
+    if (key.needs && localTool(key) && state.tools.missing.has(key.needs)) {
         const install = state.tools.install[key.needs];
         send({ t: "tools-check", watch: true });   // le serveur surveille l'installation : la touche se rallume à la fin
         if (!install) return toast(`${key.needs} n'est pas installé : installe-le avec le gestionnaire de paquets du système`);
@@ -465,6 +483,63 @@ function press(key, el) {
             return typeInTerminal(activeKind() === "cmd" ? "cls\r" : "\x0c");
         }
     }
+}
+
+// ---------- Infobulles des touches : ce que fait l'action (bref), la commande, le comportement ----------
+
+let keyTipTimer = null;
+
+/** Contenu de l'infobulle d'une touche, ou null. */
+function keyTipContent(key) {
+    if (key.fav && state.favEdit) return { desc: `Modifier « ${key.label} »`, cmd: null, how: "Glisser pour déplacer" };
+    const desc = key.desc
+        ?? (key.type === "folder" ? (key.favGroup ? `Groupe ${key.label}` : `Rubrique ${key.label}`)
+        : key.type === "back" ? "Revient en arrière"
+        : key.type === "clear" ? "Efface le terminal actif"
+        : key.type === "fav-add" ? "Ajoute un site ou un groupe"
+        : key.type === "fav-edit" ? (state.favEdit ? "Termine la modification" : "Modifie, déplace ou supprime les favoris")
+        : key.type === "web" ? key.label
+        : null);
+    const cmd = key.type === "text" ? commandFor(key) : key.type === "web" ? key.url : null;
+    let how = null;
+    if (key.unix && !unixReady()) how = UNIX_HINT;
+    else if (key.needs && localTool(key) && state.tools.missing.has(key.needs)) how = `${key.needs} n'est pas installé : clic = commande d'installation`;
+    else if (key.type === "text" && cmd != null) how = key.enter ? "Exécutée tout de suite" : cmd.includes("{}") ? "À compléter : le texte sélectionné va à la place de ‹…›" : "À compléter (+ texte sélectionné), Entrée pour lancer";
+    else if (key.type === "web") how = "Ouvre un onglet";
+    if (!desc && !cmd) return null;
+    return { desc: desc ?? key.label, cmd: cmd?.replace("{}", "‹…›"), how };
+}
+
+function attachKeyTip(el, key) {
+    el.removeAttribute("title");   // pas d'infobulle native en double
+    el.addEventListener("mouseenter", () => {
+        clearTimeout(keyTipTimer);
+        keyTipTimer = setTimeout(() => showKeyTip(el, key), 350);
+    });
+    el.addEventListener("mouseleave", hideKeyTip);
+    el.addEventListener("dragstart", hideKeyTip);
+}
+
+function showKeyTip(el, key) {
+    const tip = $("#keytip");
+    const c = keyTipContent(key);
+    if (!c || !el.isConnected) return;
+    tip.replaceChildren(
+        Object.assign(document.createElement("strong"), { textContent: c.desc }),
+        ...(c.cmd ? [Object.assign(document.createElement("code"), { textContent: c.cmd.length > 90 ? `${c.cmd.slice(0, 89)}…` : c.cmd })] : []),
+        ...(c.how ? [Object.assign(document.createElement("span"), { className: "keytip-how", textContent: c.how })] : [])
+    );
+    tip.hidden = false;
+    // Sous la touche, centrée, sans sortir de la fenêtre
+    const r = el.getBoundingClientRect();
+    const w = tip.offsetWidth;
+    tip.style.left = `${Math.max(8, Math.min(window.innerWidth - w - 8, r.left + r.width / 2 - w / 2))}px`;
+    tip.style.top = `${r.bottom + 8}px`;
+}
+
+function hideKeyTip() {
+    clearTimeout(keyTipTimer);
+    $("#keytip").hidden = true;
 }
 
 function pulse(el) {
@@ -731,6 +806,7 @@ function activate(sid) {
         other.screen.classList.toggle("active", id === sid);
     }
     layoutScreens();
+    refreshUnixKeys();   // Ansible sous Windows : touches actives seulement dans un terminal connecté
     // Pas de vol du focus si un nom d'onglet est en cours de saisie (double-clic = clic + renommage)
     requestAnimationFrame(() => { if (!document.activeElement?.classList.contains("tab-rename")) t.term.focus(); });
 }
@@ -1578,6 +1654,31 @@ function tickAutoHome() {
 }
 
 // ---------- Réglages (espace admin) ----------
+
+// ---------- Rubriques Linux / macOS (Ansible) sur un poste Windows : actives via ssh / wsl ----------
+
+const UNIX_HINT = "Demande Linux ou macOS : connecte le terminal actif en ssh (ou wsl)";
+
+/** Touches "unix" utilisables : poste Linux / macOS, ou terminal actif connecté en ssh / wsl. */
+const unixReady = () => state.localUnix || Boolean(state.remote[state.active]);
+
+/** Outil vérifié sur ce poste : pas pour une touche "unix" d'un poste Windows (elle s'exécute à distance). */
+const localTool = (key) => !(key.unix && !state.localUnix);
+
+/** Re-dessine la page si elle contient des touches "unix" (changement de terminal ou de connexion). */
+function refreshUnixKeys() {
+    if (!state.localUnix && (state.pages[state.page] ?? []).some((k) => k?.unix)) render();
+}
+
+/** Badge « ssh » / « wsl » sur l'onglet des terminaux connectés. */
+function markRemoteTabs() {
+    for (const [sid, t] of state.terms) {
+        const kind = state.remote[sid];
+        t.tab.classList.toggle("remote", Boolean(kind));
+        if (kind) t.tab.dataset.remote = kind;
+        else delete t.tab.dataset.remote;
+    }
+}
 
 // ---------- Outils non installés ----------
 

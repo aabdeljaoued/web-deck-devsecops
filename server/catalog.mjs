@@ -7,6 +7,7 @@
 // sh(posix, powershell, cmd) ; la page choisit selon le shell de l'onglet actif.
 import { iconFile } from "./icons.mjs";
 import { platform } from "./platform.mjs";
+import { DESCRIPTIONS } from "./descriptions.mjs";
 import { neededTool } from "./tools.mjs";
 
 export const COLORS = {
@@ -271,20 +272,22 @@ function buildCatalog(ctx) {
             text("uninstall", "🗑", { windows: "scoop uninstall ", mac: "brew uninstall ", linux: "brew uninstall " }, false, C.danger)
         ]},
         // Ansible ne tourne pas nativement sous Windows (WSL seulement) : rubrique masquée sous Windows
-        ansible: { label: "Ansible", sym: "A", icon: "ansible", color: C.ansible, terminal: true, keys: [
-            text("version", "ver", { mac: "ansible --version", linux: "ansible --version" }, true, C.ansible),
-            text("ping all", "📡", { mac: "ansible all -m ping", linux: "ansible all -m ping" }, true, C.ansible),
-            text("inventaire", "🗂", { mac: "ansible-inventory --graph", linux: "ansible-inventory --graph" }, true, C.ansible),
-            text("playbook", "▶", { mac: "ansible-playbook ", linux: "ansible-playbook " }, false, C.ansible),
-            text("check --diff", "🔍", { mac: "ansible-playbook --check --diff ", linux: "ansible-playbook --check --diff " }, false, C.ansible),
-            text("syntax check", "✔", { mac: "ansible-playbook --syntax-check ", linux: "ansible-playbook --syntax-check " }, false, C.ansible),
-            text("list tasks", "📋", { mac: "ansible-playbook --list-tasks ", linux: "ansible-playbook --list-tasks " }, false, C.ansible),
-            text("ad-hoc shell", ">_", { mac: "ansible all -m shell -a \"", linux: "ansible all -m shell -a \"" }, false, C.ansible),
-            text("ansible-lint", "🔎", { mac: "ansible-lint", linux: "ansible-lint" }, true, C.sec),
-            text("galaxy install", "⬇", { mac: "ansible-galaxy install -r requirements.yml", linux: "ansible-galaxy install -r requirements.yml" }, false, C.ansible),
-            text("vault encrypt", "🔒", { mac: "ansible-vault encrypt ", linux: "ansible-vault encrypt " }, false, C.vault),
-            text("vault view", "👁", { mac: "ansible-vault view ", linux: "ansible-vault view " }, false, C.vault),
-            text("doc module", "📘", { mac: "ansible-doc ", linux: "ansible-doc " }, false, C.ansible)
+        // Ansible ne s'exécute que sous Linux / macOS (pas de nœud de contrôle Windows) : unix = touches actives
+        // si le poste est Linux / macOS, sinon seulement quand le terminal actif est connecté en ssh (ou wsl).
+        ansible: { label: "Ansible", sym: "A", icon: "ansible", color: C.ansible, terminal: true, unix: true, keys: [
+            text("version", "ver", "ansible --version", true, C.ansible),
+            text("ping all", "📡", "ansible all -m ping", true, C.ansible),
+            text("inventaire", "🗂", "ansible-inventory --graph", true, C.ansible),
+            text("playbook", "▶", "ansible-playbook ", false, C.ansible),
+            text("check --diff", "🔍", "ansible-playbook --check --diff ", false, C.ansible),
+            text("syntax check", "✔", "ansible-playbook --syntax-check ", false, C.ansible),
+            text("list tasks", "📋", "ansible-playbook --list-tasks ", false, C.ansible),
+            text("ad-hoc shell", ">_", "ansible all -m shell -a \"", false, C.ansible),
+            text("ansible-lint", "🔎", "ansible-lint", true, C.sec),
+            text("galaxy install", "⬇", "ansible-galaxy install -r requirements.yml", false, C.ansible),
+            text("vault encrypt", "🔒", "ansible-vault encrypt ", false, C.vault),
+            text("vault view", "👁", "ansible-vault view ", false, C.vault),
+            text("doc module", "📘", "ansible-doc ", false, C.ansible)
         ]},
         veille: { label: "Veille sécu", sym: "📚", icon: "radar", color: C.web, keys: [
             shortcuts.owasp,
@@ -451,6 +454,7 @@ function customKey(def, where) {
         throw new Error(`${where} : il faut "command" ou "url"`);
     }
     if (!key) return null;   // pas de variante pour ce système
+    if (typeof def.description === "string" && def.description.trim()) key = { ...key, desc: def.description.trim().slice(0, 120) };
     if (def.icon != null) {
         if (iconFile(def.icon)) key = { ...key, icon: def.icon };
         else console.warn(`  ${where} : icône introuvable "${def.icon}" (ex. "lucide-rocket", "github")`);
@@ -573,7 +577,7 @@ export function buildDeck(ctx, favorites = [], worlds = {}) {
         const def = { ...SECTIONS[s], label: pick(SECTIONS[s].label), sym: pick(SECTIONS[s].sym) };
         rootKeys.push(folder(def.label, def.sym, s, def.color, pick(def.icon)));
         titles[s] = def.label;
-        const keys = def.keys.filter(allowed);
+        const keys = def.keys.filter(allowed).map((k) => (def.unix ? { ...k, unix: true } : k));
         if (cfg.clearKey && def.terminal) keys.push(clear);
         if (keys.length > SECTION_MAX) throw new Error(`la rubrique "${s}" a ${keys.length} touches (max ${SECTION_MAX}).`);
         layouts[s] = layout(keys, { "0,0": back() });
@@ -603,7 +607,10 @@ export function buildDeck(ctx, favorites = [], worlds = {}) {
             if (key.icon && iconFile(key.icon)) ICONS.add(key.icon);
             const { command, tool, needs, ...rest } = key;
             // needs : outil installable requis (la page grise la touche s'il manque, voir server/tools.mjs)
-            const visible = neededTool(key) ? { ...rest, needs: neededTool(key) } : rest;   // pin reste visible : la page aligne à droite les touches épinglées
+            const visible = neededTool(key) ? { ...rest, needs: neededTool(key) } : rest;
+            // Infobulle : ce que fait l'action (server/descriptions.mjs, ou "description" d'une touche de config.jsonc)
+            const desc = key.desc ?? DESCRIPTIONS[`${name}/${key.label}`];
+            if (desc) visible.desc = desc;   // pin reste visible : la page aligne à droite les touches épinglées
             return { id, ...visible };
         });
     }

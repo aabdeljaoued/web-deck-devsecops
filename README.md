@@ -51,6 +51,7 @@ Linux fonctionne aussi (`./start.sh`) : sans bloc `linux` dans `paths.json`, cel
 
 ### Touches
 
+- **Infobulle** : au survol, ce que fait l'action en quelques mots, la commande et son comportement. Textes dans `server/descriptions.mjs` ; une touche de `config.jsonc` peut avoir `"description"`.
 - **Pastille verte** : la commande est tapée **et exécutée** dans le terminal actif.
 - **Pastille orange** : la commande est seulement tapée, tu complètes ou valides toi-même (commandes à compléter ou risquées).
 - **Texte sélectionné** : sur une touche orange, le texte sélectionné dans le terminal est ajouté à la commande (à l'emplacement `{}` s'il y en a un, ex. `kubectl exec -it {} -- sh`) ; sans sélection, le curseur est placé sur `{}`. Rien n'est jamais exécuté sans Entrée.
@@ -116,6 +117,10 @@ Un mauvais mot de passe ne modifie rien (et ralentit l'essai suivant, comme le d
 Après une action dans une rubrique (Docker, K8s, Git, un groupe de favoris…), le deck revient tout seul à l'accueil si aucune autre action n'y est lancée pendant **60 secondes** ; chaque action relance le compte à rebours. Une fine barre en bas des touches montre le temps restant. Le décompte se met en pause (barre grise) tant qu'un formulaire, le coffre, la palette ou un sélecteur est ouvert, ou en mode Modifier des favoris.
 
 Dans **Réglages** (engrenage en haut à droite), rubrique Navigation : une case active ou désactive le retour automatique, et le délai (de 5 à 3600 secondes) s'affiche quand il est activé. Désactiver garde le délai choisi pour la prochaine réactivation, et arrête un compte à rebours en cours. Les réglages sont enregistrés côté serveur dans `settings.json` (exclu de Git), les mêmes pour tous les onglets et navigateurs.
+
+### Ansible sous Windows (via ssh ou wsl)
+
+Ansible ne s'exécute que sous Linux ou macOS. Sous Windows, la rubrique **Ansible** est affichée mais ses touches sont **grisées** (« ssh requis ») ; elles **s'activent** dès que le terminal actif est connecté à une machine Linux / macOS : une session `ssh` (ou `mosh`) ou `wsl` lancée depuis le shell. L'onglet du terminal porte alors un badge **SSH** ou **WSL**, et les touches tapent leurs commandes dans la session distante ; à la déconnexion (ou sur un autre terminal), elles se regrisent. Un `ssh` lancé par un autre programme (`git push`, `scp`…) ne compte pas. Détection : `server/remote.mjs` (liste des processus toutes les 2,5 s).
 
 ### Outils non installés
 

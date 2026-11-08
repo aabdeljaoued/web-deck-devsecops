@@ -19,7 +19,8 @@ import { Vault } from "./vault.mjs";
 import { Settings } from "./settings.mjs";
 import { iconFile } from "./icons.mjs";
 import { loadConfig, ROOT } from "./config.mjs";
-import { launch, openBrowser, windowsPty } from "./platform.mjs";
+import { launch, openBrowser, platform, windowsPty } from "./platform.mjs";
+import { RemoteWatch } from "./remote.mjs";
 import { StatusHub } from "./status.mjs";
 import { Terminals } from "./terminal.mjs";
 import { neededTool, Tools } from "./tools.mjs";
@@ -172,6 +173,13 @@ function broadcast(message) {
 
 terminals.on("output", (sid, d) => broadcast({ t: "out", sid, d }));
 terminals.on("exit", (sid, code) => broadcast({ t: "exit", sid, code }));
+
+// Terminaux connectés en ssh / wsl : active les rubriques qui demandent un shell Linux / macOS (Ansible sous Windows).
+// DECK_LOCAL_UNIX=0 : se comporter comme sous Windows (pour tester sur un Mac).
+const LOCAL_UNIX = platform !== "windows" && process.env.DECK_LOCAL_UNIX !== "0";
+const remote = new RemoteWatch(terminals);
+remote.on("change", (state) => broadcast({ t: "remote", remote: state }));
+remote.start();
 status.on("update", (id, state) => broadcast({ t: "status", id, state }));
 // Coffre : état et contenu (secrets sans leur valeur) renvoyés à toutes les pages à chaque changement
 vault.on("change", (reason) => broadcast({ t: "vault", ...vault.view(), ...(reason ? { reason } : {}) }));
@@ -186,6 +194,8 @@ wss.on("connection", (ws) => {
         favGroups: favorites.groups(),
         worlds: deck.worlds,
         tools: tools.view(),
+        localUnix: LOCAL_UNIX,
+        remote: remote.view(),
         server: { supervisor: SUPERVISOR, log: SUPERVISOR ? null : LOG_FILE },
         shells: ctx.shells.map(({ name, kind }) => ({ name, kind })),
         windowsPty: windowsPty(),
@@ -381,6 +391,7 @@ function restart() {
     broadcast({ t: "restarting" });
     console.log("Redémarrage demandé depuis la page…");
     setTimeout(() => {
+        remote.stop();
         vault.lock();
         terminals.closeAll();
         server.close();
@@ -395,6 +406,7 @@ function restart() {
 }
 
 function shutdown() {
+    remote.stop();
     vault.lock();
     terminals.closeAll();
     process.exit(0);

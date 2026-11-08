@@ -52,6 +52,7 @@
     //   url     : à la place de command, ouvre un onglet (http:// ou https://)
     //   icon    : "lucide-<nom>" (https://lucide.dev/icons) ou un logo (https://simpleicons.org, ex. "github")
     //   color   : couleur "#rrggbb"
+    //   description : texte bref de l'infobulle (ce que fait l'action)
     "customSections": {
         // "perso": {
         //     "label": "Perso",

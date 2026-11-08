@@ -18,6 +18,8 @@ import { Actions } from "./actions.mjs";
 import { Backups } from "./backups.mjs";
 import { copyTemporarily, flushClipboard } from "./clipboard.mjs";
 import { ScreenLock } from "./screenlock.mjs";
+import { Updater } from "./update.mjs";
+import { Journal } from "./journal.mjs";
 import { runDiagnostic } from "./diagnostic.mjs";
 import { Favorites } from "./favorites.mjs";
 import { Vault } from "./vault.mjs";
@@ -229,6 +231,29 @@ function activateMission(id) {
     return m;
 }
 
+// Journal des actions (Réglages › Journal) : contexte kubectl et terminal ajoutés par le serveur
+const journal = new Journal(path.join(ROOT, ".deck-journal.jsonl"));
+function logAction(entry, sid) {
+    if (!settings.get().journalEnabled) return;
+    const kube = status.states.kube;
+    const session = sid && terminals.sessions.get(String(sid));
+    const e = journal.add({
+        ...entry,
+        terminal: session ? session.title || session.name : "",
+        kube: kube?.context ? `${kube.context} / ${kube.namespace ?? "default"}` : null,
+        prod: Boolean(kube?.prod)
+    });
+    broadcast({ t: "journal-added", entry: e });
+}
+
+// Mise à jour en un clic : vérification 30 s après le démarrage, puis toutes les 6 h (Réglages › Serveur)
+const updater = new Updater(ROOT);
+async function checkUpdate() {
+    broadcast({ t: "update", ...(await updater.check()) });
+}
+setTimeout(checkUpdate, 30 * 1000).unref();
+setInterval(checkUpdate, 6 * 60 * 60 * 1000).unref();
+
 // Session verrouillée (écran de verrouillage) : le coffre se verrouille aussitôt
 const screenLock = new ScreenLock(remote);
 screenLock.on("change", (locked) => { if (locked) vault.lock("écran verrouillé"); });
@@ -249,6 +274,7 @@ wss.on("connection", (ws) => {
         tools: tools.view(),
         actions: actions.list(),
         localUnix: LOCAL_UNIX,
+        update: updater.view(),
         workspace: ctx.workspace,
         prodPattern: ctx.cfg.prodPattern || "prod",
         signature: signatureVersion(),
@@ -340,6 +366,20 @@ wss.on("connection", (ws) => {
                 // Sauvegardes automatiques (Réglages) : liste et restauration (la version actuelle est sauvegardée avant)
                 // Redémarrage demandé depuis les Réglages (terminaux rouverts au démarrage suivant)
                 case "restart": restart(); break;
+                // Journal : touche « text » ou lien (envoyé par la page), liste, export CSV, effacement
+                case "journal": logAction({ label: msg.label, page: msg.page, command: msg.command, mode: msg.mode }, msg.sid); break;
+                case "journal-list": reply({ t: "journal-list", entries: journal.recent(200) }); break;
+                case "journal-export": reply({ t: "journal-export", csv: journal.csv() }); break;
+                case "journal-clear": journal.clear(); reply({ t: "journal-list", entries: [] }); break;
+                case "update-check": reply({ t: "update", ...(await updater.check()) }); break;
+                case "update-apply": {
+                    broadcast({ t: "update-progress", text: "mise à jour en cours (git pull, dépendances)…" });
+                    const v = await updater.apply();
+                    console.log(`Mise à jour appliquée depuis la page : version ${v.version}`);
+                    broadcast({ t: "update-progress", text: `version ${v.version} installée : redémarrage…` });
+                    restart();
+                    break;
+                }
                 // Missions : enregistrer (rubriques actuelles reprises si demandé), supprimer, activer
                 // Mes actions : rubriques et touches créées depuis les Réglages (actions.json, hors Git)
                 case "action-section-save":
@@ -348,6 +388,7 @@ wss.on("connection", (ws) => {
                 case "action-delete":
                 case "action-move": {
                     let created = null;
+                    const before = actions.list();   // pour revenir en arrière si l'accueil déborde (action épinglée)
                     if (msg.t === "action-section-save") {
                         const isNew = !msg.section?.id;
                         const id = actions.saveSection(msg.section);
@@ -368,7 +409,13 @@ wss.on("connection", (ws) => {
                         const worlds = { ...settings.get().worlds, [created]: true };
                         try { deck = makeDeck(worlds); settings.update({ worlds }); } catch { shown = false; deck = makeDeck(); }
                     } else {
-                        deck = makeDeck();
+                        try {
+                            deck = makeDeck();
+                        } catch (err) {
+                            actions.sections = before;
+                            actions.save();
+                            throw new Error(`${err.message} Pour épingler cette action, décoche une rubrique (Réglages › Rubriques) ou retire une autre action de l'accueil.`);
+                        }
                     }
                     broadcast({ t: "settings", settings: settings.get() });
                     broadcast({ t: "actions", sections: actions.list() });
@@ -474,6 +521,64 @@ wss.on("connection", (ws) => {
                     break;
                 }
                 case "fav-export": reply({ t: "fav-export", data: favorites.export() }); break;
+                // Configuration complète (autre machine) : favoris, Mes actions, réglages et missions, signature.
+                // Le coffre a son propre export (son import demande le mot de passe maître).
+                case "config-export": {
+                    reply({ t: "config-export", data: {
+                        app: "web-deck-devsecops", kind: "configuration", version: 1, exported: new Date().toISOString(),
+                        from: { machine: os.hostname(), platform },
+                        favorites: favorites.dump(),
+                        actions: actions.list(),
+                        settings: settings.get(),
+                        signature: existsSync(SIGNATURE_FILE) ? readFileSync(SIGNATURE_FILE).toString("base64") : null
+                    } });
+                    break;
+                }
+                case "config-import": {
+                    const data = msg.data;
+                    if (data?.kind !== "configuration") throw new Error("fichier non reconnu : ce n'est pas un export de configuration du deck");
+                    const parts = msg.parts ?? {};
+                    const done = [];
+                    const warnings = [];
+                    if (parts.actions && Array.isArray(data.actions)) {
+                        backups.before(actions.file, { force: true });
+                        writeFileSync(actions.file, `${JSON.stringify({ sections: data.actions }, null, 2)}\n`);
+                        actions.reload();
+                        done.push(`Mes actions (${actions.list().length} rubrique(s))`);
+                    }
+                    if (parts.favorites && Array.isArray(data.favorites)) {
+                        const stats = favorites.import(data.favorites, parts.favoritesMode === "replace" ? "replace" : "merge");
+                        done.push(`favoris (${stats.added} ajouté(s))`);
+                    }
+                    if (parts.settings && data.settings && typeof data.settings === "object") {
+                        const next = settings.check(data.settings);   // validé champ par champ, tout ou rien
+                        let checkedDeck;
+                        try { checkedDeck = makeDeck(next.worlds, next.worldOrder); } catch (err) { warnings.push(`rubriques : ${err.message} (celles de config.jsonc gardées)`); next.worlds = {}; next.worldOrder = []; }
+                        backups.before(settings.file, { force: true });
+                        settings.save(next);
+                        if (checkedDeck) deck = checkedDeck;
+                        const missing = next.missions.filter((m) => m.workspace && !existsSync(m.workspace)).map((m) => `${m.name} (${m.workspace})`);
+                        if (missing.length) warnings.push(`dossier introuvable sur cette machine pour : ${missing.join(", ")} ; à corriger dans Réglages › Missions`);
+                        applyMissionEffects();
+                        done.push(`réglages et ${next.missions.length} mission(s)`);
+                    }
+                    if (parts.signature && typeof data.signature === "string") {
+                        const png = Buffer.from(data.signature, "base64");
+                        if (png.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) && png.length <= MAX_SIGNATURE_BYTES) {
+                            writeFileSync(SIGNATURE_FILE, png, { mode: 0o600 });
+                            broadcast({ t: "signature", version: signatureVersion() });
+                            done.push("signature");
+                        } else {
+                            warnings.push("signature ignorée (image invalide)");
+                        }
+                    }
+                    try { deck = makeDeck(); } catch (err) { deck = makeDeck({}, []); warnings.push(`accueil : ${err.message} (rubriques de config.jsonc affichées)`); }
+                    broadcast({ t: "settings", settings: settings.get() });
+                    broadcast({ t: "actions", sections: actions.list() });
+                    broadcast(deckMessage());
+                    reply({ t: "config-imported", done, warnings });
+                    break;
+                }
                 case "fav-import": {
                     const stats = favorites.import(msg.data, msg.mode === "replace" ? "replace" : "merge");
                     deck = makeDeck();
@@ -496,6 +601,7 @@ wss.on("connection", (ws) => {
                     const key = deck.index.get(String(msg.id));
                     if (key?.type !== "run") return reply({ t: "ran", id: msg.id, ok: false, error: "touche inconnue" });
                     await launch(key.command);
+                    logAction({ label: key.label, page: String(msg.id).split("/")[0], command: key.command.join(" "), mode: "run" });
                     reply({ t: "ran", id: msg.id, ok: true });
                     break;
                 }

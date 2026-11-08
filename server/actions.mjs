@@ -36,7 +36,7 @@ function cleanSection(def, id) {
 function cleanAction(def, id) {
     const label = text(def?.label, 30);
     if (!label) throw new Error("le nom de l'action est obligatoire");
-    const action = { id, label, icon: cleanIcon(def?.icon), description: text(def?.description, 120) || null };
+    const action = { id, label, icon: cleanIcon(def?.icon), description: text(def?.description, 120) || null, pinned: def?.pinned === true };
     if (def?.kind === "url") {
         let url = text(def?.url, 500);
         if (url && !/^[a-z][a-z0-9+.-]*:\/\//i.test(url)) url = `https://${url}`;

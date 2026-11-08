@@ -47,6 +47,14 @@ const SCHEMA = {
             return v;
         }
     },
+    /** Journal des actions lancées depuis le deck (Réglages › Journal). */
+    journalEnabled: {
+        default: true,
+        clean(v) {
+            if (typeof v !== "boolean") throw new Error("journal : activé (true) ou non (false)");
+            return v;
+        }
+    },
     /** Mode d'affichage : sombre, clair, ou celui du système. */
     appearance: { default: "dark", clean: oneOf("mode d'affichage", ["dark", "light", "system"]) },
     /** Signature en filigrane au fond des terminaux ("" = aucune). */

@@ -51,3 +51,10 @@ test("missions : validation (nom, motif de production, doublons), mission active
     assert.throws(() => s.update({ missions: [{ ...bnp, theme: "acme" }] }), /thème/);
     assert.equal(s.update({ missions: [{ ...bnp, favGroup: "../x" }] }).missions[0].favGroup, "", "groupe de favoris invalide ignoré");
 });
+
+test("journal : activé par défaut, désactivable", () => {
+    const s = new Settings(path.join(tmpDir(), "settings.json"));
+    assert.equal(s.get().journalEnabled, true);
+    assert.equal(s.update({ journalEnabled: false }).journalEnabled, false);
+    assert.throws(() => s.update({ journalEnabled: "non" }), /journal/);
+});

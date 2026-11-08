@@ -60,6 +60,7 @@ Linux fonctionne aussi (`./start.sh`) : sans bloc `linux` dans `paths.json`, cel
 - **Retour** à gauche ; **clear** collé au bord droit, sur l'accueil comme dans les rubriques.
 - Les touches tapent la variante adaptée au shell de l'onglet actif (ex. `$env:VAULT_ADDR=` dans PowerShell, `export VAULT_ADDR=` dans bash/zsh, `set VAULT_ADDR=` dans cmd). Une touche sans variante pour ce shell affiche un message.
 - **Linux / Unix** : l'administration courante d'un serveur, le plus souvent après un `ssh` (commandes Linux, tapées telles quelles quel que soit le shell local). Exécutées : système (`uname`, `/etc/os-release`, `uptime`), top (`htop` sinon `top`), mémoire (`free -h`), disque (`df -h`), gros dossiers (`du | sort -h`), ports (`ss -tulpn`), services en cours (`systemctl`), erreurs du démarrage (`journalctl -p err -b`). À compléter, avec le texte sélectionné : processus (`pgrep -af`), kill, statut / restart / logs d'un service (`systemctl`, `journalctl -u … -f`), `tail -f`, find, grep.
+- **Raccourcis clavier** : `⌥1` … `⌥9` puis `⌥0` (Alt sous Windows) lancent les dix premières touches d'action de la page affichée (sans Retour ni clear) ; garder `⌥` enfoncée affiche leurs numéros.
 - **Palette de commandes** (`⌘K` / `Ctrl+K`, ou « Rechercher » en haut à droite) : tape quelques lettres (`exec`, `plan`, `logs`…) pour trouver et lancer n'importe quelle touche, sans passer par les rubriques.
 
 ### Apparence : mode sombre / clair et thèmes de mission
@@ -134,6 +135,10 @@ Les touches d'un outil installable absent (stern, popeye, dive, gitleaks, delta,
 
 Avant chaque modification de `favoris.json`, `vault.enc` ou `settings.json`, la version actuelle est copiée dans `.deck-backups/` (exclu de Git, lisible par l'utilisateur seul) : au plus une copie toutes les 10 minutes, toujours avant une opération destructrice (Remplacer tout, restauration), 10 copies gardées par fichier. **Réglages › Sauvegardes** les liste et permet d'en **restaurer** une (deux clics) ; la version actuelle est d'abord sauvegardée, donc une restauration se rattrape. Le coffre restauré est verrouillé : il s'ouvre avec le mot de passe maître de l'époque.
 
+### Journal des actions
+
+**Réglages › Journal des actions** : chaque action lancée depuis le deck (touche, palette, raccourci) est notée avec la date, la commande (exécutée ou tapée), le terminal et le contexte kubectl, en rouge si c'est la production. Liste des dernières actions, **export CSV** (Excel), effacement (deux clics), case pour désactiver. Les commandes tapées à la main et les valeurs du coffre ne sont pas notées. Fichier `.deck-journal.jsonl` (hors Git, 5 000 entrées gardées).
+
 ### Garde-fou production
 
 Quand le voyant kubectl est en **production** (contexte ou namespace qui correspond à `prodPattern` de `config.jsonc`, par défaut `prod|prd`), les touches qui agissent sur le cluster (**exec -it**, **helm upgrade -i**, **rollback**, **uninstall**) sont entourées de rouge avec la mention **PROD** : le premier clic affiche le contexte et arme la touche, le **deuxième clic** (dans les 5 s) la lance.
@@ -206,6 +211,8 @@ Pour une machine précise, créer `paths.<nom-de-la-machine>.json` (nom affiché
 
 **Réglages › Mes actions** : **Nouvelle rubrique…** (nom, icône, couleur), puis **+ Action** dans la rubrique : une **commande** (exécutée tout de suite, ou à compléter ; `{}` = texte sélectionné dans le terminal) ou un **lien**, avec un nom, une icône (vide = automatique) et une infobulle. Flèches pour l'ordre, Modifier, Supprimer (deux clics). Une rubrique créée s'affiche sur l'accueil si elle y tient (sinon : la cocher dans « Rubriques » après en avoir décoché une). Tout est enregistré dans `actions.json`, **hors Git** (les commandes propres à un client ne partent pas sur le dépôt), et sauvegardé automatiquement. Une erreur (commande sur plusieurs lignes, lien non http(s), icône inconnue…) s'affiche dans le formulaire sans perdre la saisie.
 
+Une action peut être **épinglée sur l'accueil** (case du formulaire), en plus de sa rubrique, dans la limite des 18 touches : un dépassement est refusé sans rien modifier.
+
 ### Tes propres rubriques et touches (`config.jsonc`)
 
 Sans toucher au code : `customSections` (rubriques) et `customShortcuts` (raccourcis de l'accueil), puis ajouter leur identifiant dans `sections` / `shortcuts`.
@@ -262,6 +269,11 @@ Le terminal donne un shell complet : l'accès est verrouillé.
 - L'en-tête `Host` est vérifié (protection contre le DNS rebinding), ainsi que l'`Origin` des WebSockets (une autre page ouverte dans le navigateur ne peut pas s'y connecter).
 - Le navigateur n'envoie que l'identifiant d'une touche `run` : le serveur ne lance que les commandes de son catalogue.
 - La page interdit l'affichage dans une iframe et applique une Content-Security-Policy stricte.
+
+## Mise à jour et configuration d'une machine à l'autre
+
+- **Mise à jour en un clic** (Réglages › Serveur) : le deck compare sa version avec GitHub au démarrage puis toutes les 6 h (ou avec **Vérifier**) ; une pastille sur l'engrenage signale une nouvelle version. **Mettre à jour** (deux clics) fait `git pull`, installe les dépendances si besoin et redémarre. Refusé si des fichiers suivis par Git ont été modifiés sur la machine (ex. `config.jsonc`), pour ne rien écraser.
+- **Configuration complète** (Réglages) : **Exporter…** un seul fichier avec favoris, Mes actions, réglages et missions, signature ; sur l'autre machine, **Importer…** en choisissant les parties (favoris fusionnés ou remplacés). Chaque fichier remplacé est sauvegardé avant ; les dossiers de mission absents de la machine sont signalés. Le coffre s'exporte à part (son import demande le mot de passe maître).
 
 ## Vérifier sous Windows
 

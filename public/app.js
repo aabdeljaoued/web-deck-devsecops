@@ -169,6 +169,7 @@ function handle(msg) {
             state.worlds = msg.worlds ?? null;
             state.server = msg.server ?? null;
             state.localUnix = msg.localUnix ?? true;
+            if (msg.update) applyUpdate(msg.update);
             state.workspace = msg.workspace ?? "";
             state.actions = msg.actions ?? [];
             state.prodPatternDefault = msg.prodPattern ?? "prod";
@@ -297,6 +298,12 @@ function handle(msg) {
         case "token-revoked":
             toast("jeton d'accès renouvelé depuis une autre page : rouvre le deck avec la nouvelle adresse si la connexion ne revient pas");
             break;
+        case "update":
+            applyUpdate(msg);
+            break;
+        case "update-progress":
+            toast(msg.text, "ok");
+            break;
         case "restarting":
             closeSettings();
             toast("redémarrage du deck… (reconnexion automatique)", "ok");
@@ -312,6 +319,31 @@ function handle(msg) {
             toast(msg.name === "vault.enc" ? "coffre restauré : il est verrouillé, déverrouille-le avec le mot de passe de l'époque"
                 : `${msg.name} restauré (la version d'avant est dans les sauvegardes)`, "ok");
             break;
+        case "config-export":
+            downloadJson(msg.data, `configuration-deck-${new Date().toISOString().slice(0, 10)}.json`, "configuration exportée");
+            break;
+        case "config-imported":
+            $("#config-import-confirm").hidden = true;
+            pendingConfig = null;
+            toast(`importé : ${msg.done.join(", ") || "rien"}${msg.warnings.length ? ` ; attention : ${msg.warnings.join(" ; ")}` : ""}`, msg.warnings.length ? "ko" : "ok");
+            break;
+        case "journal-list":
+            renderJournal(msg.entries);
+            break;
+        case "journal-added":
+            if (!$("#settings").hidden) send({ t: "journal-list" });
+            break;
+        case "journal-export": {
+            // ﻿ (BOM) : Excel lit les accents correctement
+            const url = URL.createObjectURL(new Blob(["\ufeff" + msg.csv], { type: "text/csv;charset=utf-8" }));
+            const a = Object.assign(document.createElement("a"), { href: url, download: `journal-deck-${new Date().toISOString().slice(0, 10)}.csv` });
+            document.body.append(a);
+            a.click();
+            a.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+            toast(`journal exporté : ${a.download} (dans Téléchargements)`, "ok");
+            break;
+        }
         case "fav-export":
             downloadJson(msg.data, `favoris-deck-${new Date().toISOString().slice(0, 10)}.json`);
             break;
@@ -368,6 +400,7 @@ function handle(msg) {
             // Contexte kubectl passé en (ou sorti de) production : touches protégées re-dessinées
             if (msg.id === "kube" && (state.pages[state.page] ?? []).some((k) => k?.prodGuard)) render();
             document.querySelectorAll(`[data-status="${msg.id}"]`).forEach((el) => el.replaceWith(statusKey(el.dataset.id, msg.id)));
+            numberKeys();
             break;
         case "ran":
             flash(msg.id, msg.ok);
@@ -376,6 +409,7 @@ function handle(msg) {
         case "error":
             // Réglages refusés par le serveur : le panneau revient pour corriger
             if (settingsPending) { settingsPending = false; $("#settings").hidden = false; }
+            if (state.update) applyUpdate(state.update);   // bouton Mettre à jour / Vérifier réactivé après une erreur
             if (missionPending) { missionDone(); showMissionError(msg.error); }
             if (actionPending) { actionDone(); showActionError(msg.error); }
             toast(msg.error);
@@ -394,8 +428,42 @@ function render() {
     grid.replaceChildren(...left.map(keyElement), spacer, ...right.map(keyElement));
     // Taille des touches : la ligne doit tenir dans la fenêtre (15 cases au moins)
     document.documentElement.style.setProperty("--count", Math.max(15, left.length + right.length));
+    numberKeys();
     renderCrumbs();
 }
+
+/**
+ * Raccourcis clavier : ⌥1…⌥9 puis ⌥0 (Alt sous Windows) pour les dix premières touches d'action de la page,
+ * dans l'ordre de l'écran (sans Retour ni clear). Numéros affichés tant que ⌥ est enfoncée.
+ */
+function numberKeys() {
+    const keys = [...$("#grid").querySelectorAll(".key")].filter((el) => !el.classList.contains("back") && !el.classList.contains("clear"));
+    for (const el of $("#grid").querySelectorAll(".key [data-sc-num]")) el.remove();
+    keys.forEach((el, i) => {
+        delete el.dataset.sc;
+        if (i > 9) return;
+        el.dataset.sc = String((i + 1) % 10);
+        el.append(Object.assign(document.createElement("span"), { className: "sc-num", textContent: `${macClient ? "⌥" : "Alt "}${el.dataset.sc}` }));
+        el.lastChild.dataset.scNum = "";
+    });
+}
+
+const dialogOpen = () => ["#settings", "#vault", "#favdialog", "#palette", "#picker", "#duplicate"].some((id) => $(id) && !$(id).hidden);
+
+// Phase de capture : avant le terminal (sinon ⌥1 taperait « ¡ » sur macOS)
+document.addEventListener("keydown", (ev) => {
+    if (ev.key === "Alt") document.body.classList.add("show-sc");
+    if (!ev.altKey || ev.ctrlKey || ev.metaKey || ev.shiftKey) return;
+    const digit = /^Digit(\d)$/.exec(ev.code)?.[1];
+    if (digit == null || dialogOpen()) return;
+    const el = $("#grid").querySelector(`.key[data-sc="${digit}"]`);
+    if (!el) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    el.click();
+}, true);
+document.addEventListener("keyup", (ev) => { if (ev.key === "Alt") document.body.classList.remove("show-sc"); }, true);
+window.addEventListener("blur", () => document.body.classList.remove("show-sc"));
 
 /**
  * Grille 5 x 3 du serveur -> une ligne : à gauche Retour puis les touches dans l'ordre,
@@ -569,6 +637,7 @@ function press(key, el) {
         case "back": return go(key.page ?? "root");
         case "web":
             if (key.fav && state.favEdit) return openFavForm(key);
+            journalAction(key, key.url, "link");
             return window.open(key.url, "_blank", "noopener,noreferrer");
         case "fav-add": return openFavForm();
         case "vault": return openVault();
@@ -579,9 +648,14 @@ function press(key, el) {
         case "text": {
             const command = commandFor(key);
             if (command == null) return toast(`« ${key.label} » n'existe pas pour le shell ${activeKind()}`);
-            if (key.enter) return typeInTerminal(command + "\r");
+            if (key.enter) {
+                journalAction(key, command, "run");
+                return typeInTerminal(command + "\r");
+            }
             // Commande à compléter : le texte sélectionné dans le terminal est ajouté à la fin (sans Entrée)
-            return typeInTerminal(withSelection(command));
+            const typed = withSelection(command);
+            journalAction(key, typed, "type");
+            return typeInTerminal(typed);
         }
         case "clear": {
             const t = state.terms.get(state.active);
@@ -651,6 +725,31 @@ function showKeyTip(el, key) {
 function hideKeyTip() {
     clearTimeout(keyTipTimer);
     $("#keytip").hidden = true;
+}
+
+/** Journal des actions (côté serveur, qui ajoute le contexte kubectl) : touche, commande, exécutée ou tapée. */
+function journalAction(key, command, mode) {
+    if (state.settings?.journalEnabled === false) return;
+    send({ t: "journal", label: key.label, page: state.titles[state.page] ?? state.page, command, mode, sid: state.active });
+}
+
+function renderJournal(entries) {
+    const list = $("#journal-list");
+    if (!entries.length) {
+        list.replaceChildren(Object.assign(document.createElement("li"), { className: "hint", textContent: state.settings?.journalEnabled === false ? "journal désactivé" : "aucune action notée pour l'instant" }));
+        return;
+    }
+    list.replaceChildren(...entries.slice(0, 60).map((e) => {
+        const li = document.createElement("li");
+        if (e.prod) li.classList.add("prod");
+        const time = new Date(e.time);
+        li.append(
+            Object.assign(document.createElement("span"), { className: "j-time", textContent: `${time.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" })} ${time.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}` }),
+            Object.assign(document.createElement("strong"), { textContent: e.label, title: e.page }),
+            Object.assign(document.createElement("code"), { textContent: e.command, title: `${e.mode}${e.terminal ? ` · ${e.terminal}` : ""}` }),
+            Object.assign(document.createElement("span"), { className: "j-kube", textContent: e.prod ? `PROD ${e.kube ?? ""}` : e.kube ?? "" }));
+        return li;
+    }));
 }
 
 function pulse(el) {
@@ -1840,6 +1939,41 @@ function renderServer() {
     tok.textContent = "Renouveler le jeton";
 }
 
+// ---------- Mise à jour en un clic (Réglages › Serveur) ----------
+
+function applyUpdate(u) {
+    state.update = u;
+    const date = u.date ? new Date(u.date).toLocaleDateString("fr-FR") : "";
+    const version = u.version ? `Version ${u.version}${date ? ` du ${date}` : ""}` : "Version inconnue";
+    const status = u.error ? `vérification impossible : ${u.error}`
+        : u.behind ? `${u.behind} nouveauté(s) disponible(s) sur GitHub`
+        : u.checked ? "à jour" : "pas encore vérifiée";
+    const dirty = u.dirty?.length ? ` · fichiers modifiés ici : ${u.dirty.join(", ")} (mise à jour bloquée)` : "";
+    $("#update-state").textContent = `${version} · ${status}${dirty}`;
+    $("#update-state").classList.toggle("update-available", Boolean(u.behind));
+    const apply = $("#update-apply");
+    apply.hidden = !u.behind || Boolean(u.dirty?.length);
+    apply.classList.remove("armed");
+    apply.disabled = false;
+    apply.textContent = `Mettre à jour (${u.behind})`;
+    $("#update-check").disabled = false;
+    $("#update-check").textContent = "Vérifier";
+    // Pastille sur l'engrenage : nouvelle version disponible
+    $("#settings-open").classList.toggle("has-update", Boolean(u.behind));
+}
+
+/** Mettre à jour redémarre le deck : deuxième clic de confirmation. */
+function applyUpdateNow() {
+    const btn = $("#update-apply");
+    if (!btn.classList.contains("armed")) {
+        btn.classList.add("armed");
+        btn.textContent = "Confirmer (redémarre le deck)";
+        return;
+    }
+    btn.disabled = true;
+    send({ t: "update-apply" });
+}
+
 /** Redémarrer arrête les commandes en cours : deuxième clic de confirmation. */
 /** Renouveler le jeton : deuxième clic de confirmation (les autres navigateurs perdent l'accès). */
 function renewToken() {
@@ -1954,7 +2088,7 @@ function renderActions() {
             const what = a.kind === "url" ? a.url : a.command;
             const textBox = Object.assign(document.createElement("span"), { className: "act-text" });
             textBox.append(
-                Object.assign(document.createElement("strong"), { textContent: a.label }),
+                Object.assign(document.createElement("strong"), { textContent: a.label + (a.pinned ? " · sur l'accueil" : "") }),
                 Object.assign(document.createElement("code"), { textContent: what, title: a.description ?? what }));
             li.append(
                 Object.assign(document.createElement("span"), { className: `dot ${a.kind === "url" ? "url" : a.enter ? "run" : "type"}`, title: a.kind === "url" ? "lien" : a.enter ? "exécutée" : "à compléter" }),
@@ -1994,6 +2128,7 @@ function openActionForm(section, a = null) {
     $("#act-label").value = a?.label ?? "";
     $("#act-command").value = a?.command ?? "";
     $("#act-enter").checked = a?.enter ?? false;
+    $("#act-pinned").checked = a?.pinned ?? false;
     $("#act-url").value = a?.url ?? "";
     $("#act-icon").value = a?.icon ?? "";
     $("#act-description").value = a?.description ?? "";
@@ -2020,7 +2155,7 @@ function saveAction() {
     const kind = document.querySelector('input[name="act-kind"]:checked')?.value ?? "command";
     send({ t: "action-save", section: actEditing.section.id, action: {
         ...(actEditing.action ? { id: actEditing.action.id } : {}),
-        kind, label: $("#act-label").value, command: $("#act-command").value, enter: $("#act-enter").checked,
+        kind, label: $("#act-label").value, command: $("#act-command").value, enter: $("#act-enter").checked, pinned: $("#act-pinned").checked,
         url: $("#act-url").value, icon: $("#act-icon").value, description: $("#act-description").value
     } });
     actionSending("#act-save");
@@ -2260,6 +2395,10 @@ function openSettings() {
     $("#mission-form").hidden = true;
     renderActions();
     $("#act-section-form").hidden = true;
+    $("#set-journal-on").checked = state.settings.journalEnabled !== false;
+    $("#journal-clear").classList.remove("armed");
+    $("#journal-clear").textContent = "Effacer";
+    send({ t: "journal-list" });
     $("#act-form").hidden = true;
     renderServer();
     send({ t: "backup-list" });
@@ -2268,6 +2407,37 @@ function openSettings() {
     // Pas de focus sur un champ : le premier clic doit agir directement (sinon il ne sert qu'à quitter ce champ)
     document.activeElement?.blur();
     $(".settings-box").scrollTop = 0;
+}
+
+// ---------- Configuration complète (Réglages) : favoris, Mes actions, réglages et missions, signature ----------
+
+let pendingConfig = null;
+
+async function readConfigFile(file) {
+    if (!file) return;
+    try {
+        if (file.size > 900 * 1024) throw new Error("fichier trop gros (900 Ko au plus)");
+        const data = JSON.parse(await file.text());
+        if (data?.kind !== "configuration") throw new Error("ce n'est pas un export de configuration du deck");
+        pendingConfig = data;
+        const count = (items) => (items ?? []).reduce((n, f) => n + (f?.type === "group" ? count(f.items) : 1), 0);
+        $("#config-import-summary").textContent = `${file.name}${data.from ? ` (depuis ${data.from.machine}, ${data.from.platform})` : ""} : ${count(data.favorites)} favori(s), ${(data.actions ?? []).length} rubrique(s) d'actions, ${(data.settings?.missions ?? []).length} mission(s)${data.signature ? ", signature" : ""}`;
+        $("#cfg-part-signature").disabled = !data.signature;
+        $("#cfg-part-signature").checked = Boolean(data.signature);
+        $("#config-import-confirm").hidden = false;
+    } catch (err) {
+        toast(`import impossible : ${err.message.split("\n")[0]}`);
+    } finally {
+        $("#config-import-file").value = "";
+    }
+}
+
+function importConfig() {
+    if (!pendingConfig) return;
+    send({ t: "config-import", data: pendingConfig, parts: {
+        favorites: $("#cfg-part-favorites").checked, favoritesMode: $("#cfg-fav-mode").value,
+        actions: $("#cfg-part-actions").checked, settings: $("#cfg-part-settings").checked, signature: $("#cfg-part-signature").checked
+    } });
 }
 
 // ---------- Export / import des favoris (Réglages) ----------
@@ -2470,6 +2640,20 @@ $("#mission-cancel").addEventListener("click", () => { $("#mission-form").hidden
 $("#mission-form").addEventListener("keydown", (ev) => { if (ev.key === "Enter" && ev.target.tagName === "INPUT") { ev.preventDefault(); saveMission(); } });
 $("#set-worlds-reset").addEventListener("click", resetWorldOrder);
 $("#server-restart").addEventListener("click", restartServer);
+$("#update-check").addEventListener("click", () => {
+    $("#update-check").disabled = true;
+    $("#update-check").textContent = "Vérification…";
+    send({ t: "update-check" });
+});
+$("#update-apply").addEventListener("click", applyUpdateNow);
+$("#journal-export").addEventListener("click", () => send({ t: "journal-export" }));
+$("#journal-clear").addEventListener("click", () => {
+    const b = $("#journal-clear");
+    if (!b.classList.contains("armed")) { b.classList.add("armed"); b.textContent = "Confirmer l'effacement"; return; }
+    send({ t: "journal-clear" });
+    b.classList.remove("armed");
+    b.textContent = "Effacer";
+});
 $("#server-token").addEventListener("click", renewToken);
 $("#server-diagnostic").addEventListener("click", () => {
     $("#server-diagnostic").disabled = true;
@@ -2480,6 +2664,11 @@ $("#settings-cancel").addEventListener("click", closeSettings);
 $("#set-appearance").addEventListener("change", previewAppearance);
 $("#set-autohome-on").addEventListener("change", () => { toggleAutoHomeRow(); if ($("#set-autohome-on").checked) $("#set-autohome").focus(); });
 $("#fav-export").addEventListener("click", () => send({ t: "fav-export" }));
+$("#config-export").addEventListener("click", () => send({ t: "config-export" }));
+$("#config-import").addEventListener("click", () => $("#config-import-file").click());
+$("#config-import-file").addEventListener("change", (ev) => readConfigFile(ev.target.files[0]));
+$("#config-import-go").addEventListener("click", importConfig);
+$("#config-import-cancel").addEventListener("click", () => { pendingConfig = null; $("#config-import-confirm").hidden = true; });
 $("#fav-import").addEventListener("click", () => $("#fav-import-file").click());
 $("#fav-import-file").addEventListener("change", (ev) => readImportFile(ev.target.files[0]));
 $("#fav-import-merge").addEventListener("click", () => importFavorites("merge"));
@@ -2521,6 +2710,7 @@ $("#settings-form").addEventListener("submit", (ev) => {
         ...($("#set-autohome-on").checked ? { autoHomeSeconds: Number($("#set-autohome").value) } : {}),
         appearance: $("#set-appearance").value,
         missionTheme: $("#set-theme").value,
+        journalEnabled: $("#set-journal-on").checked,
         watermark: $("#set-watermark").value,
         ...(state.worlds ? { worlds: worldChoices(), worldOrder: worldOrderChoice() } : {})
     } });

@@ -62,3 +62,14 @@ test("catalogue : une rubrique de Mes actions devient un monde de l'accueil", ()
     assert.equal(key.text, "alias");
     assert.ok(deck.worlds.list.some((w) => w.id === id && !w.byDefault));
 });
+
+test("action épinglée : sur l'accueil en plus de sa rubrique, comptée dans les 18 touches", () => {
+    const a = fresh();
+    const id = a.saveSection({ label: "Perso" });
+    a.saveAction(id, { kind: "command", label: "alias", command: "alias", enter: true, pinned: true });
+    const deck = buildDeck(loadConfig(), [], {}, [], a.list());
+    const pinned = deck.pages.root.filter(Boolean).filter((k) => k.label === "alias");
+    assert.equal(pinned.length, 1, "touche sur l'accueil alors que la rubrique n'est pas affichée");
+    for (let i = 0; i < 6; i++) a.saveAction(id, { kind: "command", label: `p${i}`, command: "ls", pinned: true });
+    assert.throws(() => buildDeck(loadConfig(), [], {}, [], a.list()), /max 18/);
+});

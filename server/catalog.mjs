@@ -535,7 +535,9 @@ export function buildDeck(ctx, favorites = [], worlds = {}, worldOrder = [], use
     const { cfg } = ctx;
     const { shortcuts: SHORTCUTS, sections: SECTIONS, clear } = buildCatalog(ctx);
     SECTIONS.favoris = favoritesSection(favorites);
-    // Mes actions : une rubrique par entrée, touches commande (exécutée / à compléter) ou lien
+    // Mes actions : une rubrique par entrée, touches commande (exécutée / à compléter) ou lien ;
+    // les actions épinglées vont aussi sur l'accueil (comptées dans les 18 touches)
+    const pinnedKeys = [];
     for (const s of userSections) {
         SECTIONS[s.id] = {
             label: s.label, sym: s.label.slice(0, 3), icon: iconFile(s.icon) ? s.icon : "lucide-star", color: s.color, terminal: true,
@@ -545,7 +547,9 @@ export function buildDeck(ctx, favorites = [], worlds = {}, worldOrder = [], use
                 if (!key) return null;
                 // Sans icône choisie : globe pour un lien, terminal pour une commande
                 const icon = a.icon && iconFile(a.icon) ? a.icon : a.kind === "url" ? "lucide-globe" : "lucide-square-terminal";
-                return { ...key, icon, ...(a.description ? { desc: a.description } : {}), userAction: a.id };
+                const full = { ...key, icon, ...(a.description ? { desc: a.description } : {}), userAction: a.id };
+                if (a.pinned) pinnedKeys.push(full);
+                return full;
             })
         };
     }
@@ -590,7 +594,7 @@ export function buildDeck(ctx, favorites = [], worlds = {}, worldOrder = [], use
     });
     // clear sur l'accueil aussi (bord droit), comme dans les rubriques qui tapent dans le terminal
     const rootClear = cfg.clearKey ? 1 : 0;
-    const total = sections.length + shortcuts.length + rootClear;
+    const total = sections.length + shortcuts.length + pinnedKeys.length + rootClear;
     if (total > ROOT_MAX) throw new Error(`${total} touches demandées sur la page d'accueil (max ${ROOT_MAX}). Retire des rubriques ou des raccourcis.`);
 
     const layouts = {};
@@ -616,6 +620,7 @@ export function buildDeck(ctx, favorites = [], worlds = {}, worldOrder = [], use
         }
     }
     for (const s of shortcuts) rootKeys.push(SHORTCUTS[s]);
+    rootKeys.push(...pinnedKeys);
     if (rootClear) rootKeys.push(clear);
     layouts.root = layout(rootKeys);
 
@@ -638,5 +643,5 @@ export function buildDeck(ctx, favorites = [], worlds = {}, worldOrder = [], use
             return { id, ...visible };
         });
     }
-    return { pages, titles, parents, index, skipped, worlds: { list: worldList, shortcuts: shortcuts.length + rootClear, max: ROOT_MAX, defaultOrder: defaultOrder.filter((s) => worldList.some((w) => w.id === s)) } };
+    return { pages, titles, parents, index, skipped, worlds: { list: worldList, shortcuts: shortcuts.length + pinnedKeys.length + rootClear, max: ROOT_MAX, defaultOrder: defaultOrder.filter((s) => worldList.some((w) => w.id === s)) } };
 }

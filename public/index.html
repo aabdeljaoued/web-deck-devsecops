@@ -279,6 +279,7 @@
                         <input id="act-icon" type="text" maxlength="60" placeholder="lucide-rocket" spellcheck="false">
                     </label>
                     <label>Infobulle <input id="act-description" type="text" maxlength="120" placeholder="ce que fait l'action, en quelques mots"></label>
+                    <label class="settings-check"><input id="act-pinned" type="checkbox"> Épingler sur l'accueil (en plus de sa rubrique ; dans la limite des 18 touches)</label>
                     <span id="act-error" class="mission-error" role="alert" hidden></span>
                     <span class="settings-actions">
                         <button type="button" id="act-save" class="primary">Enregistrer l'action</button>
@@ -303,8 +304,25 @@
                 <label id="set-autohome-row" class="settings-row">Délai <input id="set-autohome" type="number" min="5" max="3600" step="5" required> secondes</label>
             </fieldset>
             <fieldset class="settings-group">
+                <legend>Journal des actions</legend>
+                <label class="settings-check"><input id="set-journal-on" type="checkbox"> Noter les actions lancées depuis le deck</label>
+                <span class="hint">Date, touche, commande (exécutée ou tapée), terminal, contexte kubectl (en rouge : production). Les commandes tapées à la main dans le terminal et les valeurs du coffre ne sont pas notées. Fichier <code>.deck-journal.jsonl</code>, hors Git, 5 000 entrées gardées.</span>
+                <ul id="journal-list" class="journal-list"></ul>
+                <div class="settings-actions">
+                    <button type="button" id="journal-export">Exporter (CSV)…</button>
+                    <button type="button" id="journal-clear">Effacer</button>
+                </div>
+            </fieldset>
+            <fieldset class="settings-group">
                 <legend>Serveur</legend>
                 <span id="server-mode" class="hint"></span>
+                <div class="update-row">
+                    <span id="update-state" class="hint"></span>
+                    <span class="settings-actions">
+                        <button type="button" id="update-check" title="Compare avec la dernière version sur GitHub">Vérifier</button>
+                        <button type="button" id="update-apply" class="primary" hidden title="git pull, dépendances si besoin, puis redémarrage (les commandes en cours s'arrêtent)">Mettre à jour</button>
+                    </span>
+                </div>
                 <div class="settings-actions">
                     <button type="button" id="server-restart" title="Les commandes en cours dans les terminaux s'arrêtent ; les terminaux sont rouverts">Redémarrer le deck</button>
                     <button type="button" id="server-token" title="Nouveau jeton d'accès : l'ancien (adresses ?token=…, autres navigateurs) ne fonctionne plus">Renouveler le jeton</button>
@@ -316,6 +334,28 @@
                 <legend>Sauvegardes</legend>
                 <span class="hint">Copies automatiques avant chaque modification (au plus une toutes les 10 min, toujours avant un remplacement), 10 gardées par fichier dans <code>.deck-backups/</code>, hors Git. Restaurer sauvegarde d'abord la version actuelle.</span>
                 <div id="backup-rows" class="backup-rows"></div>
+            </fieldset>
+            <fieldset class="settings-group">
+                <legend>Configuration complète</legend>
+                <span class="hint">Pour retrouver toute ta configuration sur une autre machine en un fichier : favoris, Mes actions, réglages et missions, signature. Le coffre s'exporte à part (rubrique Coffre ci-dessous). Le fichier contient tes adresses et commandes de mission : garde-le hors des dépôts.</span>
+                <div class="settings-actions">
+                    <button type="button" id="config-export">Exporter…</button>
+                    <button type="button" id="config-import">Importer…</button>
+                    <input id="config-import-file" type="file" accept=".json,application/json" hidden>
+                </div>
+                <div id="config-import-confirm" class="fav-import-confirm" hidden>
+                    <span id="config-import-summary"></span>
+                    <label class="settings-check"><input id="cfg-part-favorites" type="checkbox" checked> Favoris
+                        <select id="cfg-fav-mode"><option value="merge">fusionner</option><option value="replace">remplacer</option></select></label>
+                    <label class="settings-check"><input id="cfg-part-actions" type="checkbox" checked> Mes actions (remplacées)</label>
+                    <label class="settings-check"><input id="cfg-part-settings" type="checkbox" checked> Réglages et missions (remplacés)</label>
+                    <label class="settings-check"><input id="cfg-part-signature" type="checkbox" checked> Signature</label>
+                    <span class="hint">Chaque fichier remplacé est sauvegardé avant (Réglages › Sauvegardes).</span>
+                    <span class="settings-actions">
+                        <button type="button" id="config-import-go" class="primary">Importer</button>
+                        <button type="button" id="config-import-cancel">Annuler</button>
+                    </span>
+                </div>
             </fieldset>
             <fieldset class="settings-group">
                 <legend>Favoris</legend>

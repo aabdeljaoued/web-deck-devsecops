@@ -507,6 +507,14 @@ function press(key, el) {
     if (key.unix && !unixReady()) return toast(`${UNIX_HINT} (terminal actif : ${state.terms.size ? "pas de session ssh / wsl" : "aucun"})`);
     // Outil absent : la touche propose son installation au lieu de lancer une commande qui échouerait
     if (key.needs && localTool(key) && state.tools.missing.has(key.needs)) {
+        // Gestionnaire de paquets absent (Scoop sous Windows) : on propose d'abord de l'installer
+        const manager = state.tools.manager;
+        if (manager && !manager.present) {
+            const setup = typeof manager.setup === "string" ? manager.setup : manager.setup[activeKind()] ?? manager.setup.powershell;
+            send({ t: "tools-check", watch: true });
+            toast(`${key.needs} s'installe avec ${manager.name}, absent de ce poste : commande d'installation de ${manager.name} tapée (sans droits admin), valide avec Entrée`, "ok");
+            return typeInTerminal(setup);
+        }
         const install = state.tools.install[key.needs];
         send({ t: "tools-check", watch: true });   // le serveur surveille l'installation : la touche se rallume à la fin
         if (!install) return toast(`${key.needs} n'est pas installé : installe-le avec le gestionnaire de paquets du système`);
@@ -562,7 +570,10 @@ function keyTipContent(key) {
     let how = null;
     if (key.prodGuard && prodContext()) how = `PRODUCTION (${prodContext()}) : deuxième clic pour confirmer`;
     else if (key.unix && !unixReady()) how = UNIX_HINT;
-    else if (key.needs && localTool(key) && state.tools.missing.has(key.needs)) how = `${key.needs} n'est pas installé : clic = commande d'installation`;
+    else if (key.needs && localTool(key) && state.tools.missing.has(key.needs)) {
+        const m = state.tools.manager;
+        how = m && !m.present ? `${key.needs} n'est pas installé, ${m.name} non plus : clic = installer ${m.name} d'abord` : `${key.needs} n'est pas installé : clic = commande d'installation`;
+    }
     else if (key.type === "text" && cmd != null) how = key.enter ? "Exécutée tout de suite" : cmd.includes("{}") ? "À compléter : le texte sélectionné va à la place de ‹…›" : "À compléter (+ texte sélectionné), Entrée pour lancer";
     else if (key.type === "web") how = "Ouvre un onglet";
     if (!desc && !cmd) return null;
@@ -1765,7 +1776,7 @@ function markRemoteTabs() {
 // ---------- Outils non installés ----------
 
 function applyTools(view) {
-    state.tools = { missing: new Set(view.missing ?? []), install: view.install ?? {} };
+    state.tools = { missing: new Set(view.missing ?? []), install: view.install ?? {}, manager: view.manager ?? null };
     if (state.pages[state.page]) render();
 }
 // Retour sur l'onglet (après un brew install dans un autre terminal, par exemple) : nouvelle vérification

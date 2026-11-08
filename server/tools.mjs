@@ -28,10 +28,28 @@ const INSTALL = {
     htop: { mac: "brew install htop", windows: null }
 };
 
-/** Outil à vérifier pour une touche : celui qu'elle déclare (needs), sinon le premier mot de sa commande. */
+/**
+ * Outil à vérifier pour une touche : celui qu'elle déclare (needs), sinon le premier mot de sa commande.
+ * Seulement s'il a une commande d'installation sur ce système : ansible-lint ou htop sous Windows servent
+ * sur un serveur Linux distant (ssh), ils ne sont pas vérifiés sur le poste.
+ */
 export const neededTool = (key) => {
     const tool = key?.needs ?? key?.tool;
-    return tool && tool in INSTALL ? tool : null;
+    return tool && INSTALL[tool]?.[platform] ? tool : null;
+};
+
+/** Gestionnaire de paquets utilisé par les commandes d'installation, et comment l'installer s'il manque. */
+const MANAGER = {
+    mac: { name: "brew", setup: '/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"' },
+    // Scoop : installation par l'utilisateur, sans droits administrateur (https://scoop.sh)
+    windows: {
+        name: "scoop",
+        setup: {
+            powershell: "Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser; Invoke-RestMethod -Uri https://get.scoop.sh | Invoke-Expression",
+            posix: 'powershell -NoProfile -Command "Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser; Invoke-RestMethod -Uri https://get.scoop.sh | Invoke-Expression"',
+            cmd: 'powershell -NoProfile -Command "Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser; Invoke-RestMethod -Uri https://get.scoop.sh | Invoke-Expression"'
+        }
+    }
 };
 
 /** Commande d'installation proposée sur ce système (null si aucune). */
@@ -50,6 +68,7 @@ export class Tools {
     constructor() {
         this.dirs = null;
         this.missing = [];
+        this.manager = MANAGER[platform] ? { name: MANAGER[platform].name, present: true, setup: MANAGER[platform].setup } : null;
     }
 
     async searchDirs() {
@@ -80,13 +99,15 @@ export class Tools {
     async check(tools) {
         const missing = [];
         for (const tool of [...new Set(tools)].sort()) if (!(await this.installed(tool))) missing.push(tool);
-        const changed = missing.join() !== this.missing.join();
+        const managerPresent = this.manager ? await this.installed(this.manager.name) : true;
+        const changed = missing.join() !== this.missing.join() || (this.manager && managerPresent !== this.manager.present);
         this.missing = missing;
+        if (this.manager) this.manager.present = managerPresent;
         return changed;
     }
 
     /** État envoyé aux pages : outils manquants et commande d'installation de chacun. */
     view() {
-        return { missing: this.missing, install: Object.fromEntries(this.missing.map((t) => [t, installCommand(t)])) };
+        return { missing: this.missing, install: Object.fromEntries(this.missing.map((t) => [t, installCommand(t)])), manager: this.manager };
     }
 }

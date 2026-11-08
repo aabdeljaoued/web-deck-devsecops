@@ -69,17 +69,15 @@ export async function runDiagnostic({ ctx, remote, tools, backups, supervisor, l
 
     checks.push(await check("Outils installables", async () => {
         await tools.check(deckTools());
-        const { missing, install } = tools.view();
+        const { missing } = tools.view();
         const manager = platform === "mac" ? "brew" : platform === "windows" ? "scoop" : null;
         const managerOk = !manager || (await tools.installed(manager));
-        const noCmd = missing.filter((t) => !install[t]);
         return {
-            ok: managerOk,
-            warn: missing.length > 0,
+            ok: true,
+            warn: missing.length > 0 || !managerOk,
             detail: [
                 missing.length ? `à installer : ${missing.join(", ")}` : "tous les outils des touches sont installés",
-                manager ? `${manager} ${managerOk ? "présent" : "introuvable : les commandes d'installation proposées ne marcheront pas"}` : "",
-                noCmd.length ? `sans commande proposée ici : ${noCmd.join(", ")}` : ""
+                manager ? `${manager} ${managerOk ? "présent" : "introuvable : un clic sur une touche « à installer » propose de l'installer (sans droits admin)"}` : ""
             ].filter(Boolean).join(" · ")
         };
     }));

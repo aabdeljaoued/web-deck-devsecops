@@ -21,5 +21,8 @@
         "node-pty": "^1.1.0",
         "simple-icons": "^16.36.0",
         "ws": "^8.22.1"
+    },
+    "allowScripts": {
+        "node-pty": true
     }
 }

@@ -266,6 +266,9 @@ function handle(msg) {
             closeSettings();
             toast("redémarrage du deck… (reconnexion automatique)", "ok");
             break;
+        case "diagnostic":
+            renderDiagnostic(msg.checks);
+            break;
         case "backup-list":
             renderBackups(msg.backups);
             break;
@@ -327,6 +330,8 @@ function handle(msg) {
         }
         case "status":
             state.status[msg.id] = msg.state;
+            // Contexte kubectl passé en (ou sorti de) production : touches protégées re-dessinées
+            if (msg.id === "kube" && (state.pages[state.page] ?? []).some((k) => k?.prodGuard)) render();
             document.querySelectorAll(`[data-status="${msg.id}"]`).forEach((el) => el.replaceWith(statusKey(el.dataset.id, msg.id)));
             break;
         case "ran":
@@ -401,6 +406,11 @@ function keyElement(key) {
     label.textContent = key.label;
     el.append(sym, label);
 
+    if (key.prodGuard && prodContext()) {
+        el.classList.add("prod-guard");
+        if (prodArmed?.id === key.id) el.classList.add("armed");
+        el.append(Object.assign(document.createElement("span"), { className: "missing-tag prod-tag", textContent: prodArmed?.id === key.id ? "confirmer ?" : "PROD" }));
+    }
     if (key.unix && !unixReady()) {
         el.classList.add("unavailable");
         el.append(Object.assign(document.createElement("span"), { className: "missing-tag", textContent: "ssh requis" }));
@@ -490,6 +500,9 @@ function press(key, el) {
     pulse(el);
     // Action dans une rubrique : (re)lance le compte à rebours du retour à l'accueil
     if (key.type !== "back" && state.page !== "root" && (key.type !== "folder" || isFavPage(key.page))) armAutoHome();
+    // Garde-fou production : sur un contexte kubectl de prod, deuxième clic (dans les 5 s) pour confirmer
+    if (key.prodGuard && prodContext() && prodArmed?.id !== key.id) return armProdKey(key);
+    if (key.prodGuard) disarmProdKey(true);
     // Rubrique Linux / macOS (Ansible) sur un poste Windows : seulement dans un terminal connecté en ssh / wsl
     if (key.unix && !unixReady()) return toast(`${UNIX_HINT} (terminal actif : ${state.terms.size ? "pas de session ssh / wsl" : "aucun"})`);
     // Outil absent : la touche propose son installation au lieu de lancer une commande qui échouerait
@@ -547,7 +560,8 @@ function keyTipContent(key) {
         : null);
     const cmd = key.type === "text" ? commandFor(key) : key.type === "web" ? key.url : null;
     let how = null;
-    if (key.unix && !unixReady()) how = UNIX_HINT;
+    if (key.prodGuard && prodContext()) how = `PRODUCTION (${prodContext()}) : deuxième clic pour confirmer`;
+    else if (key.unix && !unixReady()) how = UNIX_HINT;
     else if (key.needs && localTool(key) && state.tools.missing.has(key.needs)) how = `${key.needs} n'est pas installé : clic = commande d'installation`;
     else if (key.type === "text" && cmd != null) how = key.enter ? "Exécutée tout de suite" : cmd.includes("{}") ? "À compléter : le texte sélectionné va à la place de ‹…›" : "À compléter (+ texte sélectionné), Entrée pour lancer";
     else if (key.type === "web") how = "Ouvre un onglet";
@@ -1699,6 +1713,30 @@ function tickAutoHome() {
 
 // ---------- Réglages (espace admin) ----------
 
+// ---------- Garde-fou production : touches qui agissent sur le cluster, contexte kubectl de prod ----------
+
+let prodArmed = null;   // { id, timer } : touche armée, en attente du deuxième clic
+
+/** « contexte / namespace » si le voyant kubectl est en production (prodPattern de config.jsonc), sinon null. */
+function prodContext() {
+    const k = state.status.kube;
+    return k?.prod ? `${k.context} / ${k.namespace}` : null;
+}
+
+function armProdKey(key) {
+    disarmProdKey(false);
+    prodArmed = { id: key.id, timer: setTimeout(() => disarmProdKey(true), 5000) };
+    toast(`PRODUCTION « ${prodContext()} » : clique à nouveau sur « ${key.label} » pour confirmer`);
+    render();
+}
+
+function disarmProdKey(redraw) {
+    if (!prodArmed) return;
+    clearTimeout(prodArmed.timer);
+    prodArmed = null;
+    if (redraw) render();
+}
+
 // ---------- Rubriques Linux / macOS (Ansible) sur un poste Windows : actives via ssh / wsl ----------
 
 const UNIX_HINT = "Demande Linux ou macOS : connecte le terminal actif en ssh (ou wsl)";
@@ -1755,6 +1793,25 @@ function restartServer() {
         return;
     }
     send({ t: "restart" });
+}
+
+/** Résultats du diagnostic : une ligne par vérification (OK, à surveiller, échec). */
+function renderDiagnostic(checks) {
+    const list = $("#diag-results");
+    list.hidden = false;
+    list.replaceChildren(...checks.map((c) => {
+        const li = Object.assign(document.createElement("li"), { className: c.ok ? (c.warn ? "warn" : "ok") : "ko" });
+        li.append(
+            Object.assign(document.createElement("span"), { className: "diag-mark", textContent: c.ok ? (c.warn ? "!" : "✓") : "✗" }),
+            Object.assign(document.createElement("strong"), { textContent: c.name }),
+            Object.assign(document.createElement("span"), { className: "diag-detail", textContent: c.detail })
+        );
+        return li;
+    }));
+    const failed = checks.filter((c) => !c.ok).length;
+    $("#server-diagnostic").disabled = false;
+    $("#server-diagnostic").textContent = "Diagnostic";
+    toast(failed ? `diagnostic : ${failed} problème(s), voir Réglages › Serveur` : "diagnostic : tout fonctionne", failed ? "ko" : "ok");
 }
 
 const BACKUP_LABELS = { "favoris.json": "Favoris", "settings.json": "Réglages", "vault.enc": "Coffre (chiffré)" };
@@ -2018,6 +2075,11 @@ $("#favform").addEventListener("submit", submitFav);
 $("#vault-open").addEventListener("click", openVault);
 $("#settings-open").addEventListener("click", openSettings);
 $("#server-restart").addEventListener("click", restartServer);
+$("#server-diagnostic").addEventListener("click", () => {
+    $("#server-diagnostic").disabled = true;
+    $("#server-diagnostic").textContent = "Diagnostic…";
+    send({ t: "diagnostic" });
+});
 $("#settings-cancel").addEventListener("click", closeSettings);
 $("#set-appearance").addEventListener("change", previewAppearance);
 $("#set-autohome-on").addEventListener("change", () => { toggleAutoHomeRow(); if ($("#set-autohome-on").checked) $("#set-autohome").focus(); });

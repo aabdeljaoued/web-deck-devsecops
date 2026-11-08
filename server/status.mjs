@@ -91,7 +91,11 @@ export class StatusHub extends EventEmitter {
                 bg: isProd ? "#C62828" : "#326CE5",
                 title: isProd ? "⚠ PROD" : "K8S",
                 lines: contextLines(context),
-                footer: `ns: ${namespace || "default"}`
+                footer: `ns: ${namespace || "default"}`,
+                // Garde-fou : les touches marquées prodGuard demandent une confirmation sur ce contexte
+                prod: isProd,
+                context,
+                namespace: namespace || "default"
             });
         } catch {
             this.publish("kube", { bg: "#455A64", title: "K8S", lines: ["kubectl", "erreur"] });

@@ -22,7 +22,7 @@ function tools() {
         : { write: ["xclip", ["-selection", "clipboard"]], read: ["xclip", ["-selection", "clipboard", "-o"]] };
 }
 
-function write(text) {
+export function write(text) {
     const [cmd, args] = tools().write;
     return new Promise((resolve, reject) => {
         const child = spawn(cmd, args, { stdio: ["pipe", "ignore", "ignore"], windowsHide: true });
@@ -32,7 +32,7 @@ function write(text) {
     });
 }
 
-function read() {
+export function read() {
     const [cmd, args] = tools().read;
     return new Promise((resolve) => {
         execFile(cmd, args, { windowsHide: true, maxBuffer: 1024 * 1024 }, (err, out) => resolve(err ? null : String(out)));

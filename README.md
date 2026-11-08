@@ -132,6 +132,10 @@ Les touches d'un outil installable absent (stern, popeye, dive, gitleaks, delta,
 
 Avant chaque modification de `favoris.json`, `vault.enc` ou `settings.json`, la version actuelle est copiée dans `.deck-backups/` (exclu de Git, lisible par l'utilisateur seul) : au plus une copie toutes les 10 minutes, toujours avant une opération destructrice (Remplacer tout, restauration), 10 copies gardées par fichier. **Réglages › Sauvegardes** les liste et permet d'en **restaurer** une (deux clics) ; la version actuelle est d'abord sauvegardée, donc une restauration se rattrape. Le coffre restauré est verrouillé : il s'ouvre avec le mot de passe maître de l'époque.
 
+### Garde-fou production
+
+Quand le voyant kubectl est en **production** (contexte ou namespace qui correspond à `prodPattern` de `config.jsonc`, par défaut `prod|prd`), les touches qui agissent sur le cluster (**exec -it**, **helm upgrade -i**, **rollback**, **uninstall**) sont entourées de rouge avec la mention **PROD** : le premier clic affiche le contexte et arme la touche, le **deuxième clic** (dans les 5 s) la lance.
+
 ### Rubriques activées
 
 Dans **Réglages › Rubriques**, une case par monde (VS Code, Git, K8s, Docker…) l'affiche ou le masque sur l'accueil ; masqué, il disparaît aussi de la palette ⌘K. Les rubriques du catalogue absentes de `config.jsonc` (ex. **Sécurité**, **Vault**) apparaissent décochées et peuvent être activées sans éditer le fichier. Un compteur indique les touches de l'accueil (18 au plus, raccourcis compris) ; un choix qui dépasse est refusé sans rien modifier.
@@ -240,6 +244,15 @@ Le terminal donne un shell complet : l'accès est verrouillé.
 - L'en-tête `Host` est vérifié (protection contre le DNS rebinding), ainsi que l'`Origin` des WebSockets (une autre page ouverte dans le navigateur ne peut pas s'y connecter).
 - Le navigateur n'envoie que l'identifiant d'une touche `run` : le serveur ne lance que les commandes de son catalogue.
 - La page interdit l'affichage dans une iframe et applique une Content-Security-Policy stricte.
+
+## Vérifier sous Windows
+
+1. **Réglages › Serveur › Diagnostic** : presse-papiers, détection ssh / wsl, outils (Scoop), sauvegardes, shells ; chaque ligne dit ce qui fonctionne ou non.
+2. **Service** : double-clic sur `service\installer.cmd` ; fermer toutes les fenêtres, puis vérifier que le deck répond toujours ; **Réglages › Serveur** doit afficher « Lancé en service Windows ». Redémarrer la session : le deck doit démarrer seul.
+3. **Redémarrer le deck** (Réglages › Serveur) : la page se reconnecte en quelques secondes.
+4. **Ansible** : touches grisées ; `ssh` vers une machine Linux dans le terminal → badge **SSH** sur l'onglet, touches actives ; `exit` → grisées à nouveau.
+5. **Coffre › Copier** : coller ailleurs (`Ctrl+V`), puis après 30 s le presse-papiers est vide.
+6. **Outils à installer** : clic sur une touche grisée → `scoop install …` tapé ; après l'installation, la touche se rallume.
 
 ## Dépannage
 

@@ -15,6 +15,7 @@ import { WebSocketServer } from "ws";
 import { buildDeck, ICONS } from "./catalog.mjs";
 import { Backups } from "./backups.mjs";
 import { copyTemporarily } from "./clipboard.mjs";
+import { runDiagnostic } from "./diagnostic.mjs";
 import { Favorites } from "./favorites.mjs";
 import { Vault } from "./vault.mjs";
 import { Settings } from "./settings.mjs";
@@ -295,6 +296,9 @@ wss.on("connection", (ws) => {
                 // Sauvegardes automatiques (Réglages) : liste et restauration (la version actuelle est sauvegardée avant)
                 // Redémarrage demandé depuis les Réglages (terminaux rouverts au démarrage suivant)
                 case "restart": restart(); break;
+                case "diagnostic":
+                    reply({ t: "diagnostic", checks: await runDiagnostic({ ctx, remote, tools, backups, supervisor: SUPERVISOR, localUnix: LOCAL_UNIX, deckTools }) });
+                    break;
                 // Signature en image : PNG uniquement (vérifié à ses premiers octets), 600 Ko au plus
                 case "signature-upload": {
                     const data = Buffer.from(String(msg.data ?? ""), "base64");

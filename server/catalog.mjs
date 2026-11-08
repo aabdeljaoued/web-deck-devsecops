@@ -103,6 +103,12 @@ function folder(label, sym, page, color, icon) {
     return { type: "folder", label, sym, color, page, ...(icon ? { icon } : {}) };
 }
 
+/**
+ * Touche qui agit sur le cluster courant : si le voyant kubectl est en PRODUCTION (prodPattern de config.jsonc),
+ * la page demande une confirmation (deuxième clic) en affichant le contexte et le namespace.
+ */
+const prodGuard = (key) => key && { ...key, prodGuard: true };
+
 /** Logos utilisés par le catalogue : le serveur ne sert que ceux-là. */
 export const ICONS = new Set();
 
@@ -194,7 +200,7 @@ function buildCatalog(ctx) {
             textIcon("stern", "st", "stern {} --since 15m", false, C.k8s, "lucide-logs"),
             text("describe", "🔍", "kubectl describe pod ", false, C.k8s),
             // {} = emplacement du pod : texte sélectionné, sinon position du curseur
-            text("exec -it", ">_", "kubectl exec -it {} -- sh", false, C.k8s),
+            prodGuard(text("exec -it", ">_", "kubectl exec -it {} -- sh", false, C.k8s)),
             text("RBAC can-i", "🛂", "kubectl auth can-i --list", true, C.sec),
             text("NetPol", "🧱", "kubectl get networkpolicies", true, C.sec),
             // popeye : audit du cluster (ressources mal configurées, inutilisées...) sur le namespace courant
@@ -271,7 +277,6 @@ function buildCatalog(ctx) {
             text("cleanup", "♻", { windows: "scoop cleanup *", mac: "brew cleanup", linux: "brew cleanup" }, false, C.brew),
             text("uninstall", "🗑", { windows: "scoop uninstall ", mac: "brew uninstall ", linux: "brew uninstall " }, false, C.danger)
         ]},
-        // Ansible ne tourne pas nativement sous Windows (WSL seulement) : rubrique masquée sous Windows
         // Ansible ne s'exécute que sous Linux / macOS (pas de nœud de contrôle Windows) : unix = touches actives
         // si le poste est Linux / macOS, sinon seulement quand le terminal actif est connecté en ssh (ou wsl).
         ansible: { label: "Ansible", sym: "A", icon: "ansible", color: C.ansible, terminal: true, unix: true, keys: [
@@ -317,15 +322,15 @@ function buildCatalog(ctx) {
             text("list -A", "⎈", "helm list -A", true, C.helm),
             text("repo update", "⟳", "helm repo update", true, C.helm),
             text("search repo", "🔍", "helm search repo ", false, C.helm),
-            text("upgrade -i", "⬆", "helm upgrade --install ", false, C.helm),
+            prodGuard(text("upgrade -i", "⬆", "helm upgrade --install ", false, C.helm)),
             text("status", "ℹ", "helm status ", false, C.helm),
             text("history", "🕘", "helm history ", false, C.helm),
             text("get values", "📄", "helm get values ", false, C.helm),
             text("show values", "📋", "helm show values ", false, C.helm),
             text("lint", "✔", "helm lint .", true, C.helm),
             text("template", "🧩", "helm template .", true, C.helm),
-            text("rollback", "↩", "helm rollback ", false, C.danger),
-            text("uninstall", "🗑", "helm uninstall ", false, C.danger),
+            prodGuard(text("rollback", "↩", "helm rollback ", false, C.danger)),
+            prodGuard(text("uninstall", "🗑", "helm uninstall ", false, C.danger)),
             web("Artifact Hub", "🔎", "https://artifacthub.io")
         ]},
         // $HOME fonctionne dans PowerShell, Git Bash et zsh ; cmd utilise %USERPROFILE%

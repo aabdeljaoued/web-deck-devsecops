@@ -50,6 +50,28 @@ export class RemoteWatch extends EventEmitter {
         });
     }
 
+    /** Relevé ponctuel des processus (diagnostic) : [{ pid, ppid, name }], ou une erreur. */
+    snapshot() {
+        const parse = (out, re) => String(out).split(/\r?\n/).map((l) => re.exec(l)).filter(Boolean)
+            .map(([, pid, ppid, name]) => ({ pid: +pid, ppid: +ppid, name: base(name) }));
+        return new Promise((resolve, reject) => {
+            if (platform === "windows") {
+                execFile("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command",
+                    'Get-CimInstance Win32_Process | ForEach-Object { "$($_.ProcessId) $($_.ParentProcessId) $($_.Name)" }'],
+                { windowsHide: true, maxBuffer: 8 * 1024 * 1024, timeout: 20000 },
+                (err, out) => (err ? reject(err) : resolve(parse(out, /^(\d+)\s+(\d+)\s+(.+)$/))));
+            } else {
+                execFile("ps", ["-A", "-o", "pid=,ppid=,comm="], { maxBuffer: 8 * 1024 * 1024 },
+                    (err, out) => (err ? reject(err) : resolve(parse(out, /^\s*(\d+)\s+(\d+)\s+(.+)$/))));
+            }
+        });
+    }
+
+    /** Surveillance en cours (Windows : le PowerShell en tâche de fond tourne-t-il ?). */
+    get watching() {
+        return platform === "windows" ? Boolean(this.ps) : Boolean(this.timer);
+    }
+
     /** Un seul PowerShell pour toute la durée du serveur (lancer powershell toutes les 2,5 s coûterait cher). */
     startWindows() {
         const script = `$owner = ${process.pid}

@@ -67,6 +67,8 @@ Dans **Réglages** (engrenage en haut à droite), rubrique **Apparence** :
 - **Mode** : **Sombre** (défaut), **Clair**, ou **Système** (suit le réglage de macOS / Windows, et change avec lui). En mode clair, toute l'interface passe en clair, terminal compris ; les touches deviennent des tuiles claires avec l'icône et le halo de leur rubrique.
 - **Thème de mission** : **Allianz**, **BNP Paribas**, **Estreem**, **La Poste** (ou aucun), dans les deux modes. Le thème colore l'en-tête, la barre des touches, le liseré et les éléments actifs (onglet, terminal sélectionné, boutons) ; les touches gardent leurs couleurs par outil pour rester repérables.
 
+- **Signature des terminaux** : un texte (ton nom, par exemple) affiché en filigrane gris et flou au fond de chaque terminal, derrière le texte ; vide = aucune. **Image de signature…** utilise à la place une image PNG sur fond transparent (signature manuscrite), peinte dans le même gris ; elle est enregistrée dans `signature.png` (exclu de Git), **Retirer l'image** revient au texte.
+
 Le choix s'affiche en aperçu immédiat et n'est gardé qu'avec **Enregistrer** (Annuler revient à l'apparence d'avant). Il est enregistré côté serveur dans `settings.json`, donc le même dans tous les navigateurs.
 
 | Thème | Couleurs | Source |
@@ -98,12 +100,12 @@ Le bouton **Coffre** (en haut à droite, ou « coffre » dans la palette `⌘K`)
 - **Création** : au premier usage, choisir un **mot de passe maître** (8 caractères minimum). **Mot de passe oublié = contenu perdu** : il n'existe aucune récupération.
 - **Notes** : liste à gauche, éditeur à droite, enregistrement automatique pendant la frappe, recherche. Une **couleur** par note (pastilles sous le titre, ou couleur libre) : bandeau dans la liste et en haut de l'éditeur ; chiffrée avec le reste du coffre.
 - **Secrets** : nom, identifiant, valeur (bouton **Générer** : 24 caractères aléatoires), adresse, note. La liste n'affiche que les noms, valeurs masquées :
-  - **Copier** : copie la valeur, effacée du presse-papiers après 30 s ;
+  - **Copier** : le serveur copie la valeur dans le presse-papiers du système (`pbcopy` sous macOS, PowerShell sous Windows, `wl-copy` / `xclip` sous Linux) sans qu'elle passe par la page, puis l'efface au bout de 30 s si le presse-papiers la contient toujours ;
   - **Taper ▸** : écrit la valeur dans le terminal actif, sans Entrée, **côté serveur** (elle ne passe pas par la page). À utiliser devant une demande de mot de passe (saisie masquée) : devant une invite de commande ordinaire, la valeur s'afficherait en clair et irait dans l'historique du shell après Entrée ;
   - **Afficher** : montre la valeur 15 s.
 - **Verrouillage** : bouton **Verrouiller**, automatiquement après 15 min d'inactivité, et à l'arrêt du serveur. Verrouillé, plus rien du contenu n'est gardé dans la page ni en mémoire du serveur.
 
-Sécurité : fichier `vault.enc` à la racine du projet, **exclu de Git**, lisible par l'utilisateur seul, chiffré en **AES-256-GCM** avec une clé dérivée du mot de passe maître par **scrypt** ; chaque échec de mot de passe ralentit la tentative suivante (jusqu'à 5 s). Les valeurs des secrets ne quittent le serveur que sur demande explicite (Copier, Afficher). Pour sauvegarder le coffre, copier `vault.enc` (il reste chiffré).
+Sécurité : fichier `vault.enc` à la racine du projet, **exclu de Git**, lisible par l'utilisateur seul, chiffré en **AES-256-GCM** avec une clé dérivée du mot de passe maître par **scrypt** ; chaque échec de mot de passe ralentit la tentative suivante (jusqu'à 5 s). Les valeurs des secrets ne quittent le serveur que sur demande explicite (Afficher) ; Copier et Taper les écrivent côté serveur. Pour sauvegarder le coffre, copier `vault.enc` (il reste chiffré).
 
 **D'une machine à l'autre** : Réglages › Coffre › **Exporter…** (coffre déverrouillé) télécharge `coffre-deck-AAAA-MM-JJ.json`, toujours chiffré par le mot de passe maître. Sur l'autre machine, **Importer…** ce fichier et saisir le mot de passe maître **du fichier** :
 - **Utiliser ce coffre** (aucun coffre sur cette machine) : le fichier devient le coffre, déverrouillé ;

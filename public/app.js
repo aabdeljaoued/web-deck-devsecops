@@ -60,10 +60,11 @@ const THEMES = ["allianz", "bnp", "estreem", "laposte"];
 const systemDark = window.matchMedia("(prefers-color-scheme: dark)");
 
 /** Couleurs du terminal : sombre (défaut xterm) ou clair (palette lisible sur fond blanc). */
+// Fond transparent : celui de l'écran (et la signature en filigrane) se voit derrière le texte
 const TERM_THEMES = {
-    dark: { background: "#000000" },
+    dark: { background: "rgba(0, 0, 0, 0)" },
     light: {
-        background: "#ffffff", foreground: "#1c2330", cursor: "#1c2330", cursorAccent: "#ffffff", selectionBackground: "#b3d4fc",
+        background: "rgba(0, 0, 0, 0)", foreground: "#1c2330", cursor: "#1c2330", cursorAccent: "#ffffff", selectionBackground: "#b3d4fc",
         black: "#1c2330", red: "#c62828", green: "#2e7d32", yellow: "#8a6d00", blue: "#1565c0", magenta: "#8e24aa", cyan: "#00838f", white: "#5f6b7a",
         brightBlack: "#5f6b7a", brightRed: "#e53935", brightGreen: "#43a047", brightYellow: "#a07c00", brightBlue: "#1e88e5", brightMagenta: "#ab47bc", brightCyan: "#0097a7", brightWhite: "#1c2330"
     }
@@ -71,6 +72,42 @@ const TERM_THEMES = {
 let currentMode = "dark";
 
 /** Applique un mode ("dark", "light", "system") et un thème de mission ("" = aucun). */
+/**
+ * Signature en filigrane au fond de chaque terminal (Réglages › Apparence) :
+ * l'image signature.png si elle existe (peinte en gris par masque), sinon le texte.
+ */
+function applyWatermark(text = state.settings?.watermark ?? "") {
+    const root = document.documentElement;
+    const image = state.signature;
+    root.style.setProperty("--watermark", JSON.stringify(text));
+    if (image) root.style.setProperty("--wm-image", `url("/signature.png?v=${image}")`);
+    root.classList.toggle("watermark", Boolean(text) || Boolean(image));
+    root.classList.toggle("watermark-image", Boolean(image));
+    const info = document.querySelector("#set-signature-state");
+    if (info) info.textContent = image ? "image utilisée (elle remplace le texte)" : "aucune image : le texte ci-dessus est utilisé";
+    const remove = document.querySelector("#set-signature-remove");
+    if (remove) remove.disabled = !image;
+}
+
+/** Image de signature choisie dans les Réglages : envoyée au serveur (PNG, 600 Ko au plus). */
+async function uploadSignature(file) {
+    if (!file) return;
+    try {
+        if (file.size > 600 * 1024) throw new Error("image trop lourde (600 Ko au plus)");
+        const data = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(String(reader.result).split(",")[1] ?? "");
+            reader.onerror = () => reject(new Error("lecture impossible"));
+            reader.readAsDataURL(file);
+        });
+        send({ t: "signature-upload", data });
+    } catch (err) {
+        toast(err.message);
+    } finally {
+        $("#set-signature-file").value = "";
+    }
+}
+
 function applyAppearance(appearance = "dark", theme = "") {
     currentMode = appearance === "system" ? (systemDark.matches ? "dark" : "light") : appearance === "light" ? "light" : "dark";
     const root = document.documentElement;
@@ -129,12 +166,15 @@ function handle(msg) {
             state.worlds = msg.worlds ?? null;
             state.server = msg.server ?? null;
             state.localUnix = msg.localUnix ?? true;
+            state.signature = msg.signature ?? null;
+            applyWatermark();
             state.remote = msg.remote ?? {};
             if (msg.tools) applyTools(msg.tools);
             state.status = msg.status ?? {};
             if (msg.vault) applyVault(msg.vault);
             if (msg.settings) {
                 state.settings = msg.settings;
+                applyWatermark();
                 applyAppearance(msg.settings.appearance, msg.settings.missionTheme);
             }
             state.windowsPty = msg.windowsPty ?? null;
@@ -189,6 +229,7 @@ function handle(msg) {
             break;
         case "settings":
             state.settings = msg.settings;
+            applyWatermark();
             if (msg.settings.autoHomeEnabled === false) cancelAutoHome();
             settingsPending = false;
             applyAppearance(msg.settings.appearance, msg.settings.missionTheme);
@@ -211,6 +252,10 @@ function handle(msg) {
             break;
         case "tools":
             applyTools(msg);
+            break;
+        case "signature":
+            state.signature = msg.version ?? null;
+            applyWatermark();
             break;
         case "remote":
             state.remote = msg.remote ?? {};
@@ -632,6 +677,7 @@ function addTerm(sid, name, kind = "posix", replay = "", title = null) {
         fontSize: state.fontSize,
         scrollback: 5000,
         theme: termTheme(),
+        allowTransparency: true,
         ...(state.windowsPty ? { windowsPty: state.windowsPty } : {})
     });
     clipboardKeys(term);
@@ -1388,7 +1434,6 @@ function submitFav(ev) {
 const vaultUi = { tab: "notes", noteId: null, noteColor: "", secretEditing: null, shown: new Map() };
 let noteReq = null;
 let noteTimer = null;
-let clipboardTimer = null;
 
 function openVault() {
     $("#vault").hidden = false;
@@ -1538,7 +1583,7 @@ function renderSecrets() {
             Object.assign(document.createElement("code"), { className: `secret-mask${shown ? " shown" : ""}`, textContent: shown ?? "•".repeat(Math.min(s.length, 24)) })
         );
         li.append(info,
-            button("Copier", "Copier dans le presse-papiers (effacé après 30 s)", () => send({ t: "secret-reveal", id: s.id, purpose: "copy" })),
+            button("Copier", "Copier dans le presse-papiers (effacé après 30 s)", () => copySecret(s.id)),
             button("Taper ▸", "Taper dans le terminal actif, sans Entrée (la valeur ne passe pas par la page)", () => {
                 if (!state.active) return toast("aucun terminal actif");
                 send({ t: "secret-type", id: s.id, sid: state.active });
@@ -1553,14 +1598,13 @@ function renderSecrets() {
 }
 
 /** Valeur reçue (seulement sur demande) : copiée puis effacée du presse-papiers, ou affichée 15 s. */
+/** Copie d'un secret : faite par le serveur dans le presse-papiers du système, effacée après 30 s. */
+function copySecret(id) {
+    send({ t: "secret-copy", id });
+}
+
 function useSecretValue({ id, value, purpose }) {
-    if (purpose === "copy") {
-        navigator.clipboard.writeText(value).then(() => {
-            toast("copié : effacé du presse-papiers dans 30 s", "ok");
-            clearTimeout(clipboardTimer);
-            clipboardTimer = setTimeout(() => navigator.clipboard.writeText("").catch(() => {}), 30000);
-        }, () => toast("copie refusée par le navigateur"));
-    } else if (purpose === "show") {
+    if (purpose === "show") {
         vaultUi.shown.set(id, value);
         renderSecrets();
         setTimeout(() => { vaultUi.shown.delete(id); renderSecrets(); }, 15000);
@@ -1782,6 +1826,7 @@ function openSettings() {
     toggleAutoHomeRow();
     $("#set-appearance").value = state.settings.appearance ?? "dark";
     $("#set-theme").value = state.settings.missionTheme ?? "";
+    $("#set-watermark").value = state.settings.watermark ?? "";
     renderWorldChoices();
     renderServer();
     send({ t: "backup-list" });
@@ -1918,6 +1963,7 @@ function toggleAutoHomeRow() {
 /** Fermeture sans enregistrer : l'aperçu de l'apparence est annulé. */
 function closeSettings() {
     $("#settings").hidden = true;
+    applyWatermark();
     hideImportConfirm();
     hideVaultImport();
     applyAppearance(state.settings.appearance, state.settings.missionTheme);
@@ -1996,6 +2042,10 @@ $("#vault-import-pass").addEventListener("keydown", (ev) => {
     importVault(state.vault.exists === false ? "use" : "merge");
 });
 $("#set-theme").addEventListener("change", previewAppearance);
+$("#set-signature-pick").addEventListener("click", () => $("#set-signature-file").click());
+$("#set-signature-file").addEventListener("change", (ev) => uploadSignature(ev.target.files[0]));
+$("#set-signature-remove").addEventListener("click", () => send({ t: "signature-remove" }));
+$("#set-watermark").addEventListener("input", () => applyWatermark($("#set-watermark").value.trim()));
 $("#settings").addEventListener("mousedown", (ev) => { if (ev.target.id === "settings") closeSettings(); });
 $("#settings-form").addEventListener("keydown", (ev) => {
     ev.stopPropagation();
@@ -2013,6 +2063,7 @@ $("#settings-form").addEventListener("submit", (ev) => {
         ...($("#set-autohome-on").checked ? { autoHomeSeconds: Number($("#set-autohome").value) } : {}),
         appearance: $("#set-appearance").value,
         missionTheme: $("#set-theme").value,
+        watermark: $("#set-watermark").value,
         ...(state.worlds ? { worlds: worldChoices() } : {})
     } });
 });

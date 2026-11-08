@@ -200,6 +200,16 @@
                         <option value="laposte">La Poste</option>
                     </select>
                 </label>
+                <label>Signature des terminaux
+                    <span class="hint">Texte en filigrane, gris et flou, au fond de chaque terminal (vide = aucune) ; aperçu immédiat.</span>
+                    <input id="set-watermark" type="text" maxlength="60" placeholder="ex. Prénom NOM">
+                </label>
+                <div class="settings-actions">
+                    <button type="button" id="set-signature-pick" title="PNG sur fond transparent (signature manuscrite) ; peinte en gris flou">Image de signature…</button>
+                    <button type="button" id="set-signature-remove">Retirer l'image</button>
+                    <input id="set-signature-file" type="file" accept="image/png" hidden>
+                    <span id="set-signature-state" class="hint"></span>
+                </div>
             </fieldset>
             <fieldset class="settings-group">
                 <legend>Rubriques</legend>

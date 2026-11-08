@@ -11,6 +11,14 @@ const oneOf = (name, allowed) => (v) => {
 const SCHEMA = {
     /** Mode d'affichage : sombre, clair, ou celui du système. */
     appearance: { default: "dark", clean: oneOf("mode d'affichage", ["dark", "light", "system"]) },
+    /** Signature en filigrane au fond des terminaux ("" = aucune). */
+    watermark: {
+        default: "",
+        clean(v) {
+            if (typeof v !== "string") throw new Error("signature : texte attendu");
+            return v.replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, 60);
+        }
+    },
     /** Thème aux couleurs d'une mission ("" = aucun). */
     missionTheme: { default: "", clean: oneOf("thème de mission", ["", "allianz", "bnp", "estreem", "laposte"]) },
     /** Retour automatique à l'accueil après une action dans une rubrique : activé ou non, et délai. */

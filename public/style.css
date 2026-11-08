@@ -1078,3 +1078,34 @@ main {
     font-size: 10px; line-height: 15px; font-weight: 600; text-transform: uppercase;
     color: #fff; background: #2e7d32;
 }
+
+/* Signature en filigrane au fond des terminaux (Réglages › Apparence), derrière le texte */
+.screen { background: var(--term-bg); container-type: size; }   /* taille de la signature : celle du terminal (cqw) */
+.watermark .screen::before {
+    content: var(--watermark);
+    position: absolute; inset: 0; z-index: 0;
+    display: grid; place-items: center; overflow: hidden;
+    font: 700 clamp(16px, 6.5cqw, 72px) / 1 "Segoe UI", -apple-system, "Helvetica Neue", Arial, sans-serif;
+    letter-spacing: .06em; white-space: nowrap;
+    color: #b0b0b0; opacity: .12; filter: blur(3px);
+    transform: rotate(-12deg);
+    pointer-events: none; user-select: none;
+}
+[data-mode="light"].watermark .screen::before { color: #707070; opacity: .09; }
+.screen .xterm { position: relative; z-index: 1; height: 100%; }
+/* xterm peint son viewport en opaque malgré le thème transparent : la signature serait cachée */
+.screen .xterm .xterm-viewport { background-color: transparent !important; }
+
+.screen { overflow: hidden; }
+
+/* Signature en image (signature.png) : peinte en gris par masque, même flou que le texte */
+.watermark-image .screen::before {
+    content: "";
+    background-color: #b0b0b0;
+    -webkit-mask: var(--wm-image) center / min(78%, 900px) auto no-repeat;
+    mask: var(--wm-image) center / min(78%, 900px) auto no-repeat;
+    transform: rotate(-8deg);
+    filter: blur(1.5px);   /* traits fins de l'écriture : moins de flou que pour le texte */
+    opacity: .12;          /* à peine visible */
+}
+[data-mode="light"].watermark-image .screen::before { background-color: #707070; opacity: .09; }

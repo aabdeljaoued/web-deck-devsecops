@@ -7,13 +7,14 @@
 // DECK_SUPERVISOR=launchd|windows : lancé en service (service/), qui le relance s'il s'arrête sur un code ≠ 0.
 import { spawn } from "node:child_process";
 import { randomBytes, timingSafeEqual } from "node:crypto";
-import { existsSync, openSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, openSync, readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import http from "node:http";
 import path from "node:path";
 import { WebSocketServer } from "ws";
 
 import { buildDeck, ICONS } from "./catalog.mjs";
 import { Backups } from "./backups.mjs";
+import { copyTemporarily } from "./clipboard.mjs";
 import { Favorites } from "./favorites.mjs";
 import { Vault } from "./vault.mjs";
 import { Settings } from "./settings.mjs";
@@ -65,6 +66,12 @@ function watchTools() {
     }, 3000);
     toolsWatch.unref();
 }
+
+// Signature en image pour le filigrane des terminaux (Réglages › Apparence) : signature.png, exclu de Git
+const SIGNATURE_FILE = path.join(ROOT, "signature.png");
+const MAX_SIGNATURE_BYTES = 600 * 1024;
+/** Version de l'image (date de modification), ou null s'il n'y en a pas : la page recharge l'image quand elle change. */
+const signatureVersion = () => (existsSync(SIGNATURE_FILE) ? Math.round(statSync(SIGNATURE_FILE).mtimeMs) : null);
 
 /** Message "deck" envoyé aux pages après une reconstruction. */
 const deckMessage = () => (setImmediate(checkTools), { t: "deck", pages: deck.pages, titles: deck.titles, parents: deck.parents, favGroups: favorites.groups(), worlds: deck.worlds });
@@ -144,6 +151,11 @@ const server = http.createServer((req, res) => {
     const logo = /^\/icons\/([a-z0-9-]+)\.svg$/.exec(url.pathname);
     const file = req.method === "GET" && logo && ICONS.has(logo[1]) && iconFile(logo[1]);
     if (file) return send(res, 200, readFileSync(file), "image/svg+xml");
+    // Signature en image (filigrane des terminaux) : fichier local, hors Git
+    if (req.method === "GET" && url.pathname === "/signature.png") {
+        if (!existsSync(SIGNATURE_FILE)) return send(res, 404, "Introuvable");
+        return send(res, 200, readFileSync(SIGNATURE_FILE), "image/png", { "Cache-Control": "no-cache" });
+    }
     const entry = req.method === "GET" && STATIC[url.pathname];
     if (!entry) return send(res, 404, "Introuvable");
     send(res, 200, readFileSync(entry[0]), entry[1]);
@@ -195,6 +207,7 @@ wss.on("connection", (ws) => {
         worlds: deck.worlds,
         tools: tools.view(),
         localUnix: LOCAL_UNIX,
+        signature: signatureVersion(),
         remote: remote.view(),
         server: { supervisor: SUPERVISOR, log: SUPERVISOR ? null : LOG_FILE },
         shells: ctx.shells.map(({ name, kind }) => ({ name, kind })),
@@ -249,6 +262,11 @@ wss.on("connection", (ws) => {
                 case "secret-delete": vault.deleteSecret(String(msg.id)); break;
                 // La valeur n'est envoyée qu'à la page qui la demande (copier / afficher)
                 case "secret-reveal": reply({ t: "secret-value", id: String(msg.id), value: vault.secretValue(String(msg.id)), purpose: msg.purpose }); break;
+                // Copier : presse-papiers du système, écrit côté serveur (la valeur ne passe pas par la page), effacé après 30 s
+                case "secret-copy":
+                    await copyTemporarily(vault.secretValue(String(msg.id)), 30);
+                    reply({ t: "vault-ok", text: "copié : effacé du presse-papiers dans 30 s" });
+                    break;
                 // Taper dans le terminal : écrit côté serveur, la valeur ne passe pas par la page
                 case "secret-type": {
                     if (!terminals.sessions.has(String(msg.sid))) throw new Error("aucun terminal actif");
@@ -277,6 +295,21 @@ wss.on("connection", (ws) => {
                 // Sauvegardes automatiques (Réglages) : liste et restauration (la version actuelle est sauvegardée avant)
                 // Redémarrage demandé depuis les Réglages (terminaux rouverts au démarrage suivant)
                 case "restart": restart(); break;
+                // Signature en image : PNG uniquement (vérifié à ses premiers octets), 600 Ko au plus
+                case "signature-upload": {
+                    const data = Buffer.from(String(msg.data ?? ""), "base64");
+                    const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+                    if (!data.subarray(0, 8).equals(PNG)) throw new Error("l'image doit être un PNG (de préférence sur fond transparent)");
+                    if (data.length > MAX_SIGNATURE_BYTES) throw new Error("image trop lourde (600 Ko au plus)");
+                    writeFileSync(SIGNATURE_FILE, data, { mode: 0o600 });
+                    broadcast({ t: "signature", version: signatureVersion() });
+                    reply({ t: "vault-ok", text: "image de signature enregistrée", close: false });
+                    break;
+                }
+                case "signature-remove":
+                    if (existsSync(SIGNATURE_FILE)) unlinkSync(SIGNATURE_FILE);
+                    broadcast({ t: "signature", version: null });
+                    break;
                 case "tools-check":
                     if (msg.watch) watchTools();
                     await checkTools();

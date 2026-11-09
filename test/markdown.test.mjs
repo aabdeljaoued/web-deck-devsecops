@@ -36,3 +36,9 @@ test("analyse : listes, cases à cocher, tableaux, citations", () => {
     assert.equal(parse("- [x] fait")[0].task, true);
     assert.deepEqual(parse("| a | b |\n|---|---|\n| 1 | 2 |")[0].rows, [["a", "b"], ["1", "2"]]);
 });
+
+test("aperçu : une ligne de code par élément (cliquable), texte du bloc inchangé", () => {
+    const html = toHtml("```bash\nkubectl get pods\nkubectl get svc\n```");
+    assert.equal((html.match(/class="md-code-line"/g) ?? []).length, 2);
+    assert.match(html, /<span class="md-code-line">kubectl get pods<\/span>\n<span class="md-code-line">kubectl get svc<\/span>/);
+});

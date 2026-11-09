@@ -288,7 +288,7 @@
                         <label class="settings-check"><input type="radio" name="act-kind" value="url"> Lien</label>
                     </span>
                     <label>Nom de la touche <input id="act-label" type="text" maxlength="30" placeholder="ex. port-forward"></label>
-                    <label id="act-command-row">Commande <span class="hint">une ligne ; {} = texte sélectionné dans le terminal (ou emplacement du curseur)</span>
+                    <label id="act-command-row">Commande <span class="hint">une ligne ; {} = texte sélectionné dans le terminal ; {namespace}, {pod}, {durée}… = paramètres demandés au clic (listes réelles pour namespace, pod, deployment, service, node, context, container, image)</span>
                         <input id="act-command" type="text" maxlength="500" placeholder="ex. kubectl port-forward {} 8080:80" spellcheck="false">
                     </label>
                     <label id="act-enter-row" class="settings-check"><input id="act-enter" type="checkbox"> Exécuter tout de suite (pastille verte) ; sinon tapée, à compléter (orange)</label>
@@ -418,6 +418,21 @@
                 <span class="grow"></span>
                 <button type="button" id="settings-cancel">Annuler</button>
                 <button type="submit" class="primary">Enregistrer</button>
+            </div>
+        </form>
+    </div>
+
+    <div id="params" class="palette" hidden>
+        <form id="params-form" class="palette-box favform params-box" autocomplete="off">
+            <h2 id="params-title">Paramètres</h2>
+            <div id="params-fields" class="params-fields"></div>
+            <code id="params-preview" class="params-preview"></code>
+            <span id="params-error" class="mission-error" role="alert" hidden></span>
+            <div class="favform-actions">
+                <span class="hint">Entrée pour valider · Échap pour annuler</span>
+                <span class="grow"></span>
+                <button type="button" id="params-cancel">Annuler</button>
+                <button type="submit" id="params-ok" class="primary">Taper</button>
             </div>
         </form>
     </div>

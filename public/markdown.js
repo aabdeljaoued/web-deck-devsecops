@@ -115,7 +115,8 @@ export function toHtml(markdown) {
     const html = [];
     for (const b of parse(markdown)) {
         if (b.type === "heading") html.push(`<h${b.level}>${inlineHtml(b.text)}</h${b.level}>`);
-        else if (b.type === "code") html.push(`<pre${b.lang ? ` data-lang="${esc(b.lang)}"` : ""}><code>${esc(b.lines.join("\n"))}</code></pre>`);
+        // Une ligne de code par <span> : cliquable dans l'aperçu (tapée dans le terminal) ; le texte copié reste le même
+        else if (b.type === "code") html.push(`<pre${b.lang ? ` data-lang="${esc(b.lang)}"` : ""}><code>${b.lines.map((l) => `<span class="md-code-line">${esc(l)}</span>`).join("\n")}</code></pre>`);
         else if (b.type === "item") {
             const box = b.task === null ? "" : `<input type="checkbox" disabled${b.task ? " checked" : ""}> `;
             html.push(`<p class="md-item" style="--depth:${b.depth}"><span class="md-bullet">${/\d/.test(b.marker) ? esc(b.marker) : "•"}</span> ${box}${inlineHtml(b.text)}</p>`);

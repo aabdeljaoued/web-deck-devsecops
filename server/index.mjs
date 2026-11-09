@@ -19,6 +19,7 @@ import { Backups } from "./backups.mjs";
 import { copyTemporarily, flushClipboard } from "./clipboard.mjs";
 import { ScreenLock } from "./screenlock.mjs";
 import { Updater } from "./update.mjs";
+import { paramOptions } from "./params.mjs";
 import figlet from "figlet";
 import { Journal } from "./journal.mjs";
 import { runDiagnostic } from "./diagnostic.mjs";
@@ -368,6 +369,15 @@ wss.on("connection", (ws) => {
                 // Sauvegardes automatiques (Réglages) : liste et restauration (la version actuelle est sauvegardée avant)
                 // Redémarrage demandé depuis les Réglages (terminaux rouverts au démarrage suivant)
                 case "restart": restart(); break;
+                // Paramètres nommés : valeurs réelles (kubectl / docker) proposées dans la fenêtre de saisie
+                case "param-options": {
+                    try {
+                        reply({ t: "param-options", req: msg.req, name: msg.name, options: await paramOptions(ctx, msg.name, { namespace: msg.namespace }) });
+                    } catch (err) {
+                        reply({ t: "param-options", req: msg.req, name: msg.name, options: [], error: err.message.split("\n")[0] });
+                    }
+                    break;
+                }
                 // Signature en bannière ASCII (FIGlet) : dessinée ici, affichée en filigrane par la page
                 case "banner": {
                     const text = String(msg.text ?? "").replace(/[\u0000-\u001f\u007f]/g, "").slice(0, 60);

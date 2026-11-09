@@ -358,6 +358,9 @@ function handle(msg) {
             pendingConfig = null;
             toast(`importé : ${msg.done.join(", ") || "rien"}${msg.warnings.length ? ` ; attention : ${msg.warnings.join(" ; ")}` : ""}`, msg.warnings.length ? "ko" : "ok");
             break;
+        case "param-options":
+            applyParamOptions(msg);
+            break;
         case "journal-list":
             renderJournal(msg.entries);
             break;
@@ -479,7 +482,7 @@ function numberKeys() {
     });
 }
 
-const dialogOpen = () => ["#settings", "#vault", "#favdialog", "#palette", "#picker", "#duplicate"].some((id) => $(id) && !$(id).hidden);
+const dialogOpen = () => ["#settings", "#vault", "#favdialog", "#palette", "#picker", "#duplicate", "#params"].some((id) => $(id) && !$(id).hidden);
 
 // Phase de capture : avant le terminal (sinon ⌥1 taperait « ¡ » sur macOS)
 document.addEventListener("keydown", (ev) => {
@@ -679,6 +682,8 @@ function press(key, el) {
         case "text": {
             const command = commandFor(key);
             if (command == null) return toast(`« ${key.label} » n'existe pas pour le shell ${activeKind()}`);
+            // Paramètres nommés ({namespace}, {pod}…) : fenêtre de saisie avant de taper la commande
+            if (namedParams(command).length) return openParams(key, command);
             if (key.enter) {
                 journalAction(key, command, "run");
                 return typeInTerminal(command + "\r");
@@ -756,6 +761,126 @@ function showKeyTip(el, key) {
 function hideKeyTip() {
     clearTimeout(keyTipTimer);
     $("#keytip").hidden = true;
+}
+
+// ---------- Paramètres nommés : {namespace}, {pod}, {durée}… (fenêtre de saisie, dernières valeurs, listes réelles) ----------
+
+const PARAM_RE = /\{([\p{L}_][\p{L}\p{N}_-]{0,30})\}/gu;
+const SENSITIVE_PARAM = /pass|secret|token|mdp|pwd|key|cle|clé/i;   // jamais gardés dans l'historique
+const LIVE = ["namespace", "ns", "pod", "deployment", "deploy", "service", "svc", "node", "context", "ctx", "contexte", "container", "conteneur", "image"];
+let paramsState = null;   // { key, command, names, req }
+
+/** Paramètres nommés d'une commande, dans l'ordre, sans doublon. */
+const namedParams = (command) => [...new Set([...String(command).matchAll(PARAM_RE)].map((m) => m[1]))];
+
+function paramHistory(name) {
+    try { return JSON.parse(localStorage.getItem(`deck-param-${name.toLowerCase()}`) ?? "[]"); } catch { return []; }
+}
+
+function rememberParam(name, value) {
+    if (!value || SENSITIVE_PARAM.test(name)) return;
+    const list = [value, ...paramHistory(name).filter((v) => v !== value)].slice(0, 10);
+    try { localStorage.setItem(`deck-param-${name.toLowerCase()}`, JSON.stringify(list)); } catch { /* stockage indisponible */ }
+}
+
+function openParams(key, command) {
+    const names = namedParams(command);
+    paramsState = { key, command, names, req: crypto.randomUUID() };
+    // Sélection du terminal (ou d'une note) : proposée pour le premier paramètre
+    const terms = [state.terms.get(state.active), ...state.terms.values()].filter(Boolean);
+    const t = terms.find((x) => !x.ended && x.term.hasSelection());
+    const selected = (t ? t.term.getSelection() : noteSelection?.text ?? "").replace(/[\u0000-\u001f\u007f\s]+/g, " ").trim();
+    if (t) t.term.clearSelection();
+    noteSelection = null;
+    const kube = state.status.kube;
+    $("#params-title").textContent = key.label;
+    $("#params-fields").replaceChildren(...names.map((name, i) => {
+        const id = `param-${i}`;
+        const label = Object.assign(document.createElement("label"), { textContent: name });
+        const input = Object.assign(document.createElement("input"), { id, type: SENSITIVE_PARAM.test(name) ? "password" : "text", spellcheck: false });
+        input.dataset.name = name;
+        input.setAttribute("list", `${id}-list`);
+        const list = Object.assign(document.createElement("datalist"), { id: `${id}-list` });
+        list.append(...paramHistory(name).map((v) => new Option(v, v)));
+        // Valeur de départ : la sélection pour le premier, le namespace courant pour {namespace}
+        input.value = i === 0 && selected ? selected : /^(namespace|ns)$/i.test(name) && kube?.namespace ? kube.namespace : "";
+        const status = Object.assign(document.createElement("span"), { className: "hint param-status" });
+        input.addEventListener("input", () => {
+            renderParamsPreview();
+            if (/^(namespace|ns)$/i.test(name)) { clearTimeout(input._t); input._t = setTimeout(() => loadLiveParams(true), 400); }
+        });
+        label.append(input, list, status);
+        return label;
+    }));
+    $("#params-error").hidden = true;
+    $("#params-ok").textContent = key.enter ? "Lancer" : "Taper";
+    $("#params").hidden = false;
+    renderParamsPreview();
+    loadLiveParams(false);
+    const first = $("#params-fields").querySelector("input");
+    first?.focus();
+    first?.select();
+}
+
+/** Listes réelles pour les paramètres connus ; pods, deployments, services suivent le namespace saisi. */
+function loadLiveParams(onlyNamespaced) {
+    const ns = [...$("#params-fields").querySelectorAll("input")].find((i) => /^(namespace|ns)$/i.test(i.dataset.name))?.value.trim() ?? "";
+    for (const input of $("#params-fields").querySelectorAll("input")) {
+        const name = input.dataset.name;
+        if (!LIVE.includes(name.toLowerCase())) continue;
+        if (onlyNamespaced && !/^(pod|deployment|deploy|service|svc)$/i.test(name)) continue;
+        input.parentElement.querySelector(".param-status").textContent = "chargement de la liste…";
+        send({ t: "param-options", req: paramsState.req, name, namespace: ns });
+    }
+}
+
+function applyParamOptions(msg) {
+    if (!paramsState || msg.req !== paramsState.req) return;
+    for (const input of $("#params-fields").querySelectorAll("input")) {
+        if (input.dataset.name !== msg.name) continue;
+        const list = $(`#${input.id}-list`);
+        const history = paramHistory(msg.name);
+        list.replaceChildren(...[...history, ...msg.options.filter((o) => !history.includes(o))].map((v) => new Option(v, v)));
+        input.parentElement.querySelector(".param-status").textContent = msg.error ? `liste indisponible : ${msg.error}` : `${msg.options.length} valeur(s) proposée(s)`;
+    }
+}
+
+/** Commande avec les valeurs saisies (caractères de contrôle retirés ; un paramètre vide reste {nom}). */
+function paramsCommand() {
+    let cmd = paramsState.command;
+    for (const input of $("#params-fields").querySelectorAll("input")) {
+        const value = input.value.replace(/[\u0000-\u001f\u007f]/g, " ").trim();
+        cmd = cmd.split(`{${input.dataset.name}}`).join(value || `{${input.dataset.name}}`);
+    }
+    return cmd;
+}
+
+function renderParamsPreview() {
+    if (!paramsState) return;
+    const masked = [...$("#params-fields").querySelectorAll("input")].reduce((cmd, i) => (i.type === "password" && i.value ? cmd.split(i.value).join("••••") : cmd), paramsCommand());
+    $("#params-preview").textContent = masked;
+}
+
+function submitParams() {
+    const inputs = [...$("#params-fields").querySelectorAll("input")];
+    const empty = inputs.find((i) => !i.value.trim());
+    if (empty) {
+        $("#params-error").textContent = `« ${empty.dataset.name} » est vide`;
+        $("#params-error").hidden = false;
+        return empty.focus();
+    }
+    const { key } = paramsState;
+    const command = paramsCommand();
+    for (const i of inputs) rememberParam(i.dataset.name, i.value.trim());
+    closeParams();
+    journalAction(key, command, key.enter ? "run" : "type");
+    typeInTerminal(key.enter ? `${command}\r` : command);
+}
+
+function closeParams() {
+    $("#params").hidden = true;
+    paramsState = null;
+    state.terms.get(state.active)?.term.focus();
 }
 
 /** Journal des actions (côté serveur, qui ajoute le contexte kubectl) : touche, commande, exécutée ou tapée. */
@@ -1631,7 +1756,7 @@ function submitFav(ev) {
 
 // ---------- Coffre : notes et secrets chiffrés (côté serveur, voir server/vault.mjs) ----------
 
-const vaultUi = { tab: "notes", noteId: null, noteColor: "", secretEditing: null, shown: new Map() };
+const vaultUi = { tab: "notes", noteId: null, noteColor: "", secretEditing: null, shown: new Map(), preview: false, usedLines: new Set() };
 let noteReq = null;
 let noteTimer = null;
 
@@ -1745,7 +1870,7 @@ function loadNoteInEditor() {
     $("#note-body").value = note?.body ?? "";
     vaultUi.noteColor = note?.color ?? "";
     renderNoteColors();
-    toggleNotePreview(false);
+    toggleNotePreview(Boolean(vaultUi.preview) && Boolean(note));   // l'aperçu reste ouvert d'une ouverture à l'autre
     $("#note-status").textContent = note ? `modifiée le ${new Date(note.updated).toLocaleString("fr-FR")}` : "";
     $("#note-delete").textContent = "Supprimer";
     delete $("#note-delete").dataset.armed;
@@ -1779,11 +1904,46 @@ function flushNote() {
 
 function toggleNotePreview(show = $("#note-preview").hidden) {
     const preview = $("#note-preview");
-    if (show) preview.innerHTML = toHtml($("#note-body").value) || '<p class="hint">note vide</p>';   // HTML échappé par markdown.js
+    vaultUi.preview = show;
+    if (show) {
+        preview.innerHTML = toHtml($("#note-body").value) || '<p class="hint">note vide</p>';   // HTML échappé par markdown.js
+        decorateCodeBlocks(preview);
+    }
     preview.hidden = !show;
     $("#note-body").hidden = show;
     $("#note-preview-toggle").textContent = show ? "Modifier" : "Aperçu";
     $("#note-preview-toggle").classList.toggle("on", show);
+}
+
+/**
+ * Blocs de code de l'aperçu : chaque ligne cliquable (tapée dans le terminal, sans Entrée ; marquée une fois utilisée,
+ * pour suivre une procédure pas à pas) et bouton Copier par bloc.
+ */
+function decorateCodeBlocks(preview) {
+    preview.querySelectorAll("pre").forEach((pre, b) => {
+        const copy = Object.assign(document.createElement("button"), { type: "button", className: "md-copy", textContent: "Copier", title: "Copier tout le bloc" });
+        copy.addEventListener("click", () => {
+            navigator.clipboard.writeText(pre.querySelector("code").textContent).then(() => toast("bloc copié", "ok"), () => toast("copie refusée par le navigateur"));
+        });
+        pre.append(copy);
+        pre.querySelectorAll(".md-code-line").forEach((line, l) => {
+            const text = line.textContent.trim();
+            if (!text) return;
+            const id = `${vaultUi.noteId}:${b}:${l}`;
+            line.classList.add("clickable");
+            line.classList.toggle("used", vaultUi.usedLines.has(id));
+            line.title = "Taper cette ligne dans le terminal (sans Entrée)";
+            line.addEventListener("click", () => {
+                if (window.getSelection()?.toString()) return;   // sélection en cours : on ne tape rien
+                vaultUi.usedLines.add(id);
+                line.classList.add("used");
+                window.getSelection()?.removeAllRanges();
+                closeVault();
+                typeInTerminal(text);
+                toast("ligne tapée dans le terminal : vérifie, puis Entrée (rouvre le coffre pour l'étape suivante)", "ok");
+            });
+        });
+    });
 }
 
 /**
@@ -2708,6 +2868,13 @@ $("#palette").addEventListener("mousedown", (ev) => { if (ev.target.id === "pale
 $("#favform").addEventListener("submit", submitFav);
 $("#vault-open").addEventListener("click", openVault);
 $("#note-preview-toggle").addEventListener("click", () => toggleNotePreview());
+$("#params-form").addEventListener("submit", (ev) => { ev.preventDefault(); submitParams(); });
+$("#params-cancel").addEventListener("click", closeParams);
+$("#params").addEventListener("mousedown", (ev) => { if (ev.target.id === "params") closeParams(); });
+$("#params-form").addEventListener("keydown", (ev) => {
+    ev.stopPropagation();
+    if (ev.key === "Escape") { ev.preventDefault(); closeParams(); }
+});
 $("#note-to-terminal").addEventListener("click", noteToTerminal);
 $("#settings-open").addEventListener("click", openSettings);
 $("#mission-switch").addEventListener("change", (ev) => send({ t: "mission-activate", id: ev.target.value }));
@@ -2903,7 +3070,7 @@ document.addEventListener("keydown", (ev) => {
     // Coffre ou formulaire des favoris ouverts : leurs champs gardent les raccourcis du navigateur
     // Réglages ouverts sans champ actif : Échap ferme le panneau
     if (!$("#settings").hidden && ev.key === "Escape") { ev.preventDefault(); closeSettings(); return; }
-    if (!$("#vault").hidden || !$("#favdialog").hidden || !$("#settings").hidden) return;
+    if (!$("#vault").hidden || !$("#favdialog").hidden || !$("#settings").hidden || !$("#params").hidden) return;
     const mod = macClient ? ev.metaKey : ev.ctrlKey;
     const key = ev.key.toLowerCase();
     let handled = true;

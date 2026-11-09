@@ -2,6 +2,9 @@
 // lues avec kubectl (contexte courant) ou le client de conteneurs (docker / podman).
 // Commandes lancées sans shell ; le namespace transmis est vérifié (nom Kubernetes valide uniquement).
 import { execFile } from "node:child_process";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { homedir } from "node:os";
+import path from "node:path";
 
 const MAX_ITEMS = 500;
 
@@ -25,9 +28,43 @@ const SOURCES = {
     node: { kube: ["get", "nodes", "-o", "name"] },
     context: { kube: ["config", "get-contexts", "-o", "name"] },
     container: { docker: ["ps", "--format", "{{.Names}}"] },
-    image: { docker: ["images", "--format", "{{.Repository}}:{{.Tag}}"] }
+    image: { docker: ["images", "--format", "{{.Repository}}:{{.Tag}}"] },
+    host: { ssh: true }
 };
-const ALIASES = { ns: "namespace", deploy: "deployment", svc: "service", ctx: "context", contexte: "context", conteneur: "container" };
+const ALIASES = { ns: "namespace", deploy: "deployment", svc: "service", ctx: "context", contexte: "context", conteneur: "container", hote: "host", "hôte": "host", serveur: "host", server: "host" };
+
+/**
+ * Hôtes de ~/.ssh/config (lignes Host, sans motifs * ? !), Include suivis (chemins relatifs à ~/.ssh,
+ * « * » dans le nom de fichier), 5 niveaux au plus. Rien n'est exécuté : le fichier est seulement lu.
+ */
+export function sshHosts(file = path.join(homedir(), ".ssh", "config"), depth = 0, seen = new Set()) {
+    if (depth > 5 || seen.has(file) || !existsSync(file)) return [];
+    seen.add(file);
+    let text;
+    try { if (!statSync(file).isFile()) return []; text = readFileSync(file, "utf8"); } catch { return []; }
+    const hosts = [];
+    const base = path.join(homedir(), ".ssh");
+    for (const raw of text.split(/\r?\n/)) {
+        const line = raw.replace(/#.*/, "").trim();
+        let m;
+        if ((m = /^Host\s*[= ]\s*(.+)$/i.exec(line))) {
+            hosts.push(...m[1].split(/\s+/).map((h) => h.replace(/^"|"$/g, "")).filter((h) => h && !/[*?!]/.test(h)));
+        } else if ((m = /^Include\s+(.+)$/i.exec(line))) {
+            for (const pattern of m[1].split(/\s+/)) {
+                const p = pattern.replace(/^~(?=$|[\\/])/, homedir());
+                const full = path.isAbsolute(p) ? p : path.join(base, p);
+                const dir = path.dirname(full);
+                const name = path.basename(full);
+                if (!name.includes("*")) { hosts.push(...sshHosts(full, depth + 1, seen)); continue; }
+                const re = new RegExp(`^${name.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*").replace(/\?/g, ".")}$`);
+                let files = [];
+                try { files = readdirSync(dir).filter((f) => re.test(f)).sort(); } catch { /* dossier absent */ }
+                for (const f of files) hosts.push(...sshHosts(path.join(dir, f), depth + 1, seen));
+            }
+        }
+    }
+    return [...new Set(hosts)];
+}
 
 /** Nom canonique d'un paramètre à liste réelle, ou null (insensible à la casse). */
 export function liveParam(name) {
@@ -41,6 +78,7 @@ export async function paramOptions(ctx, name, hint = {}) {
     const key = liveParam(name);
     if (!key) return [];
     const src = SOURCES[key];
+    if (src.ssh) return sshHosts().slice(0, MAX_ITEMS);
     let out;
     if (src.kube) {
         if (!ctx.apps.kubectl) throw new Error("kubectl introuvable");

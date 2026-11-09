@@ -294,6 +294,7 @@ function handle(msg) {
             break;
         case "action-saved":
             actionDone();
+            if (actImport) { actImport = null; $("#act-import-confirm").hidden = true; }
             $("#act-section-form").hidden = true;
             $("#act-form").hidden = true;
             if (msg.created && !msg.shown) toast("rubrique créée, mais l'accueil est plein (18 touches) : décoche une rubrique dans « Rubriques » pour l'afficher");
@@ -680,10 +681,20 @@ function press(key, el) {
             return render();
         case "run": return send({ t: "run", id: key.id });
         case "text": {
-            const command = commandFor(key);
-            if (command == null) return toast(`« ${key.label} » n'existe pas pour le shell ${activeKind()}`);
+            const raw = commandFor(key);
+            if (raw == null) return toast(`« ${key.label} » n'existe pas pour le shell ${activeKind()}`);
+            // Variables de la mission active : {mission.registry} -> harbor.client.fr
+            let command, pickCommand;
+            try {
+                command = withMissionVars(raw);
+                pickCommand = key.pick ? withMissionVars(key.pick) : null;
+            } catch (err) {
+                return toast(err.message);
+            }
             // Paramètres nommés ({namespace}, {pod}…) : fenêtre de saisie avant de taper la commande
             if (namedParams(command).length) return openParams(key, command);
+            // Touche intégrée (logs -f, exec -it…) sans rien de sélectionné : choix dans la liste réelle (pods, conteneurs)
+            if (pickCommand && !hasPendingSelection()) return openParams(key, pickCommand);
             if (key.enter) {
                 journalAction(key, command, "run");
                 return typeInTerminal(command + "\r");
@@ -725,6 +736,7 @@ function keyTipContent(key) {
         const m = state.tools.manager;
         how = m && !m.present ? `${key.needs} n'est pas installé, ${m.name} non plus : clic = installer ${m.name} d'abord` : `${key.needs} n'est pas installé : clic = commande d'installation`;
     }
+    else if (key.type === "text" && cmd != null && key.pick) how = "Texte sélectionné utilisé ; sinon, choix dans la liste réelle";
     else if (key.type === "text" && cmd != null) how = key.enter ? "Exécutée tout de suite" : cmd.includes("{}") ? "À compléter : le texte sélectionné va à la place de ‹…›" : "À compléter (+ texte sélectionné), Entrée pour lancer";
     else if (key.type === "web") how = "Ouvre un onglet";
     if (!desc && !cmd) return null;
@@ -767,7 +779,7 @@ function hideKeyTip() {
 
 const PARAM_RE = /\{([\p{L}_][\p{L}\p{N}_-]{0,30})\}/gu;
 const SENSITIVE_PARAM = /pass|secret|token|mdp|pwd|key|cle|clé/i;   // jamais gardés dans l'historique
-const LIVE = ["namespace", "ns", "pod", "deployment", "deploy", "service", "svc", "node", "context", "ctx", "contexte", "container", "conteneur", "image"];
+const LIVE = ["namespace", "ns", "pod", "deployment", "deploy", "service", "svc", "node", "context", "ctx", "contexte", "container", "conteneur", "image", "host", "hote", "hôte", "serveur", "server"];
 let paramsState = null;   // { key, command, names, req }
 
 /** Paramètres nommés d'une commande, dans l'ordre, sans doublon. */
@@ -783,9 +795,13 @@ function rememberParam(name, value) {
     try { localStorage.setItem(`deck-param-${name.toLowerCase()}`, JSON.stringify(list)); } catch { /* stockage indisponible */ }
 }
 
+const isNs = (name) => /^(namespace|ns)$/i.test(name);
+const NAMESPACED = /^(pod|deployment|deploy|service|svc)$/i;
+const PARAM_NOUN = { pod: "pod", deployment: "deployment", deploy: "deployment", service: "service", svc: "service" };
+
 function openParams(key, command) {
     const names = namedParams(command);
-    paramsState = { key, command, names, req: crypto.randomUUID() };
+    paramsState = { key, command, names, req: crypto.randomUUID(), options: new Map() };
     // Sélection du terminal (ou d'une note) : proposée pour le premier paramètre
     const terms = [state.terms.get(state.active), ...state.terms.values()].filter(Boolean);
     const t = terms.find((x) => !x.ended && x.term.hasSelection());
@@ -796,20 +812,28 @@ function openParams(key, command) {
     $("#params-title").textContent = key.label;
     $("#params-fields").replaceChildren(...names.map((name, i) => {
         const id = `param-${i}`;
-        const label = Object.assign(document.createElement("label"), { textContent: name });
-        const input = Object.assign(document.createElement("input"), { id, type: SENSITIVE_PARAM.test(name) ? "password" : "text", spellcheck: false });
+        const label = Object.assign(document.createElement("label"), { className: "param-field", textContent: name });
+        const input = Object.assign(document.createElement("input"), { id, type: SENSITIVE_PARAM.test(name) ? "password" : "text", spellcheck: false, autocomplete: "off" });
         input.dataset.name = name;
-        input.setAttribute("list", `${id}-list`);
-        const list = Object.assign(document.createElement("datalist"), { id: `${id}-list` });
-        list.append(...paramHistory(name).map((v) => new Option(v, v)));
+        input.setAttribute("role", "combobox");
         // Valeur de départ : la sélection pour le premier, le namespace courant pour {namespace}
-        input.value = i === 0 && selected ? selected : /^(namespace|ns)$/i.test(name) && kube?.namespace ? kube.namespace : "";
+        input.value = i === 0 && selected ? selected : isNs(name) && kube?.namespace ? kube.namespace : "";
+        input.dataset.filter = "";   // pas de filtre tant que l'utilisateur n'a pas tapé : toute la liste est visible
+        const list = Object.assign(document.createElement("ul"), { className: "param-options", hidden: true });
+        list.setAttribute("role", "listbox");
         const status = Object.assign(document.createElement("span"), { className: "hint param-status" });
+        input.addEventListener("focus", () => showParamOptions(input));
+        input.addEventListener("click", () => showParamOptions(input));
+        input.addEventListener("blur", () => setTimeout(() => { list.hidden = true; }, 120));
         input.addEventListener("input", () => {
+            input.dataset.filter = input.value;
             renderParamsPreview();
-            if (/^(namespace|ns)$/i.test(name)) { clearTimeout(input._t); input._t = setTimeout(() => loadLiveParams(true), 400); }
+            showParamOptions(input);
+            if (isNs(name)) { clearTimeout(input._t); input._t = setTimeout(() => loadLiveParams(true), 400); }
         });
+        input.addEventListener("keydown", (ev) => paramKey(ev, input));
         label.append(input, list, status);
+        if (!LIVE.includes(name.toLowerCase())) setParamOptions(input, paramHistory(name), "");
         return label;
     }));
     $("#params-error").hidden = true;
@@ -817,31 +841,96 @@ function openParams(key, command) {
     $("#params").hidden = false;
     renderParamsPreview();
     loadLiveParams(false);
-    const first = $("#params-fields").querySelector("input");
-    first?.focus();
-    first?.select();
+    // Premier champ à remplir (vide de préférence) ; le namespace déjà rempli passe directement au pod
+    const inputs = [...$("#params-fields").querySelectorAll("input")];
+    const target = inputs.find((x) => !x.value) ?? inputs[0];
+    target?.focus();
+    if (target?.value) target.select();
 }
 
 /** Listes réelles pour les paramètres connus ; pods, deployments, services suivent le namespace saisi. */
 function loadLiveParams(onlyNamespaced) {
-    const ns = [...$("#params-fields").querySelectorAll("input")].find((i) => /^(namespace|ns)$/i.test(i.dataset.name))?.value.trim() ?? "";
+    const ns = [...$("#params-fields").querySelectorAll("input")].find((i) => isNs(i.dataset.name))?.value.trim() ?? "";
     for (const input of $("#params-fields").querySelectorAll("input")) {
         const name = input.dataset.name;
         if (!LIVE.includes(name.toLowerCase())) continue;
-        if (onlyNamespaced && !/^(pod|deployment|deploy|service|svc)$/i.test(name)) continue;
-        input.parentElement.querySelector(".param-status").textContent = "chargement de la liste…";
+        if (onlyNamespaced && !NAMESPACED.test(name)) continue;
+        setParamOptions(input, null, "chargement de la liste…");
         send({ t: "param-options", req: paramsState.req, name, namespace: ns });
     }
 }
 
 function applyParamOptions(msg) {
     if (!paramsState || msg.req !== paramsState.req) return;
+    const ns = [...$("#params-fields").querySelectorAll("input")].find((i) => isNs(i.dataset.name))?.value.trim();
     for (const input of $("#params-fields").querySelectorAll("input")) {
         if (input.dataset.name !== msg.name) continue;
-        const list = $(`#${input.id}-list`);
-        const history = paramHistory(msg.name);
-        list.replaceChildren(...[...history, ...msg.options.filter((o) => !history.includes(o))].map((v) => new Option(v, v)));
-        input.parentElement.querySelector(".param-status").textContent = msg.error ? `liste indisponible : ${msg.error}` : `${msg.options.length} valeur(s) proposée(s)`;
+        // Liste réelle, valeurs récemment utilisées en tête (seulement celles qui existent encore)
+        const recent = paramHistory(msg.name).filter((v) => msg.options.includes(v));
+        const options = [...recent, ...msg.options.filter((o) => !recent.includes(o))];
+        const noun = PARAM_NOUN[msg.name.toLowerCase()];
+        const status = msg.error ? `liste indisponible : ${msg.error} (saisie libre possible)`
+            : !options.length && noun && ns ? `aucun ${noun} dans le namespace « ${ns} » : choisis un autre namespace`
+            : !options.length ? "liste vide (saisie libre possible)"
+            : `${options.length} valeur(s) : clique ou ↑ ↓ puis Entrée`;
+        setParamOptions(input, options, status, !options.length && !msg.error);
+    }
+}
+
+/** Mémorise les valeurs d'un champ et son état ; la liste est réaffichée si le champ a le focus. */
+function setParamOptions(input, options, status, warn = false) {
+    if (options) paramsState.options.set(input.id, options);
+    const el = input.parentElement.querySelector(".param-status");
+    el.textContent = status;
+    el.classList.toggle("warn", warn);
+    if (document.activeElement === input) showParamOptions(input);
+}
+
+/** Affiche les valeurs proposées, filtrées par le texte tapé (sans casse ni accents). */
+function showParamOptions(input) {
+    const list = input.parentElement.querySelector(".param-options");
+    const filter = fold(input.dataset.filter ?? "");
+    const options = (paramsState?.options.get(input.id) ?? []).filter((o) => fold(o).includes(filter)).slice(0, 200);
+    list.replaceChildren(...options.map((o, i) => {
+        const li = Object.assign(document.createElement("li"), { textContent: o, className: i === 0 && filter ? "sel" : "" });
+        li.setAttribute("role", "option");
+        li.addEventListener("mousedown", (ev) => { ev.preventDefault(); pickParam(input, o); });
+        return li;
+    }));
+    list.hidden = !options.length;
+}
+
+/** Valeur choisie : champ rempli, liste fermée, champ suivant (ou bouton) ; un namespace recharge les pods. */
+function pickParam(input, value) {
+    input.value = value;
+    input.dataset.filter = "";
+    input.parentElement.querySelector(".param-options").hidden = true;
+    renderParamsPreview();
+    if (isNs(input.dataset.name)) loadLiveParams(true);
+    const inputs = [...$("#params-fields").querySelectorAll("input")];
+    const next = inputs.slice(inputs.indexOf(input) + 1).find((x) => !x.value) ?? null;
+    (next ?? $("#params-ok")).focus();
+}
+
+/** Flèches : parcourir la liste ; Entrée : choisir la valeur surlignée ; Échap : fermer la liste d'abord. */
+function paramKey(ev, input) {
+    const list = input.parentElement.querySelector(".param-options");
+    const items = [...list.children];
+    const cur = items.findIndex((li) => li.classList.contains("sel"));
+    if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
+        ev.preventDefault();
+        if (list.hidden) return showParamOptions(input);
+        if (!items.length) return;
+        const next = ev.key === "ArrowDown" ? (cur + 1) % items.length : (cur <= 0 ? items.length : cur) - 1;
+        items.forEach((li, i) => li.classList.toggle("sel", i === next));
+        items[next].scrollIntoView({ block: "nearest" });
+    } else if (ev.key === "Enter" && !list.hidden && cur >= 0) {
+        ev.preventDefault();
+        pickParam(input, items[cur].textContent);
+    } else if (ev.key === "Escape" && !list.hidden) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        list.hidden = true;
     }
 }
 
@@ -958,6 +1047,23 @@ function withSelection(command) {
     if (!selected) return command;
     const sep = /[\s"'=:]$/.test(command) ? "" : " ";
     return command + sep + selected;
+}
+
+/** Remplace {mission.nom} par la valeur de la mission active ; erreur claire si elle manque. */
+function withMissionVars(command) {
+    return command.replace(/\{mission\.([A-Za-z][A-Za-z0-9_-]{0,30})\}/g, (_, name) => {
+        const mission = activeMission();
+        if (!mission) throw new Error(`{mission.${name}} : aucune mission active (choisis-en une en haut à droite)`);
+        const value = mission.vars?.[name];
+        if (value == null || value === "") throw new Error(`{mission.${name}} : variable absente de la mission « ${mission.name} » (Réglages › Missions › Modifier)`);
+        return value;
+    });
+}
+
+/** Texte sélectionné en attente : dans un terminal, ou gardé depuis une note du coffre. */
+function hasPendingSelection() {
+    if ([...state.terms.values()].some((x) => !x.ended && x.term.hasSelection())) return true;
+    return Boolean(noteSelection && Date.now() - noteSelection.time < NOTE_SELECTION_MS);
 }
 
 /** Famille du shell qui recevra la commande : onglet actif, sinon celui qu'ouvrira la page. */
@@ -1441,10 +1547,29 @@ function showGitPicker(msg) {
 let paletteItems = [];
 let paletteIndex = 0;
 
-/** Toutes les touches de toutes les rubriques, sans doublons (rubriques, actions, liens). */
+/**
+ * Entrées de la palette : touches de toutes les rubriques (sans doublons), missions, et, coffre déverrouillé,
+ * notes (titre et contenu) et secrets (nom, utilisateur, adresse ; jamais la valeur). Une entrée peut porter
+ * sa propre action (run) au lieu d'une touche.
+ */
 function paletteEntries() {
     const seen = new Set();
     const entries = [];
+    const v = state.vault;
+    if (v.unlocked) {
+        for (const n of v.notes ?? []) {
+            const title = n.title || "Sans titre";
+            const first = n.body.split("\n").map((l) => l.trim()).find(Boolean) ?? "note vide";
+            entries.push({ key: { label: title, icon: "lucide-notebook-text", color: n.color || "#5c6bc0" }, where: "Note", detail: first.slice(0, 120), hay: `note ${title} ${n.body}`.toLowerCase(), run: () => { vaultUi.tab = "notes"; openVault(); selectNote(n.id); } });
+        }
+        for (const s of v.secrets ?? []) {
+            entries.push({ key: { label: s.name, icon: "lucide-key-round", color: "#8e24aa" }, where: "Secret", detail: ["copier (effacé après 30 s)", s.user, s.url].filter(Boolean).join(" · "), hay: `secret ${s.name} ${s.user ?? ""} ${s.url ?? ""}`.toLowerCase(), run: () => copySecret(s.id) });
+        }
+    }
+    for (const m of state.settings?.missions ?? []) {
+        const active = m.id === state.settings.activeMission;
+        entries.push({ key: { label: m.name, icon: "lucide-briefcase", color: m.color || "#00897b" }, where: "Mission", detail: active ? "mission active : Entrée pour la désactiver" : "activer cette mission", hay: `mission ${m.name}`.toLowerCase(), run: () => send({ t: "mission-activate", id: active ? "" : m.id }) });
+    }
     entries.push({ key: { type: "vault", label: "Coffre : notes et secrets", icon: "lock", color: "#5c6bc0" }, where: "Coffre", detail: "notes et secrets chiffrés", hay: "coffre vault notes secrets mots de passe tokens password" });
     for (const [page, keys] of Object.entries(state.pages)) {
         for (const key of keys) {
@@ -1475,9 +1600,12 @@ function closePalette() {
     state.terms.get(state.active)?.term.focus();
 }
 
+/** Recherche sans casse ni accents (« demo » trouve « Démo »). */
+const fold = (s) => String(s).normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+
 function filterPalette() {
-    const words = $("#palette-input").value.toLowerCase().split(/\s+/).filter(Boolean);
-    paletteItems = paletteEntries().filter((e) => words.every((w) => e.hay.includes(w))).slice(0, 60);
+    const words = fold($("#palette-input").value).split(/\s+/).filter(Boolean);
+    paletteItems = paletteEntries().filter((e) => { const hay = fold(e.hay); return words.every((w) => hay.includes(w)); }).slice(0, 60);
     paletteIndex = 0;
     renderPalette();
 }
@@ -1501,7 +1629,7 @@ function renderPalette() {
         row.addEventListener("click", () => runPalette(i));
         return row;
     }));
-    if (!paletteItems.length) list.append(Object.assign(document.createElement("li"), { className: "palette-empty", textContent: "aucune touche ne correspond" }));
+    if (!paletteItems.length) list.append(Object.assign(document.createElement("li"), { className: "palette-empty", textContent: state.vault.unlocked ? "rien ne correspond" : "rien ne correspond (notes et secrets : déverrouille le coffre)" }));
     list.children[paletteIndex]?.scrollIntoView({ block: "nearest" });
 }
 
@@ -1509,6 +1637,10 @@ function runPalette(i) {
     const entry = paletteItems[i];
     if (!entry) return;
     $("#palette").hidden = true;
+    if (entry.run) {
+        state.terms.get(state.active)?.term.focus();
+        return entry.run();
+    }
     press(entry.key, document.querySelector(`[data-id="${CSS.escape(entry.key.id)}"]`));
 }
 
@@ -2326,6 +2458,7 @@ function renderActions() {
             Object.assign(document.createElement("span"), { className: "grow" }),
             actButton("+ Action", "Ajouter une touche dans cette rubrique", () => openActionForm(s), "primary"),
             actButton("Modifier", "Nom, icône, couleur", () => openSectionForm(s)),
+            actButton("Exporter", "Fichier à partager : un collègue l'importe dans son deck", () => exportSection(s)),
             actDelete(() => send({ t: "action-section-delete", id: s.id })));
         const ul = Object.assign(document.createElement("ul"), { className: "act-actions" });
         ul.append(...s.actions.map((a, i) => {
@@ -2351,6 +2484,86 @@ function renderActions() {
         box.append(head, ul);
         return box;
     }));
+}
+
+// ---------- Partage : rubrique de Mes actions, note du coffre ----------
+
+const slugFile = (s) => fold(s).replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "export";
+
+function exportSection(s) {
+    const section = { label: s.label, icon: s.icon, color: s.color, actions: s.actions.map(({ id, pinned, ...a }) => a) };
+    downloadJson({ deck: "web-deck-devsecops", type: "rubrique", version: 1, section }, `rubrique-${slugFile(s.label)}.json`, "rubrique exportée");
+}
+
+let actImport = null;
+
+/** Fichier de rubrique choisi : contenu montré (nom, commandes) avant l'import, qui se fait sur confirmation. */
+async function readSectionFile(file) {
+    if (!file) return;
+    $("#act-import-file").value = "";
+    let data;
+    try {
+        if (file.size > 200000) throw new Error("fichier trop gros");
+        data = JSON.parse(await file.text());
+        if (data?.type !== "rubrique" || !Array.isArray(data.section?.actions)) throw new Error("ce n'est pas une rubrique exportée depuis le deck");
+    } catch (err) {
+        return toast(`import impossible : ${err.message}`);
+    }
+    actImport = data.section;
+    $("#act-import-title").textContent = `Rubrique « ${String(actImport.label ?? "").slice(0, 30)} » : ${actImport.actions.length} action(s)`;
+    $("#act-import-list").replaceChildren(...actImport.actions.slice(0, 20).map((a) => {
+        const li = document.createElement("li");
+        const box = Object.assign(document.createElement("span"), { className: "act-text" });
+        box.append(Object.assign(document.createElement("strong"), { textContent: String(a.label ?? "") }),
+            Object.assign(document.createElement("code"), { textContent: String(a.kind === "url" ? a.url : a.command ?? "") }));
+        li.append(Object.assign(document.createElement("span"), { className: `dot ${a.kind === "url" ? "url" : a.enter ? "run" : "type"}` }), box);
+        return li;
+    }));
+    $("#act-import-error").hidden = true;
+    $("#act-import-confirm").hidden = false;
+}
+
+function importSection() {
+    if (!actImport) return;
+    send({ t: "action-section-import", section: actImport });
+    actionSending("#act-import-ok");
+}
+
+/** Mots qui ressemblent à un secret : l'export d'une note (en clair) demande alors une confirmation. */
+const SECRET_HINT = /(-----BEGIN [A-Z ]*PRIVATE KEY|\b(password|passwd|mot de passe|mdp|secret|token|api[_-]?key)\s*[:=]\s*\S|\bAKIA[0-9A-Z]{16}\b|\bgh[pousr]_[A-Za-z0-9]{20,}|\bglpat-[A-Za-z0-9_-]{20,}|\bxox[abpr]-[A-Za-z0-9-]{10,})/i;
+let noteExportArmed = 0;
+
+function exportNote() {
+    const note = state.vault.notes?.find((n) => n.id === vaultUi.noteId);
+    if (!note) return;
+    flushNote();
+    const body = $("#note-body").value;
+    const title = $("#note-title").value.trim() || "note";
+    if (SECRET_HINT.test(body) && Date.now() - noteExportArmed > 5000) {
+        noteExportArmed = Date.now();
+        return toast("cette note semble contenir un secret (mot de passe, token, clé) : le fichier sera en clair. Reclique sur Exporter dans les 5 s pour confirmer");
+    }
+    noteExportArmed = 0;
+    const url = URL.createObjectURL(new Blob([body.endsWith("\n") ? body : `${body}\n`], { type: "text/markdown;charset=utf-8" }));
+    const a = Object.assign(document.createElement("a"), { href: url, download: `${slugFile(title)}.md` });
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    toast(`note exportée en clair : ${slugFile(title)}.md (dans Téléchargements)`, "ok");
+}
+
+/** Notes Markdown reçues : une note chiffrée par fichier, titre = nom du fichier. */
+async function importNotes(files) {
+    $("#note-import-file").value = "";
+    let done = 0;
+    for (const file of files) {
+        if (file.size > 200000) { toast(`${file.name} : trop gros (200 Ko au plus)`); continue; }
+        const title = file.name.replace(/\.(md|markdown|txt)$/i, "").replace(/[-_]+/g, " ").trim().slice(0, 120) || "Note importée";
+        send({ t: "note-save", title, body: await file.text(), req: `import-${crypto.randomUUID()}` });
+        done++;
+    }
+    if (done) toast(`${done} note(s) importée(s) dans le coffre (chiffrées)`, "ok");
 }
 
 function openSectionForm(s = null) {
@@ -2415,10 +2628,16 @@ function actionDone() {
     actionPending = false;
     $("#act-section-save").disabled = false;
     $("#act-save").disabled = false;
+    $("#act-import-ok").disabled = false;
 }
 
 /** Erreur affichée dans le formulaire ouvert (saisie gardée), champ concerné sélectionné. */
 function showActionError(text) {
+    if (actImport && !$("#act-import-confirm").hidden) {
+        $("#act-import-error").textContent = text;
+        $("#act-import-error").hidden = !text;
+        return;
+    }
     const sectionForm = !$("#act-section-form").hidden;
     for (const id of ["#act-error", "#act-section-error"]) { $(id).hidden = true; $(id).textContent = ""; }
     if (!text) return;
@@ -2494,15 +2713,31 @@ function openMissionForm(m = null) {
     const fav = $("#mission-fav");
     fav.replaceChildren(new Option("Aucun (page Favoris)", ""), ...(state.favGroups ?? []).map((g) => new Option(g.path, g.id)));
     fav.value = m?.favGroup ?? "";
+    $("#mission-vars").value = Object.entries(m?.vars ?? {}).map(([k, v]) => `${k} = ${v}`).join("\n");
     $("#mission-capture").checked = !m;
     showMissionError("");
     $("#mission-form").hidden = false;
     $("#mission-name").focus();
 }
 
+/** « nom = valeur » par ligne (lignes vides et # commentaires ignorées) ; erreur lisible sinon. */
+function parseMissionVars(text) {
+    const vars = {};
+    for (const [i, raw] of text.split("\n").entries()) {
+        const line = raw.trim();
+        if (!line || line.startsWith("#")) continue;
+        const m = /^([A-Za-z][A-Za-z0-9_-]{0,30})\s*[=:]\s*(.*)$/.exec(line);
+        if (!m) throw new Error(`variables, ligne ${i + 1} : écrire « nom = valeur » (nom : lettres, chiffres, - et _)`);
+        vars[m[1]] = m[2].trim();
+    }
+    return vars;
+}
+
 function saveMission() {
     const name = $("#mission-name").value.trim();
     if (!name) return showMissionError("le nom est obligatoire");
+    let vars;
+    try { vars = parseMissionVars($("#mission-vars").value); } catch (err) { return showMissionError(err.message); }
     send({ t: "mission-save", mission: {
         ...(missionEditing ? { id: missionEditing.id } : {}),
         name,
@@ -2510,6 +2745,7 @@ function saveMission() {
         prodPattern: $("#mission-prod").value.trim(),
         workspace: $("#mission-workspace").value.trim(),
         favGroup: $("#mission-fav").value,
+        vars,
         captureWorlds: $("#mission-capture").checked
     } });
     // Pas de fermeture ici : seulement quand le serveur confirme (une erreur garde la saisie)
@@ -2530,7 +2766,7 @@ function showMissionError(text) {
     el.textContent = text;
     el.hidden = !text;
     if (!text) return;
-    const field = /dossier/i.test(text) ? "#mission-workspace" : /motif/i.test(text) ? "#mission-prod" : /nom/i.test(text) ? "#mission-name" : null;
+    const field = /variable/i.test(text) ? "#mission-vars" : /dossier/i.test(text) ? "#mission-workspace" : /motif/i.test(text) ? "#mission-prod" : /nom/i.test(text) ? "#mission-name" : null;
     if (field) { $(field).focus(); $(field).select(); }
 }
 
@@ -2868,12 +3104,19 @@ $("#palette").addEventListener("mousedown", (ev) => { if (ev.target.id === "pale
 $("#favform").addEventListener("submit", submitFav);
 $("#vault-open").addEventListener("click", openVault);
 $("#note-preview-toggle").addEventListener("click", () => toggleNotePreview());
+$("#note-export").addEventListener("click", exportNote);
+$("#note-import").addEventListener("click", () => $("#note-import-file").click());
+$("#note-import-file").addEventListener("change", (ev) => importNotes([...ev.target.files]));
+$("#act-import").addEventListener("click", () => $("#act-import-file").click());
+$("#act-import-file").addEventListener("change", (ev) => readSectionFile(ev.target.files[0]));
+$("#act-import-ok").addEventListener("click", importSection);
+$("#act-import-cancel").addEventListener("click", () => { actImport = null; $("#act-import-confirm").hidden = true; });
 $("#params-form").addEventListener("submit", (ev) => { ev.preventDefault(); submitParams(); });
 $("#params-cancel").addEventListener("click", closeParams);
 $("#params").addEventListener("mousedown", (ev) => { if (ev.target.id === "params") closeParams(); });
 $("#params-form").addEventListener("keydown", (ev) => {
     ev.stopPropagation();
-    if (ev.key === "Escape") { ev.preventDefault(); closeParams(); }
+    if (ev.key === "Escape" && !ev.defaultPrevented) { ev.preventDefault(); closeParams(); }
 });
 $("#note-to-terminal").addEventListener("click", noteToTerminal);
 $("#settings-open").addEventListener("click", openSettings);

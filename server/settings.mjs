@@ -25,8 +25,25 @@ function cleanMission(m) {
         worldOrder: SCHEMA.worldOrder.clean(m.worldOrder ?? []),
         prodPattern,
         workspace: String(m.workspace ?? "").replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, 300),
-        favGroup: /^[0-9a-f-]{0,64}$/i.test(String(m.favGroup ?? "")) ? String(m.favGroup ?? "") : ""
+        favGroup: /^[0-9a-f-]{0,64}$/i.test(String(m.favGroup ?? "")) ? String(m.favGroup ?? "") : "",
+        vars: cleanVars(m.vars ?? {}, name)
     };
+}
+
+/** Variables d'une mission ({mission.nom} dans les commandes) : 30 au plus, valeurs sur une ligne. */
+function cleanVars(v, mission) {
+    if (!v || typeof v !== "object" || Array.isArray(v)) throw new Error(`mission « ${mission} » : variables invalides`);
+    const entries = Object.entries(v);
+    if (entries.length > 30) throw new Error(`mission « ${mission} » : 30 variables au plus`);
+    const out = {};
+    for (const [k, val] of entries) {
+        if (!/^[A-Za-z][A-Za-z0-9_-]{0,30}$/.test(k)) throw new Error(`mission « ${mission} » : nom de variable invalide « ${k} » (lettres, chiffres, - et _)`);
+        const value = String(val ?? "");
+        if (/[\u0000-\u001f\u007f]/.test(value)) throw new Error(`mission « ${mission} » : la variable ${k} doit tenir sur une ligne`);
+        if (value.length > 500) throw new Error(`mission « ${mission} » : variable ${k} trop longue (500 caractères au plus)`);
+        out[k] = value.trim();
+    }
+    return out;
 }
 
 const SCHEMA = {

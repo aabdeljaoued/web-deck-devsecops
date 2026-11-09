@@ -117,6 +117,7 @@ export const DESCRIPTIONS = {
     "brew/cleanup": "Supprime les anciennes versions",
     "brew/uninstall": "Désinstalle un paquet",
     // SSH
+    "ssh/connexion": "Se connecter à un hôte de ~/.ssh/config",
     "ssh/mes clés": "Clés du dossier ~/.ssh",
     "ssh/keygen ed25519": "Crée une clé ed25519",
     "ssh/copier clé pub": "Copie ta clé publique",

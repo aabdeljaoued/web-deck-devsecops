@@ -108,6 +108,25 @@ export class Actions {
         return def?.id ?? this.sections.at(-1).id;
     }
 
+    /**
+     * Rubrique reçue d'un collègue (fichier exporté depuis un autre deck) : tout est revalidé comme une saisie,
+     * nouveaux identifiants, rien d'épinglé sur l'accueil. Renvoie l'identifiant de la rubrique créée.
+     */
+    importSection(def) {
+        if (this.sections.length >= MAX_SECTIONS) throw new Error(`${MAX_SECTIONS} rubriques au plus`);
+        if (!Array.isArray(def?.actions)) throw new Error("fichier invalide : aucune liste d'actions");
+        if (def.actions.length > MAX_ACTIONS) throw new Error(`${MAX_ACTIONS} actions au plus par rubrique (le fichier en contient ${def.actions.length})`);
+        const section = cleanSection(def, newId("u"));
+        if (this.sections.some((s) => s.label === section.label)) section.label = `${section.label} (importée)`.slice(0, 30);
+        const actions = def.actions.map((a, i) => {
+            try { return cleanAction({ ...a, pinned: false }, newId("a")); }
+            catch (err) { throw new Error(`action ${i + 1} (${text(a?.label, 30) || "sans nom"}) : ${err.message}`); }
+        });
+        this.sections.push({ ...section, actions });
+        this.save();
+        return section.id;
+    }
+
     deleteSection(id) {
         this.section(String(id));
         this.sections = this.sections.filter((s) => s.id !== id);

@@ -73,3 +73,20 @@ test("action épinglée : sur l'accueil en plus de sa rubrique, comptée dans le
     for (let i = 0; i < 6; i++) a.saveAction(id, { kind: "command", label: `p${i}`, command: "ls", pinned: true });
     assert.throws(() => buildDeck(loadConfig(), [], {}, [], a.list()), /max 18/);
 });
+
+test("rubrique importée : revalidée, nouveaux identifiants, rien d'épinglé, nom en double signalé", () => {
+    const a = fresh();
+    a.saveSection({ label: "Client" });
+    const id = a.importSection({ label: "Client", icon: "lucide-star", color: "#123456", actions: [
+        { label: "pods", kind: "command", command: "kubectl get pods", enter: true, pinned: true },
+        { label: "doc", kind: "url", url: "docs.example.test" }
+    ] });
+    const s = a.section(id);
+    assert.equal(s.label, "Client (importée)");
+    assert.equal(s.actions.length, 2);
+    assert.ok(s.actions.every((x) => /^a-[0-9a-f]{8}$/.test(x.id) && !x.pinned));
+    assert.equal(s.actions[1].url, "https://docs.example.test/");
+    assert.throws(() => a.importSection({ label: "X", actions: [{ label: "bad", kind: "command", command: "ls\nrm -rf /" }] }), /action 1 \(bad\).*une ligne/);
+    assert.throws(() => a.importSection({ label: "X", actions: [{ label: "js", kind: "url", url: "javascript:alert(1)" }] }), /action 1/);
+    assert.throws(() => a.importSection({ label: "X" }), /aucune liste/);
+});

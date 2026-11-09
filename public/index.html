@@ -64,7 +64,7 @@
 
     <div id="palette" class="palette" hidden>
         <div class="palette-box" role="dialog" aria-label="Palette de commandes">
-            <input id="palette-input" type="text" placeholder="Chercher une touche : exec, plan, logs, push…" spellcheck="false" autocomplete="off">
+            <input id="palette-input" type="text" placeholder="Chercher : touche, favori, mission, note, secret… (exec, logs, grafana)" spellcheck="false" autocomplete="off">
             <ul id="palette-list"></ul>
             <p class="palette-help">↑ ↓ choisir · Entrée lancer · Échap fermer</p>
         </div>
@@ -132,8 +132,10 @@
             <div id="vault-notes" class="vault-split" hidden>
                 <div class="vault-list">
                     <div class="vault-list-head">
-                        <input id="note-search" type="search" placeholder="Rechercher dans les notes">
+                        <input id="note-search" type="search" placeholder="Rechercher…" title="Rechercher dans les titres et le contenu des notes">
                         <button id="note-new" class="vault-btn" type="button">+ Note</button>
+                        <button id="note-import" class="vault-btn" type="button" title="Importer des notes Markdown (.md) reçues d'un collègue">Importer</button>
+                        <input id="note-import-file" type="file" accept=".md,.markdown,.txt,text/markdown,text/plain" multiple hidden>
                     </div>
                     <ul id="note-list"></ul>
                 </div>
@@ -147,6 +149,7 @@
                         <span class="grow"></span>
                         <button id="note-preview-toggle" class="vault-btn" type="button" title="Aperçu du Markdown (re-cliquer pour modifier)">Aperçu</button>
                         <button id="note-to-terminal" class="vault-btn primary" type="button" title="Affiche la note mise en forme dans le terminal actif (rien n'est envoyé au shell) : sélectionne ensuite une partie, puis clique une touche d'action">Afficher dans le terminal ▸</button>
+                        <button id="note-export" class="vault-btn" type="button" title="Exporter cette note en Markdown (.md), en clair, pour la partager">Exporter</button>
                         <button id="note-delete" class="vault-btn danger" type="button">Supprimer</button>
                     </div>
                 </div>
@@ -255,6 +258,9 @@
                     <label>Groupe de favoris ouvert par la touche Favoris
                         <select id="mission-fav"></select>
                     </label>
+                    <label>Variables <span class="hint">une par ligne, « nom = valeur » ; dans une commande : {mission.nom}</span>
+                        <textarea id="mission-vars" rows="4" spellcheck="false" placeholder="registry = harbor.client.fr&#10;namespace = app-prod&#10;api = https://api.client.fr"></textarea>
+                    </label>
                     <label class="settings-check"><input id="mission-capture" type="checkbox" checked> Reprendre les rubriques et l'ordre affichés actuellement</label>
                     <span id="mission-error" class="mission-error" role="alert" hidden></span>
                     <span class="settings-actions">
@@ -267,7 +273,21 @@
                 <legend>Mes actions</legend>
                 <span class="hint">Tes propres rubriques et touches, sans éditer de fichier : une commande (exécutée tout de suite, ou à compléter ; <code>{}</code> = texte sélectionné dans le terminal) ou un lien. Enregistrées dans <code>actions.json</code>, hors Git. Une rubrique créée apparaît aussi dans « Rubriques » ci-dessous.</span>
                 <div id="act-list" class="act-list"></div>
-                <div class="settings-actions"><button type="button" id="act-section-new">Nouvelle rubrique…</button></div>
+                <div class="settings-actions">
+                    <button type="button" id="act-section-new">Nouvelle rubrique…</button>
+                    <button type="button" id="act-import" title="Importer une rubrique exportée depuis un autre deck (fichier .json)">Importer une rubrique…</button>
+                    <input id="act-import-file" type="file" accept=".json,application/json" hidden>
+                </div>
+                <div id="act-import-confirm" class="fav-import-confirm mission-form" hidden>
+                    <strong id="act-import-title"></strong>
+                    <ul id="act-import-list" class="act-actions"></ul>
+                    <span class="hint">Vérifie les commandes avant d'importer : celles marquées en vert s'exécutent dès le clic sur la touche.</span>
+                    <span id="act-import-error" class="mission-error" role="alert" hidden></span>
+                    <span class="settings-actions">
+                        <button type="button" id="act-import-ok" class="primary">Importer</button>
+                        <button type="button" id="act-import-cancel">Annuler</button>
+                    </span>
+                </div>
                 <div id="act-section-form" class="fav-import-confirm mission-form" hidden>
                     <strong id="act-section-title">Nouvelle rubrique</strong>
                     <label>Nom <input id="act-section-label" type="text" maxlength="30" placeholder="ex. Mission BNP"></label>

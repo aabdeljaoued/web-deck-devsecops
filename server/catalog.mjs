@@ -78,6 +78,14 @@ function text(label, sym, command, enter, color) {
     return withIcon({ type: "text", label, sym, color, tool: first.split(" ")[0], badge: enter ? "run" : "type", text: cmd, enter });
 }
 
+/**
+ * Variante à paramètres d'une touche à compléter : utilisée quand rien n'est sélectionné (terminal ou note),
+ * elle ouvre la fenêtre Paramètres avec les listes réelles ({namespace}, {pod}, {container}, {image}).
+ */
+function withPick(key, command) {
+    return key && { ...key, pick: command };
+}
+
 /** Touche "text" avec une icône précise (outils sans symbole partagé). */
 function textIcon(label, sym, command, enter, color, icon) {
     const key = text(label, sym, command, enter, color);
@@ -110,7 +118,8 @@ function folder(label, sym, page, color, icon) {
 const prodGuard = (key) => key && { ...key, prodGuard: true };
 
 /** Logos utilisés par le catalogue : le serveur ne sert que ceux-là. */
-export const ICONS = new Set();
+// Icônes de l'interface hors touches (palette : notes, secrets, missions)
+export const ICONS = new Set(["lucide-notebook-text", "lucide-key-round", "lucide-briefcase"]);
 
 /** Retour vers la page parente (l'accueil par défaut ; le groupe du dessus dans les favoris). */
 function back(page = "root") {
@@ -195,12 +204,13 @@ function buildCatalog(ctx) {
             text("events", "⚡", "kubectl get events --sort-by=.lastTimestamp", true, C.k8s),
             text("nodes", "▦", "kubectl get nodes -o wide", true, C.k8s),
             text("svc / ingress", "svc", "kubectl get svc,ingress", true, C.k8s),
-            text("logs -f", "📜", "kubectl logs -f ", false, C.k8s),
+            // pick : sans sélection, fenêtre Paramètres avec la liste réelle (namespace puis pod)
+            withPick(text("logs -f", "📜", "kubectl logs -f ", false, C.k8s), "kubectl logs -f -n {namespace} {pod}"),
             // stern : logs de tous les pods dont le nom correspond ({} = nom ou expression régulière)
-            textIcon("stern", "st", "stern {} --since 15m", false, C.k8s, "lucide-logs"),
-            text("describe", "🔍", "kubectl describe pod ", false, C.k8s),
+            withPick(textIcon("stern", "st", "stern {} --since 15m", false, C.k8s, "lucide-logs"), "stern -n {namespace} {pod} --since 15m"),
+            withPick(text("describe", "🔍", "kubectl describe pod ", false, C.k8s), "kubectl describe pod -n {namespace} {pod}"),
             // {} = emplacement du pod : texte sélectionné, sinon position du curseur
-            prodGuard(text("exec -it", ">_", "kubectl exec -it {} -- sh", false, C.k8s)),
+            prodGuard(withPick(text("exec -it", ">_", "kubectl exec -it {} -- sh", false, C.k8s), "kubectl exec -it -n {namespace} {pod} -- sh")),
             text("RBAC can-i", "🛂", "kubectl auth can-i --list", true, C.sec),
             text("NetPol", "🧱", "kubectl get networkpolicies", true, C.sec),
             // popeye : audit du cluster (ressources mal configurées, inutilisées...) sur le namespace courant
@@ -306,12 +316,12 @@ function buildCatalog(ctx) {
             text("ps -a", "ps-a", "docker ps -a", true, C.docker),
             text("images", "🖼", "docker images", true, C.docker),
             // dive : couches d'une image ({} = image sélectionnée dans le terminal)
-            textIcon("dive", "dive", "dive {}", false, C.docker, "lucide-layers-2"),
-            text("logs -f", "📜", "docker logs -f ", false, C.docker),
-            text("exec -it", ">_", "docker exec -it {} sh", false, C.docker),
+            withPick(textIcon("dive", "dive", "dive {}", false, C.docker, "lucide-layers-2"), "dive {image}"),
+            withPick(text("logs -f", "📜", "docker logs -f ", false, C.docker), "docker logs -f {container}"),
+            withPick(text("exec -it", ">_", "docker exec -it {} sh", false, C.docker), "docker exec -it {container} sh"),
             text("build", "🔨", "docker build -t ", false, C.docker),
             text("run --rm", "▶", "docker run --rm -it ", false, C.docker),
-            text("inspect", "🔍", "docker inspect ", false, C.docker),
+            withPick(text("inspect", "🔍", "docker inspect ", false, C.docker), "docker inspect {container}"),
             text("compose up", "⬆", "docker compose up -d", true, C.docker),
             text("compose logs", "📜", "docker compose logs -f", true, C.docker),
             text("compose down", "⬇", "docker compose down", false, C.docker),
@@ -359,6 +369,8 @@ function buildCatalog(ctx) {
                 mac: "ssh-add --apple-use-keychain $HOME/.ssh/id_ed25519",
                 linux: "ssh-add $HOME/.ssh/id_ed25519"
             }, true, C.ssh),
+            // connexion : texte sélectionné (ou à compléter) ; sans sélection, liste des hôtes de ~/.ssh/config
+            withPick(textIcon("connexion", "→", "ssh ", false, C.ssh, "lucide-log-in"), "ssh {host}"),
             text("test GitHub", "🐙", "ssh -T git@github.com", true, C.ssh),
             text("ssh verbose", "-v", "ssh -v ", false, C.ssh),
             text("tunnel -L", "⇄", "ssh -N -L 8080:localhost:80 ", false, C.ssh),

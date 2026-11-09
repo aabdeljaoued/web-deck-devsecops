@@ -69,3 +69,14 @@ test("signature en bannière ASCII : style et police validés, bannière dessin�
         assert.ok(figlet.textSync("Ab", { font }).split("\n").length >= 3, `police ${font}`);
     }
 });
+
+test("variables de mission : noms et valeurs vérifiés, gardées à l'enregistrement", () => {
+    const s = new Settings(path.join(tmpDir(), "settings.json"));
+    const m = (vars) => ({ missions: [{ id: "m-1", name: "Client", vars }] });
+    s.update(m({ registry: " harbor.client.test ", ns: "app" }));
+    assert.deepEqual(s.get().missions[0].vars, { registry: "harbor.client.test", ns: "app" });
+    assert.throws(() => s.update(m({ "1abc": "x" })), /nom de variable invalide/);
+    assert.throws(() => s.update(m({ cmd: "ls\nrm" })), /une ligne/);
+    assert.throws(() => s.update(m(["x"])), /variables invalides/);
+    assert.deepEqual(new Settings(path.join(tmpDir(), "s2.json")).get().missions, []);
+});

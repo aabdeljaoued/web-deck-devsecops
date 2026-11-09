@@ -403,6 +403,7 @@ wss.on("connection", (ws) => {
                 // Missions : enregistrer (rubriques actuelles reprises si demandé), supprimer, activer
                 // Mes actions : rubriques et touches créées depuis les Réglages (actions.json, hors Git)
                 case "action-section-save":
+                case "action-section-import":
                 case "action-section-delete":
                 case "action-save":
                 case "action-delete":
@@ -414,6 +415,7 @@ wss.on("connection", (ws) => {
                         const id = actions.saveSection(msg.section);
                         if (isNew) created = id;
                     }
+                    if (msg.t === "action-section-import") created = actions.importSection(msg.section);
                     if (msg.t === "action-section-delete") {
                         actions.deleteSection(String(msg.id));
                         const s = settings.get();

@@ -29,9 +29,23 @@ const SOURCES = {
     context: { kube: ["config", "get-contexts", "-o", "name"] },
     container: { docker: ["ps", "--format", "{{.Names}}"] },
     image: { docker: ["images", "--format", "{{.Repository}}:{{.Tag}}"] },
-    host: { ssh: true }
+    host: { ssh: true },
+    identity: { keys: true }
 };
-const ALIASES = { ns: "namespace", deploy: "deployment", svc: "service", ctx: "context", contexte: "context", conteneur: "container", hote: "host", "hôte": "host", serveur: "host", server: "host" };
+const ALIASES = { ns: "namespace", deploy: "deployment", svc: "service", ctx: "context", contexte: "context", conteneur: "container", hote: "host", "hôte": "host", serveur: "host", server: "host", identite: "identity", "identité": "identity" };
+
+/**
+ * Clés privées de ~/.ssh pour « ssh -i » : fichiers qui ont un .pub à côté, ou en .pem / .key.
+ * Seuls les noms sont lus (jamais le contenu). Chemin complet, entre guillemets s'il contient un espace.
+ */
+export function sshKeys(dir = path.join(homedir(), ".ssh")) {
+    let files;
+    try { files = readdirSync(dir); } catch { return []; }
+    const keys = files.filter((f) => !f.endsWith(".pub") && (files.includes(`${f}.pub`) || /\.(pem|key)$/i.test(f)))
+        .filter((f) => { try { return statSync(path.join(dir, f)).isFile(); } catch { return false; } })
+        .sort();
+    return keys.map((f) => { const p = path.join(dir, f); return /\s/.test(p) ? `"${p}"` : p; });
+}
 
 /**
  * Hôtes de ~/.ssh/config (lignes Host, sans motifs * ? !), Include suivis (chemins relatifs à ~/.ssh,
@@ -79,6 +93,7 @@ export async function paramOptions(ctx, name, hint = {}) {
     if (!key) return [];
     const src = SOURCES[key];
     if (src.ssh) return sshHosts().slice(0, MAX_ITEMS);
+    if (src.keys) return sshKeys().slice(0, MAX_ITEMS);
     let out;
     if (src.kube) {
         if (!ctx.apps.kubectl) throw new Error("kubectl introuvable");

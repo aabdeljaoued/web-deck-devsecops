@@ -371,6 +371,8 @@ function buildCatalog(ctx) {
             }, true, C.ssh),
             // connexion : texte sélectionné (ou à compléter) ; sans sélection, liste des hôtes de ~/.ssh/config
             withPick(textIcon("connexion", "→", "ssh ", false, C.ssh, "lucide-log-in"), "ssh {host}"),
+            // connexion avec une clé précise : clés privées de ~/.ssh (noms seulement), puis hôte
+            withPick(textIcon("connexion -i", "-i", "ssh -i ", false, C.ssh, "lucide-key-square"), "ssh -i {identity} {host}"),
             text("test GitHub", "🐙", "ssh -T git@github.com", true, C.ssh),
             text("ssh verbose", "-v", "ssh -v ", false, C.ssh),
             text("tunnel -L", "⇄", "ssh -N -L 8080:localhost:80 ", false, C.ssh),

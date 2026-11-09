@@ -32,3 +32,15 @@ test("hôtes SSH : lignes Host sans motifs, Include suivis, rien d'exécuté", a
     assert.deepEqual(sshHosts(path.join(dir, "config")), ["github.com", "prod-db", "bastion-client", "app-1"]);
     assert.deepEqual(sshHosts(path.join(dir, "absent")), []);
 });
+
+test("clés SSH pour ssh -i : fichiers avec .pub, .pem, .key ; pas les .pub ni les autres fichiers", async () => {
+    const { mkdtempSync, writeFileSync, mkdirSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const path = (await import("node:path")).default;
+    const { sshKeys, liveParam } = await import("../server/params.mjs");
+    const dir = mkdtempSync(path.join(tmpdir(), "deck keys-"));
+    for (const f of ["id_ed25519", "id_ed25519.pub", "client.pem", "known_hosts", "config", "orphan.pub"]) writeFileSync(path.join(dir, f), "x");
+    mkdirSync(path.join(dir, "old.key"));
+    assert.deepEqual(sshKeys(dir), [`"${path.join(dir, "client.pem")}"`, `"${path.join(dir, "id_ed25519")}"`]);
+    assert.equal(liveParam("identité"), "identity");
+});

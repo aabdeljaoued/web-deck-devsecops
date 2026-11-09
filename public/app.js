@@ -779,7 +779,7 @@ function hideKeyTip() {
 
 const PARAM_RE = /\{([\p{L}_][\p{L}\p{N}_-]{0,30})\}/gu;
 const SENSITIVE_PARAM = /pass|secret|token|mdp|pwd|key|cle|clé/i;   // jamais gardés dans l'historique
-const LIVE = ["namespace", "ns", "pod", "deployment", "deploy", "service", "svc", "node", "context", "ctx", "contexte", "container", "conteneur", "image", "host", "hote", "hôte", "serveur", "server"];
+const LIVE = ["namespace", "ns", "pod", "deployment", "deploy", "service", "svc", "node", "context", "ctx", "contexte", "container", "conteneur", "image", "host", "hote", "hôte", "serveur", "server", "identity", "identite", "identité"];
 let paramsState = null;   // { key, command, names, req }
 
 /** Paramètres nommés d'une commande, dans l'ordre, sans doublon. */

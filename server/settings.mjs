@@ -26,8 +26,20 @@ function cleanMission(m) {
         prodPattern,
         workspace: String(m.workspace ?? "").replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, 300),
         favGroup: /^[0-9a-f-]{0,64}$/i.test(String(m.favGroup ?? "")) ? String(m.favGroup ?? "") : "",
-        vars: cleanVars(m.vars ?? {}, name)
+        vars: cleanVars(m.vars ?? {}, name),
+        certs: cleanCerts(m.certs ?? [], name)
     };
+}
+
+/** Certificats surveillés : « hôte » ou « hôte:port » (443 par défaut), 20 au plus. */
+function cleanCerts(v, mission) {
+    if (!Array.isArray(v) || v.length > 20) throw new Error(`mission « ${mission} » : 20 certificats au plus`);
+    return [...new Set(v.map((c) => String(c ?? "").trim().toLowerCase()).filter(Boolean))].map((c) => {
+        if (!/^[a-z0-9]([a-z0-9.-]{0,252}[a-z0-9])?(:\d{1,5})?$/.test(c)) throw new Error(`mission « ${mission} » : certificat « ${c} » invalide (hôte ou hôte:port)`);
+        const port = Number(c.split(":")[1] ?? 443);
+        if (port < 1 || port > 65535) throw new Error(`mission « ${mission} » : port invalide pour ${c}`);
+        return c;
+    });
 }
 
 /** Variables d'une mission ({mission.nom} dans les commandes) : 30 au plus, valeurs sur une ligne. */

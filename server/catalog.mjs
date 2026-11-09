@@ -158,6 +158,7 @@ function buildCatalog(ctx) {
         "lock":        lock(),
         // Voyants
         "kube-status":      status("kube", "kubectl", "☸", C.k8s, "kubectl"),
+        "cert-status":      status("certs", "certificats", "🔒", C.openssl),
         "git-status":       status("git", "branche", "git", C.git, "git"),
         "container-status": status("containers", "conteneurs", "🐳", C.docker)
     };
@@ -199,7 +200,8 @@ function buildCatalog(ctx) {
             text("amend", "✎", "git commit --amend", false, C.danger)
         ]},
         k8s: { label: "K8s / OCP", sym: "☸", icon: "kubernetes", color: C.k8s, terminal: true, keys: [
-            text("contexts", "ctx", "kubectl config get-contexts", true, C.k8s),
+            // contexte / ns : même sélecteur que le voyant kubectl (passage en production confirmé par un 2e clic)
+            { ...text("contexte / ns", "ctx", "kubectl config get-contexts", true, C.k8s), kubePicker: true },
             text("pods", "pod", "kubectl get pods", true, C.k8s),
             text("events", "⚡", "kubectl get events --sort-by=.lastTimestamp", true, C.k8s),
             text("nodes", "▦", "kubectl get nodes -o wide", true, C.k8s),
@@ -404,6 +406,8 @@ function buildCatalog(ctx) {
             textIcon("grep", "🔍", 'grep -rIn --color=auto "{}" .', false, C.linux, "lucide-text-search")
         ]},
         openssl: { label: "OpenSSL", sym: "🔏", icon: "certificate", color: C.openssl, terminal: true, keys: [
+            // Voyant : certificats de la mission active (Réglages › Missions › Certificats)
+            status("certs", "certificats", "🔒", C.openssl),
             text("version", "ver", "openssl version -a", true, C.openssl),
             text("clé RSA 4096", "RSA", "openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:4096 -out key.pem", false, C.openssl),
             text("clé EC P-256", "EC", "openssl ecparam -genkey -name prime256v1 -noout -out ec.key", false, C.openssl),

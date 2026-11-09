@@ -141,13 +141,15 @@ Avant chaque modification de `favoris.json`, `vault.enc` ou `settings.json`, la 
 
 ### Garde-fou production
 
-Quand le voyant kubectl est en **production** (contexte ou namespace qui correspond à `prodPattern` de `config.jsonc`, par défaut `prod|prd`), les touches qui agissent sur le cluster (**exec -it**, **helm upgrade -i**, **rollback**, **uninstall**) sont entourées de rouge avec la mention **PROD** : le premier clic affiche le contexte et arme la touche, le **deuxième clic** (dans les 5 s) la lance. Les terminaux prennent aussi un **bord rouge** avec le bandeau **PRODUCTION · contexte / namespace**, tant que le contexte reste en production.
+Quand le voyant kubectl est en **production** (contexte ou namespace qui correspond à `prodPattern` de `config.jsonc`, par défaut `prod|prd`), les touches qui agissent sur le cluster (**exec -it**, **helm upgrade -i**, **rollback**, **uninstall**) sont entourées de rouge avec la mention **PROD** : le premier clic affiche le contexte et arme la touche, le **deuxième clic** (dans les 5 s) la lance. Changer de contexte ou de namespace (voyant **kubectl** de l'accueil, ou touche **contexte / ns** de la rubrique K8s) vers une production demande aussi **un second clic** dans le sélecteur. Les terminaux prennent aussi un **bord rouge** avec le bandeau **PRODUCTION · contexte / namespace**, tant que le contexte reste en production.
 
 ### Missions (un profil par client)
 
 **Réglages › Missions › Nouvelle mission…** enregistre un profil : nom, **thème**, **rubriques affichées et leur ordre** (reprises des réglages actuels), **motif de production** du voyant kubectl (vide = `prodPattern` de `config.jsonc`), **dossier des nouveaux terminaux** et **groupe de favoris** ouvert directement par la touche Favoris. Le sélecteur **Mission** de l'en-tête (affiché dès qu'une mission existe) l'active en un clic : thème et rubriques appliqués (refusé si l'accueil dépasse 18 touches), voyant kubectl et garde-fou production avec le motif de la mission. « Mission : aucune » rend le motif et le dossier par défaut. Les missions sont enregistrées dans `settings.json` (hors Git).
 
 **Variables de mission** : dans le formulaire, une par ligne (`registry = harbor.client.fr`, `ns = app-prod`…). Une commande (Mes actions ou `config.jsonc`) les utilise avec `{mission.registry}` : la valeur vient de la mission active, la même touche sert donc chez chaque client. Sans mission active, ou si la variable manque, la touche ne tape rien et le dit.
+
+**Certificats à surveiller** : une adresse par ligne (`api.client.fr`, `ldap.client.fr:636`). Le voyant **certificats** de la rubrique OpenSSL (ou `cert-status` dans `shortcuts`) montre le plus proche de l'expiration : vert, **orange à moins de 30 jours**, **rouge à moins de 7** ou expiré ; le détail de chaque certificat (jours restants, date, chaîne non reconnue, serveur injoignable) au survol, vérification immédiate au clic, sinon toutes les 30 min. La date est lue par une simple poignée de main TLS (Node, sans openssl).
 
 ### Rubriques activées
 
@@ -171,6 +173,7 @@ Dans **Réglages › Rubriques**, une case par monde (VS Code, Git, K8s, Docker�
 - **Activité** : point bleu sur l'onglet d'un terminal caché qui affiche quelque chose, point vert quand une commande longue (plus de 10 s) s'y termine.
 - **Notifications** (cloche) : notification du système quand une commande longue se termine dans un terminal caché ou quand la page n'est pas au premier plan.
 - **Diffusion** (flèches) : ce que tu tapes, et les touches du deck, partent dans **tous les terminaux visibles** (2×1 ou 2×2), entourés d'orange, avec le bandeau **DIFFUSION → n terminaux**.
+- **● REC** : enregistre la session du terminal actif (preuve d'intervention, compte rendu) ; point rouge sur l'onglet, bandeau **● REC**, re-cliquer pour arrêter (arrêt automatique à la fermeture du terminal ou à 50 Mo). Deux fichiers horodatés dans `.deck-recordings/` (hors Git) : `.cast` (rejouable avec `asciinema play`) et `.txt` (texte sans couleurs). Seul ce qui **s'affiche** est enregistré : la frappe non affichée (mot de passe à une invite) et les notes du coffre affichées par le deck n'y figurent pas. Liste et « Ouvrir le dossier » : **Réglages › Enregistrements de sessions** ; **▶** rejoue la session dans le deck (lecture seule, rien n'est envoyé à un shell) : lecture / pause (Espace), barre de progression pour se déplacer, vitesse ×1 à ×8, pauses de plus de 2 s écourtées. En dehors du deck : `asciinema play fichier.cast`.
 - **Rechercher** (`⌘F` / `Ctrl+F`, loupe) dans la sortie du terminal actif ; Entrée / Maj+Entrée : suivant / précédent.
 - **Taille du texte** : `A−` / `A+`, ou `⌘−` / `⌘+` / `⌘0` (`Ctrl` sous Windows).
 - **Copier / coller** : `Cmd+C` / `Cmd+V` sous macOS ; sous Windows, `Ctrl+C` copie la sélection (sans sélection, il interrompt la commande), `Ctrl+V` colle, `Ctrl+Shift+C` / `Ctrl+Shift+V` aussi.
@@ -284,7 +287,7 @@ Le terminal donne un shell complet : l'accès est verrouillé.
 
 ## Mise à jour et configuration d'une machine à l'autre
 
-- **Mise à jour en un clic** (Réglages › Serveur) : le deck compare sa version avec GitHub au démarrage puis toutes les 6 h (ou avec **Vérifier**) ; une pastille sur l'engrenage signale une nouvelle version. **Mettre à jour** (deux clics) fait `git pull`, installe les dépendances si besoin et redémarre. Refusé si des fichiers suivis par Git ont été modifiés sur la machine (ex. `config.jsonc`), pour ne rien écraser.
+- **Mise à jour en un clic** (Réglages › Serveur) : le deck compare sa version avec GitHub au démarrage puis toutes les 6 h (ou avec **Vérifier**) ; une pastille sur l'engrenage signale une nouvelle version. **Mettre à jour** (deux clics) fait `git pull`, installe les dépendances si besoin et redémarre. Refusé si des fichiers suivis par Git ont été modifiés sur la machine (ex. `config.jsonc`), pour ne rien écraser. Après un redémarrage avec une nouvelle version, les onglets déjà ouverts **se rechargent tout seuls** à la reconnexion (sinon ils garderaient l'ancien code de la page).
 - **Configuration complète** (Réglages) : **Exporter…** un seul fichier avec favoris, Mes actions, réglages et missions, signature ; sur l'autre machine, **Importer…** en choisissant les parties (favoris fusionnés ou remplacés). Chaque fichier remplacé est sauvegardé avant ; les dossiers de mission absents de la machine sont signalés. Le coffre s'exporte à part (son import demande le mot de passe maître).
 
 ## Vérifier sous Windows

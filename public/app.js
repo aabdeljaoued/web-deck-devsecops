@@ -7,6 +7,9 @@ import { toAnsi, toHtml } from "/markdown.js";
 
 const $ = (sel) => document.querySelector(sel);
 
+/** Version de la page chargée (empreinte envoyée par le serveur dans « hello »). */
+let pageBuild = null;
+
 const state = {
     ws: null,
     tools: { missing: new Set(), install: {} },   // outils installables absents (server/tools.mjs)
@@ -189,6 +192,14 @@ function setConn(text, cls) {
 function handle(msg) {
     switch (msg.t) {
         case "hello": {
+            // Serveur redémarré avec une autre version de la page : rechargement (sinon l'ancien code reste actif)
+            if (pageBuild && msg.build && msg.build !== pageBuild) {
+                toast("nouvelle version du deck : rechargement…", "ok");
+                setTimeout(() => location.reload(), 600);
+                return;
+            }
+            pageBuild = msg.build ?? null;
+            state.rec = new Set(msg.rec ?? []);
             state.pages = msg.pages;
             state.titles = msg.titles;
             state.parents = msg.parents ?? {};
@@ -368,6 +379,26 @@ function handle(msg) {
         case "journal-recent":
             applyRecent(msg.entries);
             break;
+        // Enregistrement de sessions
+        case "rec":
+            state.rec = new Set(msg.sids);
+            applyRec();
+            break;
+        case "rec-started":
+            toast(`● enregistrement démarré : ${msg.file}`, "ok");
+            break;
+        case "rec-stopped": {
+            const d = msg.seconds >= 60 ? `${Math.floor(msg.seconds / 60)} min ${msg.seconds % 60} s` : `${msg.seconds} s`;
+            toast(`enregistrement terminé (${d}${msg.reason ? `, ${msg.reason}` : ""}) : ${msg.cast} et ${msg.txt} (Réglages › Enregistrements)`, "ok");
+            if (!$("#settings").hidden) send({ t: "rec-list" });
+            break;
+        }
+        case "rec-list":
+            renderRecordings(msg.files);
+            break;
+        case "rec-cast":
+            startPlayer(msg.name, msg.cast);
+            break;
         case "journal-added":
             if (!$("#settings").hidden) send({ t: "journal-list" });
             break;
@@ -487,7 +518,7 @@ function numberKeys() {
     });
 }
 
-const dialogOpen = () => ["#settings", "#vault", "#favdialog", "#palette", "#picker", "#duplicate", "#params"].some((id) => $(id) && !$(id).hidden);
+const dialogOpen = () => ["#settings", "#vault", "#favdialog", "#palette", "#picker", "#duplicate", "#params", "#player"].some((id) => $(id) && !$(id).hidden);
 
 // Phase de capture : avant le terminal (sinon ⌥1 taperait « ¡ » sur macOS)
 document.addEventListener("keydown", (ev) => {
@@ -594,7 +625,8 @@ function statusKey(id, statusId, key) {
     el.dataset.status = statusId;
     el.style.setProperty("--c", s.bg);
     el.title = statusId === "git" ? `${s.repo ?? ""}\nAppui : choisir le dépôt, ouvrir un terminal dedans`
-        : statusId === "kube" ? "Appui : changer de contexte ou de namespace" : "Appui : rafraîchir";
+        : statusId === "kube" ? "Appui : changer de contexte ou de namespace"
+            : s.detail ? `${s.detail}\nAppui : vérifier maintenant` : "Appui : rafraîchir";
 
     const title = Object.assign(document.createElement("span"), { className: "title", textContent: s.title });
     const lines = Object.assign(document.createElement("span"), { className: "lines" });
@@ -665,6 +697,8 @@ function press(key, el) {
         toast(`${key.needs} n'est pas installé : commande d'installation tapée, valide avec Entrée`, "ok");
         return typeInTerminal(install);
     }
+    // Sélecteur de contexte / namespace kubectl (comme le voyant de l'accueil)
+    if (key.kubePicker) return openPicker(el ?? document.querySelector(`[data-id="${CSS.escape(key.id)}"]`), "kube-list", "Chargement des contextes…");
     switch (key.type) {
         case "folder": {
             if (key.fav && state.favEdit) return openFavForm(key);
@@ -1308,6 +1342,7 @@ function activate(sid) {
         other.screen.classList.toggle("active", id === sid);
     }
     layoutScreens();
+    applyRec();          // bouton ● REC selon le terminal actif
     refreshUnixKeys();   // Ansible sous Windows : touches actives seulement dans un terminal connecté
     // Pas de vol du focus si un nom d'onglet est en cours de saisie (double-clic = clic + renommage)
     requestAnimationFrame(() => { if (!document.activeElement?.classList.contains("tab-rename")) t.term.focus(); });
@@ -1353,6 +1388,8 @@ function updateScreensBanner() {
     screens.classList.toggle("prod", Boolean(prod));
     const parts = [];
     if (prod) parts.push(Object.assign(document.createElement("span"), { className: "banner-prod", textContent: `PRODUCTION · ${prod}` }));
+    const recorded = visibleTerms().filter((id) => state.rec?.has(id)).length;
+    if (recorded) parts.push(Object.assign(document.createElement("span"), { className: "banner-rec", textContent: recorded > 1 ? `● REC · ${recorded} terminaux` : "● REC" }));
     if (state.broadcast) {
         const n = visibleTerms().filter((id) => !state.terms.get(id)?.ended).length;
         parts.push(Object.assign(document.createElement("span"), { className: "banner-broadcast", textContent: n > 1 ? `DIFFUSION → ${n} terminaux` : "DIFFUSION (un seul terminal visible)" }));
@@ -1525,7 +1562,12 @@ function openPicker(anchor, request, loadingText) {
 function placePicker() {
     const panel = $("#picker");
     const anchor = pickerAnchor?.isConnected ? pickerAnchor : document.querySelector(`[data-status="${pickerAnchor?.dataset.status}"]`);
-    if (!anchor) return;
+    if (!anchor) {
+        // ouvert depuis la palette (touche absente de la page) : en haut, au centre
+        panel.style.top = "120px";
+        panel.style.left = `${Math.max(8, (window.innerWidth - (panel.offsetWidth || 320)) / 2)}px`;
+        return;
+    }
     const box = anchor.getBoundingClientRect();
     const width = panel.offsetWidth || 320;
     panel.style.top = `${box.bottom + 8}px`;
@@ -1545,7 +1587,15 @@ function pickerSection(title, items, empty) {
     for (const item of items) {
         const row = Object.assign(document.createElement("div"), { className: `picker-row${item.current ? " current" : ""}${item.prod ? " prod" : ""}` });
         const main = Object.assign(document.createElement("button"), { className: "picker-item", textContent: item.label, title: item.title ?? item.label });
-        main.addEventListener("click", item.onClick);
+        // Production : premier clic = avertissement, deuxième clic (dans les 5 s) = changement
+        main.addEventListener("click", () => {
+            if (!item.prod || item.current || row.classList.contains("armed")) return item.onClick();
+            list.querySelectorAll(".picker-row.armed").forEach((r) => { r.classList.remove("armed"); r.querySelector(".picker-item").textContent = r.dataset.label; });
+            row.dataset.label = item.label;
+            row.classList.add("armed");
+            main.textContent = `⚠ PRODUCTION : ${item.label}, clique encore pour confirmer`;
+            setTimeout(() => { if (row.isConnected && row.classList.contains("armed")) { row.classList.remove("armed"); main.textContent = item.label; } }, 5000);
+        });
         row.append(main);
         for (const action of item.actions ?? []) {
             const btn = Object.assign(document.createElement("button"), { className: "picker-action", textContent: action.label, title: action.title });
@@ -2810,6 +2860,7 @@ function openMissionForm(m = null) {
     fav.replaceChildren(new Option("Aucun (page Favoris)", ""), ...(state.favGroups ?? []).map((g) => new Option(g.path, g.id)));
     fav.value = m?.favGroup ?? "";
     $("#mission-vars").value = Object.entries(m?.vars ?? {}).map(([k, v]) => `${k} = ${v}`).join("\n");
+    $("#mission-certs").value = (m?.certs ?? []).join("\n");
     $("#mission-capture").checked = !m;
     showMissionError("");
     $("#mission-form").hidden = false;
@@ -2842,6 +2893,8 @@ function saveMission() {
         workspace: $("#mission-workspace").value.trim(),
         favGroup: $("#mission-fav").value,
         vars,
+        // « https://api.client.fr/chemin » accepté : seul l'hôte (et le port) est gardé
+        certs: $("#mission-certs").value.split(/[\n,]/).map((l) => l.trim().replace(/^[a-z]+:\/\//i, "").replace(/\/.*$/, "")).filter(Boolean),
         captureWorlds: $("#mission-capture").checked
     } });
     // Pas de fermeture ici : seulement quand le serveur confirme (une erreur garde la saisie)
@@ -2862,7 +2915,7 @@ function showMissionError(text) {
     el.textContent = text;
     el.hidden = !text;
     if (!text) return;
-    const field = /variable/i.test(text) ? "#mission-vars" : /dossier/i.test(text) ? "#mission-workspace" : /motif/i.test(text) ? "#mission-prod" : /nom/i.test(text) ? "#mission-name" : null;
+    const field = /certificat|port invalide/i.test(text) ? "#mission-certs" : /variable/i.test(text) ? "#mission-vars" : /dossier/i.test(text) ? "#mission-workspace" : /motif/i.test(text) ? "#mission-prod" : /nom/i.test(text) ? "#mission-name" : null;
     if (field) { $(field).focus(); $(field).select(); }
 }
 
@@ -2979,6 +3032,7 @@ function openSettings() {
     $("#journal-clear").classList.remove("armed");
     $("#journal-clear").textContent = "Effacer";
     send({ t: "journal-list" });
+    send({ t: "rec-list" });
     $("#act-form").hidden = true;
     renderServer();
     send({ t: "backup-list" });
@@ -3157,6 +3211,138 @@ function previewAppearance() {
     applyAppearance($("#set-appearance").value, $("#set-theme").value);
 }
 
+// ---------- Enregistrement de sessions (● REC) ----------
+
+/** Point rouge sur les onglets enregistrés, bouton REC allumé si le terminal actif l'est, bandeau. */
+function applyRec() {
+    for (const [sid, t] of state.terms) t.tab.classList.toggle("rec", state.rec?.has(sid) ?? false);
+    const on = Boolean(state.active && state.rec?.has(state.active));
+    $("#rec").classList.toggle("on", on);
+    $("#rec").setAttribute("aria-pressed", String(on));
+    updateScreensBanner();
+}
+
+function toggleRec() {
+    const t = state.terms.get(state.active);
+    if (!t || t.ended) return toast("aucun terminal actif à enregistrer");
+    if (state.rec?.has(state.active)) send({ t: "rec-stop", sid: state.active });
+    else send({ t: "rec-start", sid: state.active, cols: t.term.cols, rows: t.term.rows });
+}
+
+function renderRecordings(files) {
+    const list = $("#rec-list");
+    const size = (n) => (n > 1048576 ? `${(n / 1048576).toFixed(1)} Mo` : `${Math.max(1, Math.round(n / 1024))} Ko`);
+    list.replaceChildren(...files.slice(0, 20).map((f) => {
+        const li = document.createElement("li");
+        li.append(
+            Object.assign(document.createElement("span"), { className: "j-time", textContent: new Date(f.time).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) }),
+            Object.assign(document.createElement("code"), { textContent: f.name.replace(/\.cast$/, ""), title: `${f.name} (et .txt)` }),
+            Object.assign(document.createElement("span"), { className: "j-time", textContent: size(f.size) }));
+        const play = Object.assign(document.createElement("button"), { type: "button", className: "rec-play", textContent: "▶", title: "Rejouer dans le deck" });
+        play.addEventListener("click", () => send({ t: "rec-read", name: f.name }));
+        li.append(play);
+        return li;
+    }));
+    if (!files.length) list.append(Object.assign(document.createElement("li"), { className: "hint", textContent: "aucun enregistrement" }));
+}
+
+// ---------- Lecteur d'enregistrements (.cast) ----------
+
+const IDLE_MAX = 2;   // pauses plus longues écourtées à 2 s (comme asciinema play -i 2)
+let player = null;    // { term, events: [[t, data]], duration, pos (s), index, playing, last, raf }
+
+/** Ouvre le lecteur : terminal en lecture seule, à la taille de l'enregistrement. */
+function startPlayer(name, cast) {
+    closePlayer();
+    const lines = cast.split("\n").filter(Boolean);
+    let header;
+    try { header = JSON.parse(lines[0]); } catch { return toast("enregistrement illisible"); }
+    const events = [];
+    let shift = 0;
+    let prev = 0;
+    for (const line of lines.slice(1)) {
+        try {
+            const [t, type, data] = JSON.parse(line);
+            if (type !== "o") continue;
+            if (t - prev > IDLE_MAX) shift += t - prev - IDLE_MAX;
+            prev = t;
+            events.push([t - shift, data]);
+        } catch { /* ligne tronquée */ }
+    }
+    const cols = Number(header.width) || 100;
+    const rows = Number(header.height) || 30;
+    $("#player").hidden = false;
+    const box = $("#player-screen");
+    // Police ajustée pour que la largeur d'origine tienne dans la fenêtre
+    const fontSize = Math.max(8, Math.min(14, Math.floor((box.clientWidth - 16) / (cols * 0.61))));
+    // Fond opaque assorti au thème : le thème des terminaux est transparent (fond de la page), ce qui donnerait
+    // ici un fond noir sous un texte foncé en mode clair
+    const background = currentMode === "light" ? "#ffffff" : "#000000";
+    box.style.background = background;
+    const term = new Terminal({ cols, rows, fontSize, disableStdin: true, cursorBlink: false, scrollback: 2000, theme: { ...termTheme(), background }, fontFamily: "'Cascadia Mono', Consolas, 'SF Mono', Menlo, Monaco, 'DejaVu Sans Mono', monospace" });
+    term.open(box);
+    player = { term, events, duration: events.at(-1)?.[0] ?? 0, pos: 0, index: 0, playing: false, last: 0, raf: 0 };
+    $("#player-title").textContent = name.replace(/\.cast$/, "");
+    playerToggle(true);
+    $("#player-play").focus();
+}
+
+const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+
+function playerTick(now) {
+    if (!player?.playing) return;
+    const speed = Number($("#player-speed").value) || 1;
+    player.pos += ((now - player.last) / 1000) * speed;
+    player.last = now;
+    let chunk = "";
+    while (player.index < player.events.length && player.events[player.index][0] <= player.pos) chunk += player.events[player.index++][1];
+    if (chunk) player.term.write(chunk);
+    if (player.index >= player.events.length) {
+        player.pos = player.duration;
+        playerToggle(false);
+    }
+    playerProgress();
+    if (player.playing) player.raf = requestAnimationFrame(playerTick);
+}
+
+function playerProgress() {
+    $("#player-time").textContent = `${mmss(player.pos)} / ${mmss(player.duration)}`;
+    $("#player-seek").value = player.duration ? Math.round((player.pos / player.duration) * 1000) : 1000;
+}
+
+function playerToggle(play = !player?.playing) {
+    if (!player) return;
+    if (play && player.index >= player.events.length) playerSeek(0);   // fin atteinte : on recommence
+    player.playing = play;
+    $("#player-play").textContent = play ? "❚❚" : "▶";
+    cancelAnimationFrame(player.raf);
+    if (play) {
+        player.last = performance.now();
+        player.raf = requestAnimationFrame(playerTick);
+    }
+}
+
+/** Saut à une position : terminal remis à zéro puis tout ce qui précède réécrit d'un coup. */
+function playerSeek(seconds) {
+    if (!player) return;
+    player.term.reset();
+    player.pos = Math.max(0, Math.min(seconds, player.duration));
+    player.index = 0;
+    let chunk = "";
+    while (player.index < player.events.length && player.events[player.index][0] <= player.pos) chunk += player.events[player.index++][1];
+    player.term.write(chunk);
+    playerProgress();
+}
+
+function closePlayer() {
+    if (!player) { $("#player").hidden = true; return; }
+    cancelAnimationFrame(player.raf);
+    player.term.dispose();
+    player = null;
+    $("#player-screen").replaceChildren();
+    $("#player").hidden = true;
+}
+
 function refreshToolbar() {
     for (const [id, on] of [["#broadcast", state.broadcast], ["#notify", state.notify]]) {
         $(id).classList.toggle("on", on);
@@ -3166,6 +3352,18 @@ function refreshToolbar() {
 
 $("#new-tab").addEventListener("click", () => openTerm());
 $("#broadcast").addEventListener("click", toggleBroadcast);
+$("#rec").addEventListener("click", toggleRec);
+$("#rec-open").addEventListener("click", () => send({ t: "rec-open" }));
+$("#player-play").addEventListener("click", () => playerToggle());
+$("#player-close").addEventListener("click", closePlayer);
+$("#player").addEventListener("mousedown", (ev) => { if (ev.target.id === "player") closePlayer(); });
+$("#player-seek").addEventListener("input", (ev) => { if (player) playerSeek((Number(ev.target.value) / 1000) * player.duration); });
+$("#player").addEventListener("keydown", (ev) => {
+    ev.stopPropagation();
+    if (ev.key === "Escape") { ev.preventDefault(); closePlayer(); }
+    // Espace : sur le bouton, c'est son clic natif ; ailleurs dans le lecteur, lecture / pause
+    if (ev.key === " " && !["SELECT", "BUTTON", "INPUT"].includes(ev.target.tagName)) { ev.preventDefault(); playerToggle(); }
+});
 
 $("#notify").addEventListener("click", toggleNotify);
 $("#font-down").addEventListener("click", () => setFontSize(state.fontSize - 1));

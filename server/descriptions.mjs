@@ -31,7 +31,7 @@ export const DESCRIPTIONS = {
     "git/restore": "Annule les modifications d'un fichier",
     "git/amend": "Modifie le dernier commit",
     // Kubernetes / OpenShift
-    "k8s/contexts": "Liste les contextes kubectl",
+    "k8s/contexte / ns": "Change de contexte ou de namespace",
     "k8s/pods": "Pods du namespace",
     "k8s/events": "Événements récents",
     "k8s/nodes": "Nœuds du cluster",

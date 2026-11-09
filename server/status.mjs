@@ -1,5 +1,7 @@
 // Voyants : contexte kubectl, branche Git, conteneurs. Interrogés seulement quand une page est ouverte.
 import { execFile } from "node:child_process";
+import { isIP } from "node:net";
+import tls from "node:tls";
 import { EventEmitter } from "node:events";
 import { existsSync, readdirSync } from "node:fs";
 import { stat } from "node:fs/promises";
@@ -13,6 +15,21 @@ function run(file, args, timeoutMs = 8000) {
             if (err) reject(new Error((stderr || err.message).trim()));
             else resolve(stdout);
         });
+    });
+}
+
+/** Date d'expiration du certificat d'un serveur TLS (8 s au plus) ; la chaîne n'est pas exigée valide. */
+function checkCert(host, port) {
+    return new Promise((resolve, reject) => {
+        const socket = tls.connect({ host, port, servername: isIP(host) ? undefined : host, rejectUnauthorized: false, timeout: 8000 }, () => {
+            const cert = socket.getPeerCertificate();
+            const out = { validTo: new Date(cert.valid_to), trusted: socket.authorized, reason: socket.authorizationError ? String(socket.authorizationError) : null };
+            socket.end();
+            if (!cert.valid_to || Number.isNaN(out.validTo.getTime())) reject(new Error("aucun certificat"));
+            else resolve(out);
+        });
+        socket.on("timeout", () => { socket.destroy(); reject(new Error("délai dépassé")); });
+        socket.on("error", (err) => reject(new Error(err.code ?? err.message)));
     });
 }
 
@@ -36,7 +53,8 @@ export class StatusHub extends EventEmitter {
         this.timers = [
             setInterval(() => this.checkKubeconfig(), 2000),
             setInterval(() => this.refreshGit(), 5000),
-            setInterval(() => this.refreshContainers(), 10000)
+            setInterval(() => this.refreshContainers(), 10000),
+            setInterval(() => this.refreshCerts(), 30 * 60 * 1000)
         ];
     }
 
@@ -47,13 +65,14 @@ export class StatusHub extends EventEmitter {
     }
 
     refreshAll() {
-        return Promise.all([this.refreshKube(), this.refreshGit(), this.refreshContainers()]);
+        return Promise.all([this.refreshKube(), this.refreshGit(), this.refreshContainers(), this.refreshCerts()]);
     }
 
     /** Appui sur un voyant : rafraîchir, ou dépôt suivant pour Git. */
     async press(id) {
         if (id === "kube") await this.refreshKube();
         if (id === "containers") await this.refreshContainers();
+        if (id === "certs") await this.refreshCerts();
         if (id === "git") {
             const repos = this.findRepos();
             if (repos.length) this.repo = repos[(repos.indexOf(this.repo) + 1) % repos.length];
@@ -65,6 +84,42 @@ export class StatusHub extends EventEmitter {
         if (JSON.stringify(this.states[id]) === JSON.stringify(state)) return;
         this.states[id] = state;
         this.emit("update", id, state);
+    }
+
+    // ---------- Certificats (mission active) ----------
+
+    /**
+     * Expiration des certificats de la mission (this.certTargets) : poignée de main TLS par Node, sans openssl,
+     * sans rien envoyer d'autre. Rouge : expiré ou moins de 7 jours ; orange : moins de 30 ; vert sinon.
+     */
+    async refreshCerts() {
+        const targets = this.certTargets ?? [];
+        if (!targets.length) return this.publish("certs", { bg: "#455A64", title: "CERTS", lines: ["aucun", "suivi"], footer: "mission › certificats", detail: "Aucun certificat surveillé : Réglages › Missions › Modifier › Certificats" });
+        const results = await Promise.all(targets.map(async (target) => {
+            const [host, port = "443"] = target.split(":");
+            try {
+                const cert = await checkCert(host, Number(port));
+                return { target, ...cert, days: Math.floor((cert.validTo - Date.now()) / 86400000) };
+            } catch (err) {
+                return { target, error: err.message };
+            }
+        }));
+        const ok = results.filter((r) => !r.error).sort((a, b) => a.days - b.days);
+        const failed = results.filter((r) => r.error);
+        const worst = ok[0];
+        const bg = !worst ? "#455A64" : worst.days < 7 ? "#C62828" : worst.days < 30 ? "#EF6C00" : "#2E7D32";
+        const day = (d) => d.toLocaleDateString("fr-FR");
+        const detail = [
+            ...ok.map((r) => `${r.target} : ${r.days < 0 ? `EXPIRÉ depuis ${-r.days} j` : `${r.days} j`} (${day(r.validTo)})${r.trusted ? "" : ` · non reconnu : ${r.reason}`}`),
+            ...failed.map((r) => `${r.target} : injoignable (${r.error})`)
+        ].join("\n");
+        this.publish("certs", {
+            bg,
+            title: worst && worst.days < 30 ? "⚠ CERTS" : "CERTS",
+            lines: worst ? [worst.target.split(":")[0].split(".")[0], worst.days < 0 ? "expiré" : `${worst.days} j`] : ["injoignable"],
+            footer: failed.length ? `${failed.length} injoignable(s)` : `${ok.length} suivi(s)`,
+            detail
+        });
     }
 
     // ---------- kubectl ----------

@@ -1266,3 +1266,24 @@ main {
 .banner-prod { background: #c62828; }
 .banner-broadcast { background: #e65100; }
 .note-preview .runbook-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; padding: 4px 8px; border-radius: 6px; background: color-mix(in srgb, var(--run) 18%, transparent); font-size: 12px; }
+.picker-row.armed .picker-item { background: #c62828; color: #fff; font-weight: 600; }
+
+/* Enregistrement de session */
+#rec { font-size: 11px; font-weight: 700; padding: 0 8px; width: auto; color: var(--muted, #9aa); }
+#rec.on { background: #b71c1c; color: #fff; animation: rec-blink 1.6s ease-in-out infinite; }
+@keyframes rec-blink { 50% { opacity: .65; } }
+.tab.rec::before { content: "●"; color: #e53935; margin-right: 4px; font-size: 10px; }
+.banner-rec { background: #b71c1c; }
+#rec-list li { grid-template-columns: 90px minmax(0, 1fr) auto; }
+.journal-list li.hint { display: block; }
+
+/* Lecteur d'enregistrements */
+.player-box { width: min(1100px, 94vw); display: flex; flex-direction: column; gap: 8px; padding: 12px; }
+.player-head { display: flex; align-items: center; gap: 8px; }
+.player-head button { border: 0; background: transparent; color: var(--text); font-size: 16px; cursor: pointer; }
+.player-screen { background: var(--term-bg); border-radius: 6px; padding: 6px; overflow: auto; max-height: 68vh; }
+.player-controls { display: flex; align-items: center; gap: 10px; }
+.player-controls input[type="range"] { flex: 1; }
+.player-controls button { min-width: 44px; }
+#rec-list li { grid-template-columns: 90px minmax(0, 1fr) auto auto; }
+.rec-play { border: 1px solid var(--border); border-radius: 4px; background: var(--panel); color: var(--text); cursor: pointer; padding: 0 7px; font-size: 11px; }

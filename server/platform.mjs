@@ -99,6 +99,12 @@ export function openBrowser(url) {
     return launch(cmd).catch(() => {});
 }
 
+/** Ouvre un dossier dans le Finder / l'Explorateur / le gestionnaire de fichiers. */
+export function openFolder(dir) {
+    const cmd = isWindows ? ["explorer.exe", dir] : isMac ? ["open", dir] : ["xdg-open", dir];
+    return launch(cmd).catch(() => {});
+}
+
 /** Lit une valeur du registre Windows via reg.exe ; null si absente. */
 function regQuery(key, name) {
     try {

@@ -42,6 +42,7 @@
                 </div>
                 <div class="tools" role="group" aria-label="Outils des terminaux">
                     <button id="broadcast" class="tool" title="Diffusion : taper dans tous les terminaux visibles à la fois" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h10M4 12h16M4 18h10"/><path d="m17 3 3 3-3 3M17 15l3 3-3 3"/></g></svg></button>
+                    <button id="rec" class="tool rec" title="Enregistrer la session du terminal actif (preuve d'intervention) : re-cliquer pour arrêter" aria-pressed="false">● REC</button>
                     <button id="notify" class="tool" title="Notification quand une commande longue se termine" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></g></svg></button>
                     <button id="search-open" class="tool" title="Rechercher dans le terminal (⌘F / Ctrl+F)"><svg viewBox="0 0 24 24" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></g></svg></button>
                     <button id="font-down" class="tool txt" title="Texte plus petit (⌘− / Ctrl+−)">A−</button>
@@ -262,6 +263,9 @@
                     <label>Variables <span class="hint">une par ligne, « nom = valeur » ; dans une commande : {mission.nom}</span>
                         <textarea id="mission-vars" rows="4" spellcheck="false" placeholder="registry = harbor.client.fr&#10;namespace = app-prod&#10;api = https://api.client.fr"></textarea>
                     </label>
+                    <label>Certificats à surveiller <span class="hint">un par ligne : hôte ou hôte:port (443 par défaut) ; voyant « certificats » de la rubrique OpenSSL</span>
+                        <textarea id="mission-certs" rows="3" spellcheck="false" placeholder="api.client.fr&#10;portail.client.fr&#10;ldap.client.fr:636"></textarea>
+                    </label>
                     <label class="settings-check"><input id="mission-capture" type="checkbox" checked> Reprendre les rubriques et l'ordre affichés actuellement</label>
                     <span id="mission-error" class="mission-error" role="alert" hidden></span>
                     <span class="settings-actions">
@@ -350,6 +354,14 @@
                 <div class="settings-actions">
                     <button type="button" id="journal-export">Exporter (CSV)…</button>
                     <button type="button" id="journal-clear">Effacer</button>
+                </div>
+            </fieldset>
+            <fieldset class="settings-group">
+                <legend>Enregistrements de sessions</legend>
+                <span class="hint">Bouton <strong>● REC</strong> de la barre des terminaux : tout ce qui s'affiche dans le terminal actif est enregistré (preuve d'intervention, compte rendu). Fichier <code>.cast</code> (rejouable : <code>asciinema play</code>) et version texte <code>.txt</code>. La frappe n'est pas enregistrée (un mot de passe tapé à une invite n'y figure pas), ni les notes du coffre affichées dans le terminal. Dossier <code>.deck-recordings/</code>, hors Git.</span>
+                <ul id="rec-list" class="journal-list"></ul>
+                <div class="settings-actions">
+                    <button type="button" id="rec-open">Ouvrir le dossier</button>
                 </div>
             </fieldset>
             <fieldset class="settings-group">
@@ -456,6 +468,29 @@
                 <button type="submit" id="params-ok" class="primary">Taper</button>
             </div>
         </form>
+    </div>
+
+    <div id="player" class="palette" hidden>
+        <div class="palette-box player-box" role="dialog" aria-label="Lecture d'un enregistrement">
+            <div class="player-head">
+                <strong id="player-title"></strong>
+                <span class="grow"></span>
+                <button type="button" id="player-close" title="Fermer (Échap)">✕</button>
+            </div>
+            <div id="player-screen" class="player-screen"></div>
+            <div class="player-controls">
+                <button type="button" id="player-play" class="primary" title="Lecture / pause (Espace)">▶</button>
+                <input id="player-seek" type="range" min="0" max="1000" value="0" aria-label="Position">
+                <span id="player-time" class="hint">0:00 / 0:00</span>
+                <select id="player-speed" title="Vitesse">
+                    <option value="1">×1</option>
+                    <option value="2">×2</option>
+                    <option value="4">×4</option>
+                    <option value="8">×8</option>
+                </select>
+            </div>
+            <span class="hint">Pauses de plus de 2 s écourtées. Lecture seule : rien n'est envoyé à un shell.</span>
+        </div>
     </div>
 
     <div id="keytip" class="keytip" role="tooltip" hidden></div>

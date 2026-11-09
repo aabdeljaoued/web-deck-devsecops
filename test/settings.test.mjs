@@ -80,3 +80,13 @@ test("variables de mission : noms et valeurs vérifiés, gardées à l'enregistr
     assert.throws(() => s.update(m(["x"])), /variables invalides/);
     assert.deepEqual(new Settings(path.join(tmpDir(), "s2.json")).get().missions, []);
 });
+
+test("certificats d'une mission : hôte ou hôte:port, minuscules, sans doublon", () => {
+    const s = new Settings(path.join(tmpDir(), "settings.json"));
+    const m = (certs) => ({ missions: [{ id: "m-1", name: "Client", certs }] });
+    s.update(m(["API.client.test", "ldap.client.test:636", "api.client.test"]));
+    assert.deepEqual(s.get().missions[0].certs, ["api.client.test", "ldap.client.test:636"]);
+    assert.throws(() => s.update(m(["https://x.test"])), /invalide/);
+    assert.throws(() => s.update(m(["x.test:70000"])), /port invalide/);
+    assert.throws(() => s.update(m(["a.test; rm -rf /"])), /invalide/);
+});

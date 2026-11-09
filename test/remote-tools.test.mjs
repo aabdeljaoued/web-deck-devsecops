@@ -34,3 +34,28 @@ test("outils vérifiés : ceux qui ont une commande d'installation sur ce systè
     assert.equal(neededTool({ tool: "git", needs: "delta" }), "delta");
     if (process.platform === "win32") assert.equal(neededTool({ tool: "ansible-lint" }), null);
 });
+
+test("enregistrement de session : .cast asciinema, texte sans séquences ANSI, liste", async () => {
+    const { Recorder, castToText } = await import("../server/recorder.mjs");
+    const { tmpDir } = await import("./helpers.mjs");
+    const { readFileSync } = await import("node:fs");
+    const path = (await import("node:path")).default;
+    const dir = path.join(tmpDir(), "rec");
+    const r = new Recorder(dir);
+    const file = r.start("1", { cols: 80, rows: 24, label: "zsh / client prod" });
+    assert.match(file, /^\d{4}-\d\d-\d\d_\d\d-\d\d-\d\d_zsh-client-prod\.cast$/);
+    r.write("1", "\x1b[32mok\x1b[0m pods\r\n");
+    r.write("1", "progress 10%\rprogress 100%\r\n");
+    assert.deepEqual(r.sids(), ["1"]);
+    const done = await r.stop("1");
+    const cast = readFileSync(path.join(dir, done.cast), "utf8").split("\n");
+    assert.equal(JSON.parse(cast[0]).version, 2);
+    assert.equal(JSON.parse(cast[1])[1], "o");
+    assert.equal(readFileSync(path.join(dir, done.txt), "utf8"), "ok pods\nprogress 100%\n");
+    assert.equal(r.list()[0].name, done.cast);
+    assert.equal(await r.stop("1"), null);
+    assert.match(r.read(done.cast), /^\{"version":2/);
+    for (const bad of ["../vault.enc", "x.txt", ".cast", "a/b.cast", done.txt]) assert.throws(() => r.read(bad), /invalide/, bad);
+    assert.throws(() => r.read("absent.cast"), /introuvable/);
+    assert.equal(castToText('{"version":2}\n[0.1,"o","\\u001b]0;titre\\u0007a"]\n'), "a");
+});

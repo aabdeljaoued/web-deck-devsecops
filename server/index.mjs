@@ -6,8 +6,8 @@
 //   --restarting                     relancé par le bouton Redémarrer : attend que le port se libère
 // DECK_SUPERVISOR=launchd|windows : lancé en service (service/), qui le relance s'il s'arrête sur un code ≠ 0.
 import { spawn } from "node:child_process";
-import { randomBytes, timingSafeEqual } from "node:crypto";
-import { copyFileSync, existsSync, openSync, readFileSync, statSync, truncateSync, unlinkSync, writeFileSync } from "node:fs";
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { copyFileSync, existsSync, mkdirSync, openSync, readFileSync, statSync, truncateSync, unlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import http from "node:http";
 import path from "node:path";
@@ -28,7 +28,8 @@ import { Vault } from "./vault.mjs";
 import { Settings } from "./settings.mjs";
 import { iconFile } from "./icons.mjs";
 import { loadConfig, ROOT } from "./config.mjs";
-import { launch, openBrowser, platform, windowsPty } from "./platform.mjs";
+import { launch, openBrowser, openFolder, platform, windowsPty } from "./platform.mjs";
+import { Recorder } from "./recorder.mjs";
 import { RemoteWatch } from "./remote.mjs";
 import { StatusHub } from "./status.mjs";
 import { Terminals } from "./terminal.mjs";
@@ -194,8 +195,35 @@ function broadcast(message) {
     for (const client of wss.clients) if (client.readyState === client.OPEN) client.send(data);
 }
 
-terminals.on("output", (sid, d) => broadcast({ t: "out", sid, d }));
-terminals.on("exit", (sid, code) => broadcast({ t: "exit", sid, code }));
+/**
+ * Version de la page (empreinte des fichiers servis) : un onglet ouvert avant un redémarrage se reconnecte
+ * sans recharger son code ; s'il voit une autre version, il se recharge (voir « hello » dans app.js).
+ */
+function pageBuild() {
+    const hash = createHash("sha256");
+    for (const [file] of Object.values(STATIC)) {
+        try { hash.update(readFileSync(file)); } catch { /* fichier facultatif absent */ }
+    }
+    return hash.digest("hex").slice(0, 12);
+}
+
+// Enregistrement de sessions (preuve d'intervention) : sortie des terminaux enregistrés, .deck-recordings/ (hors Git)
+const RECORDINGS = path.join(ROOT, ".deck-recordings");
+const recorder = new Recorder(RECORDINGS);
+async function stopRecording(sid, reason = null) {
+    const done = await recorder.stop(sid);
+    broadcast({ t: "rec", sids: recorder.sids() });
+    if (done) broadcast({ t: "rec-stopped", sid, ...done, reason });
+}
+
+terminals.on("output", (sid, d) => {
+    broadcast({ t: "out", sid, d });
+    if (!recorder.write(sid, d)) stopRecording(sid, "taille maximale atteinte (50 Mo)");
+});
+terminals.on("exit", (sid, code) => {
+    broadcast({ t: "exit", sid, code });
+    stopRecording(sid, "terminal fermé");
+});
 
 // Terminaux connectés en ssh / wsl : active les rubriques qui demandent un shell Linux / macOS (Ansible sous Windows).
 // DECK_LOCAL_UNIX=0 : se comporter comme sous Windows (pour tester sur un Mac).
@@ -215,6 +243,8 @@ const activeMission = () => {
 function applyMissionEffects() {
     const m = activeMission();
     status.prodPattern = m?.prodPattern || null;
+    status.certTargets = m?.certs ?? [];
+    status.refreshCerts?.().catch(() => {});
     terminals.workspaceOverride = m?.workspace || null;
     status.refreshKube?.().catch(() => {});
 }
@@ -282,6 +312,8 @@ wss.on("connection", (ws) => {
         prodPattern: ctx.cfg.prodPattern || "prod",
         signature: signatureVersion(),
         remote: remote.view(),
+        rec: recorder.sids(),
+        build: pageBuild(),
         server: { supervisor: SUPERVISOR, log: SUPERVISOR ? null : LOG_FILE },
         shells: ctx.shells.map(({ name, kind }) => ({ name, kind })),
         windowsPty: windowsPty(),
@@ -308,6 +340,22 @@ wss.on("connection", (ws) => {
                     break;
                 }
                 case "kube-list": reply({ t: "kube-list", ...(await status.listKube()) }); break;
+                case "rec-start": {
+                    const session = terminals.sessions.get(String(msg.sid));
+                    if (!session) throw new Error("terminal introuvable");
+                    const file = recorder.start(session.sid, { cols: Number(msg.cols) || 100, rows: Number(msg.rows) || 30, label: session.title || `${session.name}-${session.sid}` });
+                    broadcast({ t: "rec", sids: recorder.sids() });
+                    reply({ t: "rec-started", sid: session.sid, file });
+                    break;
+                }
+                case "rec-stop": await stopRecording(String(msg.sid)); break;
+                case "rec-list": reply({ t: "rec-list", files: recorder.list(), dir: RECORDINGS }); break;
+                case "rec-read": reply({ t: "rec-cast", name: String(msg.name), cast: recorder.read(msg.name) }); break;
+                case "rec-open": {
+                    mkdirSync(RECORDINGS, { recursive: true });
+                    openFolder(RECORDINGS);
+                    break;
+                }
                 case "kube-use": await status.useKube({ context: msg.context, namespace: msg.namespace }); reply({ t: "kube-used" }); break;
                 case "git-list": reply({ t: "git-list", ...status.listRepos() }); break;
                 case "git-select": await status.selectRepo(String(msg.repo)); break;
@@ -707,6 +755,7 @@ function restart() {
         remote.stop();
         screenLock.stop();
         vault.lock();
+        await Promise.all(recorder.sids().map((sid) => recorder.stop(sid)));
         terminals.closeAll();
         server.close();
         if (SUPERVISOR) process.exit(RESTART_EXIT_CODE);
@@ -726,6 +775,7 @@ async function shutdown() {
     remote.stop();
     screenLock.stop();
     vault.lock();
+    await Promise.all(recorder.sids().map((sid) => recorder.stop(sid)));
     terminals.closeAll();
     process.exit(0);
 }

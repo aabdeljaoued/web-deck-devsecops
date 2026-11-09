@@ -818,7 +818,11 @@ function withSelection(command) {
     if (t) {
         selected = t.term.getSelection().replace(/[\u0000-\u001f\u007f\s]+/g, " ").trim();
         t.term.clearSelection();
+    } else if (noteSelection && Date.now() - noteSelection.time < NOTE_SELECTION_MS) {
+        // Pas de sélection dans le terminal : celle faite dans une note du coffre (une seule fois)
+        selected = noteSelection.text;
     }
+    noteSelection = null;
     // {} : la sélection va à cet endroit ; sans sélection, le curseur y est ramené (flèches gauche)
     const slot = command.indexOf("{}");
     if (slot >= 0) {
@@ -1637,7 +1641,28 @@ function openVault() {
     (state.vault.unlocked ? (vaultUi.tab === "notes" ? $("#note-body") : $("#secret-search")) : $("#vault-pass")).focus();
 }
 
+// Sélection faite dans une note (éditeur ou aperçu) au moment de fermer le coffre : reprise par la prochaine
+// touche « à compléter » si le terminal n'a pas de sélection. Oubliée après 10 min ou au verrouillage du coffre.
+const NOTE_SELECTION_MS = 10 * 60 * 1000;
+let noteSelection = null;
+
+function captureNoteSelection() {
+    if (!state.vault.unlocked || vaultUi.tab !== "notes") return;
+    let text = "";
+    const body = $("#note-body");
+    if (!body.hidden && body.selectionEnd > body.selectionStart) text = body.value.slice(body.selectionStart, body.selectionEnd);
+    else {
+        const sel = window.getSelection();
+        if (sel && !sel.isCollapsed && $("#note-preview").contains(sel.anchorNode)) text = sel.toString();
+    }
+    text = text.replace(/[\u0000-\u001f\u007f\s]+/g, " ").trim().slice(0, 2000);
+    if (!text) return;
+    noteSelection = { text, time: Date.now() };
+    toast(`sélection de la note gardée (« ${text.length > 40 ? `${text.slice(0, 40)}…` : text} ») : la prochaine touche à compléter l'insère`, "ok");
+}
+
 function closeVault() {
+    captureNoteSelection();
     flushNote();
     $("#vault").hidden = true;
     state.terms.get(state.active)?.term.focus();
@@ -1648,6 +1673,7 @@ function applyVault(view) {
     const wasUnlocked = state.vault.unlocked;
     state.vault = view;
     if (!view.unlocked) {
+        noteSelection = null;   // rien d'une note ne reste en mémoire une fois le coffre verrouillé
         vaultUi.noteId = null;
         vaultUi.shown.clear();
         closeSecretForm();

@@ -118,6 +118,7 @@ export const DESCRIPTIONS = {
     "brew/uninstall": "Désinstalle un paquet",
     // SSH
     "ssh/connexion": "Se connecter à un hôte de ~/.ssh/config",
+    "k8s/port-forward": "Rend un service accessible en local",
     "ssh/connexion -i": "Se connecter avec une clé choisie (ssh -i)",
     "ssh/mes clés": "Clés du dossier ~/.ssh",
     "ssh/keygen ed25519": "Crée une clé ed25519",

@@ -332,6 +332,7 @@ wss.on("connection", (ws) => {
                 case "vault-import": reply({ t: "vault-imported", mode: msg.mode, ...(await vault.importBox(msg.data, String(msg.mode), msg.password)) }); break;
                 case "note-save": reply({ t: "note-saved", id: vault.saveNote({ id: msg.id, title: msg.title, body: msg.body, color: msg.color }), req: msg.req }); break;
                 case "note-delete": vault.deleteNote(String(msg.id)); break;
+                case "note-done": vault.setNoteDone(String(msg.id), msg.done); break;
                 case "secret-save": vault.saveSecret(msg); reply({ t: "vault-ok", text: "secret enregistré", close: true }); break;
                 case "secret-delete": vault.deleteSecret(String(msg.id)); break;
                 // La valeur n'est envoyée qu'à la page qui la demande (copier / afficher)
@@ -372,7 +373,7 @@ wss.on("connection", (ws) => {
                 // Paramètres nommés : valeurs réelles (kubectl / docker) proposées dans la fenêtre de saisie
                 case "param-options": {
                     try {
-                        reply({ t: "param-options", req: msg.req, name: msg.name, options: await paramOptions(ctx, msg.name, { namespace: msg.namespace }) });
+                        reply({ t: "param-options", req: msg.req, name: msg.name, options: await paramOptions(ctx, msg.name, { namespace: msg.namespace, service: msg.service }) });
                     } catch (err) {
                         reply({ t: "param-options", req: msg.req, name: msg.name, options: [], error: err.message.split("\n")[0] });
                     }
@@ -389,6 +390,8 @@ wss.on("connection", (ws) => {
                 // Journal : touche « text » ou lien (envoyé par la page), liste, export CSV, effacement
                 case "journal": logAction({ label: msg.label, page: msg.page, command: msg.command, mode: msg.mode }, msg.sid); break;
                 case "journal-list": reply({ t: "journal-list", entries: journal.recent(200) }); break;
+                // Palette ⌘K : commandes récentes (dédoublonnées côté page)
+                case "journal-recent": reply({ t: "journal-recent", entries: journal.recent(300) }); break;
                 case "journal-export": reply({ t: "journal-export", csv: journal.csv() }); break;
                 case "journal-clear": journal.clear(); reply({ t: "journal-list", entries: [] }); break;
                 case "update-check": reply({ t: "update", ...(await updater.check()) }); break;

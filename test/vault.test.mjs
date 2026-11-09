@@ -65,3 +65,18 @@ test("export / import : export toujours chiffré, fusion, remplacement avec .bak
     assert.equal(c.secretValue(c.view().secrets[0].id), "secret-a");
     for (const x of [a, b, c]) x.lock();
 });
+
+test("avancement d'un runbook : lignes gardées (sans doublon), liste vide = recommencer", async () => {
+    const v = new Vault(path.join(tmpDir(), "vault.enc"));
+    await v.create(pw());
+    const id = v.saveNote({ title: "Runbook", body: "```\nkubectl get pods\n```" });
+    const before = v.view().notes[0].updated;
+    v.setNoteDone(id, ["kubectl get pods", "kubectl get pods", ""]);
+    assert.deepEqual(v.view().notes[0].done, ["kubectl get pods"]);
+    assert.equal(v.view().notes[0].updated, before, "date de la note inchangée");
+    v.setNoteDone(id, []);
+    assert.equal(v.view().notes[0].done, undefined);
+    assert.throws(() => v.setNoteDone(id, "x"), /avancement invalide/);
+    assert.throws(() => v.setNoteDone("inconnue", []), /introuvable/);
+    v.lock();
+});

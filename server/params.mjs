@@ -30,7 +30,9 @@ const SOURCES = {
     container: { docker: ["ps", "--format", "{{.Names}}"] },
     image: { docker: ["images", "--format", "{{.Repository}}:{{.Tag}}"] },
     host: { ssh: true },
-    identity: { keys: true }
+    identity: { keys: true },
+    // ports d'un service (suit le namespace et le service saisis)
+    port: { servicePorts: true }
 };
 const ALIASES = { ns: "namespace", deploy: "deployment", svc: "service", ctx: "context", contexte: "context", conteneur: "container", hote: "host", "hôte": "host", serveur: "host", server: "host", identite: "identity", "identité": "identity" };
 
@@ -94,6 +96,16 @@ export async function paramOptions(ctx, name, hint = {}) {
     const src = SOURCES[key];
     if (src.ssh) return sshHosts().slice(0, MAX_ITEMS);
     if (src.keys) return sshKeys().slice(0, MAX_ITEMS);
+    if (src.servicePorts) {
+        const ns = String(hint.namespace ?? "").trim();
+        const svc = String(hint.service ?? "").trim();
+        if (!svc) return [];
+        if (!ctx.apps.kubectl) throw new Error("kubectl introuvable");
+        for (const [what, v] of [["namespace", ns], ["service", svc]]) if (v && !K8S_NAME.test(v)) throw new Error(`${what} invalide : ${v}`);
+        const args = ["get", "service", svc, "-o", "jsonpath={range .spec.ports[*]}{.port}{\"\\n\"}{end}", ...(ns ? ["-n", ns] : [])];
+        const out = await run(ctx.apps.kubectl, args);
+        return [...new Set(out.split(/\r?\n/).map((l) => l.trim()).filter((l) => /^\d{1,5}$/.test(l)))];
+    }
     let out;
     if (src.kube) {
         if (!ctx.apps.kubectl) throw new Error("kubectl introuvable");

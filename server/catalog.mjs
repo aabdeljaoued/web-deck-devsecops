@@ -119,7 +119,7 @@ const prodGuard = (key) => key && { ...key, prodGuard: true };
 
 /** Logos utilisés par le catalogue : le serveur ne sert que ceux-là. */
 // Icônes de l'interface hors touches (palette : notes, secrets, missions)
-export const ICONS = new Set(["lucide-notebook-text", "lucide-key-round", "lucide-briefcase"]);
+export const ICONS = new Set(["lucide-notebook-text", "lucide-key-round", "lucide-briefcase", "lucide-history"]);
 
 /** Retour vers la page parente (l'accueil par défaut ; le groupe du dessus dans les favoris). */
 function back(page = "root") {
@@ -209,6 +209,8 @@ function buildCatalog(ctx) {
             // stern : logs de tous les pods dont le nom correspond ({} = nom ou expression régulière)
             withPick(textIcon("stern", "st", "stern {} --since 15m", false, C.k8s, "lucide-logs"), "stern -n {namespace} {pod} --since 15m"),
             withPick(text("describe", "🔍", "kubectl describe pod ", false, C.k8s), "kubectl describe pod -n {namespace} {pod}"),
+            // port-forward : namespace, service, puis ses ports réels ; port local = même port par défaut
+            withPick(textIcon("port-forward", "⇄", "kubectl port-forward ", false, C.k8s, "lucide-arrow-left-right"), "kubectl port-forward -n {namespace} svc/{service} {port}:{port}"),
             // {} = emplacement du pod : texte sélectionné, sinon position du curseur
             prodGuard(withPick(text("exec -it", ">_", "kubectl exec -it {} -- sh", false, C.k8s), "kubectl exec -it -n {namespace} {pod} -- sh")),
             text("RBAC can-i", "🛂", "kubectl auth can-i --list", true, C.sec),
@@ -375,7 +377,7 @@ function buildCatalog(ctx) {
             withPick(textIcon("connexion -i", "-i", "ssh -i ", false, C.ssh, "lucide-key-square"), "ssh -i {identity} {host}"),
             text("test GitHub", "🐙", "ssh -T git@github.com", true, C.ssh),
             text("ssh verbose", "-v", "ssh -v ", false, C.ssh),
-            text("tunnel -L", "⇄", "ssh -N -L 8080:localhost:80 ", false, C.ssh),
+            withPick(text("tunnel -L", "⇄", "ssh -N -L 8080:localhost:80 ", false, C.ssh), "ssh -N -L {local=8080}:{cible=localhost}:{distant=80} {host}"),
             text("keyscan", "📡", "ssh-keyscan -t ed25519 ", false, C.ssh),
             text("oublier hôte", "✖", "ssh-keygen -R ", false, C.danger),
             text("éditer config", "⚙", sshConfig, true, C.tool),

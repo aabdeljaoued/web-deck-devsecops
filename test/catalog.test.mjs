@@ -48,15 +48,16 @@ test("ordre des rubriques des Réglages : respecté, identifiants inconnus ignor
     assert.deepEqual(buildDeck(ctx, []).worlds.defaultOrder.slice(0, 2), (ctx.cfg.sections ?? []).slice(0, 2));
 });
 
-test("touches à compléter K8s / Docker : variante à liste réelle (paramètres connus seulement)", async () => {
+test("touches à compléter : variante à paramètres, chacun avec liste réelle ou valeur par défaut", async () => {
     const { liveParam } = await import("../server/params.mjs");
-    const all = keys(buildDeck(ctx, [], { k8s: true, docker: true }));
+    const all = keys(buildDeck(ctx, [], { k8s: true, docker: true, ssh: true }));
     const picks = all.filter((k) => k.pick);
-    for (const label of ["logs -f", "describe", "exec -it", "inspect"]) assert.ok(picks.some((k) => k.label === label), label);
+    for (const label of ["logs -f", "describe", "exec -it", "inspect", "port-forward", "tunnel -L", "connexion"]) assert.ok(picks.some((k) => k.label === label), label);
     for (const k of picks) {
         assert.equal(k.type, "text");
-        const params = [...k.pick.matchAll(/\{([^}]+)\}/g)].map((m) => m[1]);
-        assert.ok(params.length && params.every((p) => liveParam(p)), `${k.label} : ${k.pick}`);
+        const params = [...k.pick.matchAll(/\{([^}=]+)(=[^}]*)?\}/g)].map((m) => ({ name: m[1], byDefault: m[2] != null }));
+        assert.ok(params.length && params.some((p) => liveParam(p.name)), `${k.label} : au moins une liste réelle`);
+        assert.ok(params.every((p) => liveParam(p.name) || p.byDefault), `${k.label} : ${k.pick}`);
     }
     assert.ok(picks.find((k) => k.label === "exec -it" && k.pick.startsWith("kubectl"))?.prodGuard, "garde-fou production conservé");
 });

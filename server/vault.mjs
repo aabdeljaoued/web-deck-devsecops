@@ -226,6 +226,22 @@ export class Vault extends EventEmitter {
         return existing?.id ?? this.data.notes[0].id;
     }
 
+    /**
+     * Avancement d'un runbook : lignes de code déjà tapées depuis l'aperçu (texte de la ligne), chiffrées
+     * avec la note. Liste vide = recommencer. La date de modification de la note ne change pas.
+     */
+    setNoteDone(id, done) {
+        this.need();
+        const note = this.data.notes.find((n) => n.id === id);
+        if (!note) throw new Error("note introuvable");
+        if (!Array.isArray(done) || done.length > 200) throw new Error("avancement invalide");
+        const lines = [...new Set(done.map((l) => clip(l, 500)).filter(Boolean))];
+        if (lines.length) note.done = lines;
+        else delete note.done;
+        this.save();
+        this.emit("change");
+    }
+
     deleteNote(id) {
         this.need();
         this.data.notes = this.data.notes.filter((n) => n.id !== id);

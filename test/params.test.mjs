@@ -44,3 +44,10 @@ test("clés SSH pour ssh -i : fichiers avec .pub, .pem, .key ; pas les .pub ni l
     assert.deepEqual(sshKeys(dir), [`"${path.join(dir, "client.pem")}"`, `"${path.join(dir, "id_ed25519")}"`]);
     assert.equal(liveParam("identité"), "identity");
 });
+
+test("ports d'un service : rien sans service, noms vérifiés avant kubectl", async () => {
+    const { paramOptions, liveParam } = await import("../server/params.mjs");
+    assert.equal(liveParam("port"), "port");
+    assert.deepEqual(await paramOptions({ apps: { kubectl: "/bin/echo" } }, "port", { namespace: "app" }), []);
+    await assert.rejects(paramOptions({ apps: { kubectl: "/bin/echo" } }, "port", { namespace: "app", service: "--all" }), /service invalide/);
+});

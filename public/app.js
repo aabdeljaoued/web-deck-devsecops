@@ -365,6 +365,9 @@ function handle(msg) {
         case "journal-list":
             renderJournal(msg.entries);
             break;
+        case "journal-recent":
+            applyRecent(msg.entries);
+            break;
         case "journal-added":
             if (!$("#settings").hidden) send({ t: "journal-list" });
             break;
@@ -434,6 +437,7 @@ function handle(msg) {
             state.status[msg.id] = msg.state;
             // Contexte kubectl passé en (ou sorti de) production : touches protégées re-dessinées
             if (msg.id === "kube" && (state.pages[state.page] ?? []).some((k) => k?.prodGuard)) render();
+            if (msg.id === "kube") updateScreensBanner();
             document.querySelectorAll(`[data-status="${msg.id}"]`).forEach((el) => el.replaceWith(statusKey(el.dataset.id, msg.id)));
             numberKeys();
             break;
@@ -777,13 +781,21 @@ function hideKeyTip() {
 
 // ---------- Paramètres nommés : {namespace}, {pod}, {durée}… (fenêtre de saisie, dernières valeurs, listes réelles) ----------
 
-const PARAM_RE = /\{([\p{L}_][\p{L}\p{N}_-]{0,30})\}/gu;
+// {nom} ou {nom=valeur par défaut} (ex. {durée=15m}, {local=8080})
+const PARAM_RE = /\{([\p{L}_][\p{L}\p{N}_-]{0,30})(?:=([^{}\r\n]{0,80}))?\}/gu;
 const SENSITIVE_PARAM = /pass|secret|token|mdp|pwd|key|cle|clé/i;   // jamais gardés dans l'historique
-const LIVE = ["namespace", "ns", "pod", "deployment", "deploy", "service", "svc", "node", "context", "ctx", "contexte", "container", "conteneur", "image", "host", "hote", "hôte", "serveur", "server", "identity", "identite", "identité"];
+const LIVE = ["namespace", "ns", "pod", "deployment", "deploy", "service", "svc", "node", "context", "ctx", "contexte", "container", "conteneur", "image", "host", "hote", "hôte", "serveur", "server", "identity", "identite", "identité", "port"];
 let paramsState = null;   // { key, command, names, req }
 
 /** Paramètres nommés d'une commande, dans l'ordre, sans doublon. */
 const namedParams = (command) => [...new Set([...String(command).matchAll(PARAM_RE)].map((m) => m[1]))];
+
+/** Valeurs par défaut écrites dans la commande ({nom=valeur}) ; la première trouvée pour chaque nom. */
+function paramDefaults(command) {
+    const out = {};
+    for (const m of String(command).matchAll(PARAM_RE)) if (m[2] != null && !(m[1] in out)) out[m[1]] = m[2].trim();
+    return out;
+}
 
 function paramHistory(name) {
     try { return JSON.parse(localStorage.getItem(`deck-param-${name.toLowerCase()}`) ?? "[]"); } catch { return []; }
@@ -796,12 +808,14 @@ function rememberParam(name, value) {
 }
 
 const isNs = (name) => /^(namespace|ns)$/i.test(name);
+const isSvc = (name) => /^(service|svc)$/i.test(name);
 const NAMESPACED = /^(pod|deployment|deploy|service|svc)$/i;
 const PARAM_NOUN = { pod: "pod", deployment: "deployment", deploy: "deployment", service: "service", svc: "service" };
 
 function openParams(key, command) {
     const names = namedParams(command);
     paramsState = { key, command, names, req: crypto.randomUUID(), options: new Map() };
+    const defaults = paramDefaults(command);
     // Sélection du terminal (ou d'une note) : proposée pour le premier paramètre
     const terms = [state.terms.get(state.active), ...state.terms.values()].filter(Boolean);
     const t = terms.find((x) => !x.ended && x.term.hasSelection());
@@ -817,7 +831,7 @@ function openParams(key, command) {
         input.dataset.name = name;
         input.setAttribute("role", "combobox");
         // Valeur de départ : la sélection pour le premier, le namespace courant pour {namespace}
-        input.value = i === 0 && selected ? selected : isNs(name) && kube?.namespace ? kube.namespace : "";
+        input.value = i === 0 && selected ? selected : isNs(name) && kube?.namespace ? kube.namespace : defaults[name] ?? "";
         input.dataset.filter = "";   // pas de filtre tant que l'utilisateur n'a pas tapé : toute la liste est visible
         const list = Object.assign(document.createElement("ul"), { className: "param-options", hidden: true });
         list.setAttribute("role", "listbox");
@@ -829,7 +843,7 @@ function openParams(key, command) {
             input.dataset.filter = input.value;
             renderParamsPreview();
             showParamOptions(input);
-            if (isNs(name)) { clearTimeout(input._t); input._t = setTimeout(() => loadLiveParams(true), 400); }
+            if (isNs(name) || isSvc(name)) { clearTimeout(input._t); input._t = setTimeout(() => loadLiveParams(isNs(name) ? "ns" : "svc"), 400); }
         });
         input.addEventListener("keydown", (ev) => paramKey(ev, input));
         label.append(input, list, status);
@@ -848,15 +862,23 @@ function openParams(key, command) {
     if (target?.value) target.select();
 }
 
-/** Listes réelles pour les paramètres connus ; pods, deployments, services suivent le namespace saisi. */
-function loadLiveParams(onlyNamespaced) {
-    const ns = [...$("#params-fields").querySelectorAll("input")].find((i) => isNs(i.dataset.name))?.value.trim() ?? "";
-    for (const input of $("#params-fields").querySelectorAll("input")) {
+/**
+ * Listes réelles pour les paramètres connus. after = "ns" : namespace changé (pods, services… et ports
+ * rechargés) ; "svc" : service changé (ports rechargés) ; sinon toutes.
+ */
+function loadLiveParams(after = null) {
+    const inputs = [...$("#params-fields").querySelectorAll("input")];
+    const ns = inputs.find((i) => isNs(i.dataset.name))?.value.trim() ?? "";
+    const service = inputs.find((i) => isSvc(i.dataset.name))?.value.trim() ?? "";
+    for (const input of inputs) {
         const name = input.dataset.name;
         if (!LIVE.includes(name.toLowerCase())) continue;
-        if (onlyNamespaced && !NAMESPACED.test(name)) continue;
+        const isPort = /^port$/i.test(name);
+        if (after === "ns" && !NAMESPACED.test(name) && !isPort) continue;
+        if (after === "svc" && !isPort) continue;
+        if (isPort && !service) { setParamOptions(input, [], "choisis d'abord le service"); continue; }
         setParamOptions(input, null, "chargement de la liste…");
-        send({ t: "param-options", req: paramsState.req, name, namespace: ns });
+        send({ t: "param-options", req: paramsState.req, name, namespace: ns, service });
     }
 }
 
@@ -906,7 +928,8 @@ function pickParam(input, value) {
     input.dataset.filter = "";
     input.parentElement.querySelector(".param-options").hidden = true;
     renderParamsPreview();
-    if (isNs(input.dataset.name)) loadLiveParams(true);
+    if (isNs(input.dataset.name)) loadLiveParams("ns");
+    else if (isSvc(input.dataset.name)) loadLiveParams("svc");
     const inputs = [...$("#params-fields").querySelectorAll("input")];
     const next = inputs.slice(inputs.indexOf(input) + 1).find((x) => !x.value) ?? null;
     (next ?? $("#params-ok")).focus();
@@ -939,7 +962,9 @@ function paramsCommand() {
     let cmd = paramsState.command;
     for (const input of $("#params-fields").querySelectorAll("input")) {
         const value = input.value.replace(/[\u0000-\u001f\u007f]/g, " ").trim();
-        cmd = cmd.split(`{${input.dataset.name}}`).join(value || `{${input.dataset.name}}`);
+        const name = input.dataset.name;
+        // {nom} et {nom=défaut} remplacés partout (ex. {port}:{port})
+        cmd = cmd.replace(PARAM_RE, (all, n) => (n === name ? value || `{${name}}` : all));
     }
     return cmd;
 }
@@ -1314,7 +1339,27 @@ function layoutScreens() {
         if (shown.includes(id)) t.tab.classList.remove("activity", "done");
     }
     screens.classList.toggle("broadcast", state.broadcast);
+    updateScreensBanner();
     requestAnimationFrame(fitVisible);
+}
+
+/**
+ * Bandeau des terminaux : PRODUCTION (contexte kubectl de prod, bord rouge) et DIFFUSION (nombre de terminaux
+ * qui reçoivent la frappe). Mis à jour au changement de contexte, de disposition ou de diffusion.
+ */
+function updateScreensBanner() {
+    const screens = $("#screens");
+    const prod = prodContext();
+    screens.classList.toggle("prod", Boolean(prod));
+    const parts = [];
+    if (prod) parts.push(Object.assign(document.createElement("span"), { className: "banner-prod", textContent: `PRODUCTION · ${prod}` }));
+    if (state.broadcast) {
+        const n = visibleTerms().filter((id) => !state.terms.get(id)?.ended).length;
+        parts.push(Object.assign(document.createElement("span"), { className: "banner-broadcast", textContent: n > 1 ? `DIFFUSION → ${n} terminaux` : "DIFFUSION (un seul terminal visible)" }));
+    }
+    const banner = $("#screens-banner");
+    banner.replaceChildren(...parts);
+    banner.hidden = !parts.length;
 }
 
 function fitVisible() {
@@ -1566,6 +1611,10 @@ function paletteEntries() {
             entries.push({ key: { label: s.name, icon: "lucide-key-round", color: "#8e24aa" }, where: "Secret", detail: ["copier (effacé après 30 s)", s.user, s.url].filter(Boolean).join(" · "), hay: `secret ${s.name} ${s.user ?? ""} ${s.url ?? ""}`.toLowerCase(), run: () => copySecret(s.id) });
         }
     }
+    for (const r of recentCommands) {
+        const when = new Date(r.time).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+        entries.push({ key: { label: r.command, icon: "lucide-history", color: "#546e7a" }, where: `Récent · ${when}`, detail: `${r.label}${r.kube ? ` · ${r.kube}` : ""} · tapée sans Entrée`, hay: `recent récent ${r.label} ${r.command}`.toLowerCase(), run: () => typeInTerminal(r.command) });
+    }
     for (const m of state.settings?.missions ?? []) {
         const active = m.id === state.settings.activeMission;
         entries.push({ key: { label: m.name, icon: "lucide-briefcase", color: m.color || "#00897b" }, where: "Mission", detail: active ? "mission active : Entrée pour la désactiver" : "activer cette mission", hay: `mission ${m.name}`.toLowerCase(), run: () => send({ t: "mission-activate", id: active ? "" : m.id }) });
@@ -1587,7 +1636,25 @@ function paletteEntries() {
     return entries;
 }
 
+// Commandes récentes (journal du serveur) : proposées dans la palette, toujours tapées sans Entrée
+let recentCommands = [];
+
+function applyRecent(entries) {
+    const seen = new Set();
+    recentCommands = [];
+    for (const e of entries) {
+        const cmd = String(e.command ?? "").trim();
+        // liens, commandes incomplètes (vides, à compléter, paramètres non remplis) : ignorés
+        if (!cmd || e.mode === "lien" || /\{[^}]*\}/.test(cmd) || /\s$/.test(e.command) || seen.has(cmd)) continue;
+        seen.add(cmd);
+        recentCommands.push({ label: e.label, command: cmd, time: e.time, kube: e.kube });
+        if (recentCommands.length >= 40) break;
+    }
+    if (!$("#palette").hidden) filterPalette();
+}
+
 function openPalette() {
+    send({ t: "journal-recent" });
     $("#palette").hidden = false;
     const input = $("#palette-input");
     input.value = "";
@@ -1888,7 +1955,7 @@ function submitFav(ev) {
 
 // ---------- Coffre : notes et secrets chiffrés (côté serveur, voir server/vault.mjs) ----------
 
-const vaultUi = { tab: "notes", noteId: null, noteColor: "", secretEditing: null, shown: new Map(), preview: false, usedLines: new Set() };
+const vaultUi = { tab: "notes", noteId: null, noteColor: "", secretEditing: null, shown: new Map(), preview: false };
 let noteReq = null;
 let noteTimer = null;
 
@@ -2040,6 +2107,7 @@ function toggleNotePreview(show = $("#note-preview").hidden) {
     if (show) {
         preview.innerHTML = toHtml($("#note-body").value) || '<p class="hint">note vide</p>';   // HTML échappé par markdown.js
         decorateCodeBlocks(preview);
+        renderRunbookBar();
     }
     preview.hidden = !show;
     $("#note-body").hidden = show;
@@ -2052,22 +2120,21 @@ function toggleNotePreview(show = $("#note-preview").hidden) {
  * pour suivre une procédure pas à pas) et bouton Copier par bloc.
  */
 function decorateCodeBlocks(preview) {
-    preview.querySelectorAll("pre").forEach((pre, b) => {
+    preview.querySelectorAll("pre").forEach((pre) => {
         const copy = Object.assign(document.createElement("button"), { type: "button", className: "md-copy", textContent: "Copier", title: "Copier tout le bloc" });
         copy.addEventListener("click", () => {
             navigator.clipboard.writeText(pre.querySelector("code").textContent).then(() => toast("bloc copié", "ok"), () => toast("copie refusée par le navigateur"));
         });
         pre.append(copy);
-        pre.querySelectorAll(".md-code-line").forEach((line, l) => {
+        pre.querySelectorAll(".md-code-line").forEach((line) => {
             const text = line.textContent.trim();
             if (!text) return;
-            const id = `${vaultUi.noteId}:${b}:${l}`;
             line.classList.add("clickable");
-            line.classList.toggle("used", vaultUi.usedLines.has(id));
+            line.classList.toggle("used", noteDone().includes(text));
             line.title = "Taper cette ligne dans le terminal (sans Entrée)";
             line.addEventListener("click", () => {
                 if (window.getSelection()?.toString()) return;   // sélection en cours : on ne tape rien
-                vaultUi.usedLines.add(id);
+                setNoteDone([...noteDone().filter((x) => x !== text), text]);
                 line.classList.add("used");
                 window.getSelection()?.removeAllRanges();
                 closeVault();
@@ -2076,6 +2143,35 @@ function decorateCodeBlocks(preview) {
             });
         });
     });
+}
+
+/** Lignes déjà tapées de la note ouverte (avancement du runbook, gardé dans le coffre). */
+const noteDone = () => state.vault.notes?.find((n) => n.id === vaultUi.noteId)?.done ?? [];
+
+function setNoteDone(lines) {
+    const note = state.vault.notes?.find((n) => n.id === vaultUi.noteId);
+    if (!note) return;
+    note.done = lines;   // affichage immédiat ; le serveur renvoie le coffre à jour
+    send({ t: "note-done", id: note.id, done: lines });
+    renderRunbookBar();
+}
+
+/** Barre de l'aperçu : « n étape(s) faite(s) sur m » et Recommencer (si au moins une ligne est faite). */
+function renderRunbookBar() {
+    const preview = $("#note-preview");
+    preview.querySelector(".runbook-bar")?.remove();
+    const lines = [...preview.querySelectorAll(".md-code-line.clickable")].map((l) => l.textContent.trim());
+    const done = lines.filter((l) => noteDone().includes(l)).length;
+    if (!done) return;
+    const bar = Object.assign(document.createElement("div"), { className: "runbook-bar" });
+    const reset = Object.assign(document.createElement("button"), { type: "button", className: "vault-btn", textContent: "Recommencer" });
+    reset.addEventListener("click", () => {
+        setNoteDone([]);
+        preview.querySelectorAll(".md-code-line.used").forEach((l) => l.classList.remove("used"));
+        renderRunbookBar();
+    });
+    bar.append(Object.assign(document.createElement("span"), { textContent: `✓ ${done} étape(s) faite(s) sur ${lines.length}` }), reset);
+    preview.prepend(bar);
 }
 
 /**

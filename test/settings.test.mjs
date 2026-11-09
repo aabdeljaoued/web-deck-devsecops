@@ -58,3 +58,14 @@ test("journal : activé par défaut, désactivable", () => {
     assert.equal(s.update({ journalEnabled: false }).journalEnabled, false);
     assert.throws(() => s.update({ journalEnabled: "non" }), /journal/);
 });
+
+test("signature en bannière ASCII : style et police validés, bannière dessinée", async () => {
+    const s = new Settings(path.join(tmpDir(), "settings.json"));
+    assert.equal(s.get().watermarkStyle, "text");
+    assert.equal(s.update({ watermarkStyle: "ascii", watermarkFont: "Slant" }).watermarkFont, "Slant");
+    assert.throws(() => s.update({ watermarkFont: "Comic Sans" }), /police/);
+    const { default: figlet } = await import("figlet");
+    for (const font of ["ANSI Shadow", "Standard", "Slant", "Big", "Small", "Doom", "Banner3", "Block"]) {
+        assert.ok(figlet.textSync("Ab", { font }).split("\n").length >= 3, `police ${font}`);
+    }
+});

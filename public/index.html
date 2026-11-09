@@ -140,9 +140,13 @@
                 <div class="vault-editor">
                     <input id="note-title" type="text" placeholder="Titre" maxlength="120">
                     <div id="note-colors" class="swatches note-colors" role="group" aria-label="Couleur de la note"></div>
-                    <textarea id="note-body" placeholder="Note (enregistrée automatiquement, chiffrée)" spellcheck="false"></textarea>
+                    <textarea id="note-body" placeholder="Note en Markdown (# titre, - liste, **gras**, `code`, ``` bloc de code ```) : enregistrée automatiquement, chiffrée" spellcheck="false"></textarea>
+                    <div id="note-preview" class="note-preview" hidden></div>
                     <div class="vault-editor-foot">
                         <span id="note-status" class="hint"></span>
+                        <span class="grow"></span>
+                        <button id="note-preview-toggle" class="vault-btn" type="button" title="Aperçu du Markdown (re-cliquer pour modifier)">Aperçu</button>
+                        <button id="note-to-terminal" class="vault-btn primary" type="button" title="Affiche la note mise en forme dans le terminal actif (rien n'est envoyé au shell) : sélectionne ensuite une partie, puis clique une touche d'action">Afficher dans le terminal ▸</button>
                         <button id="note-delete" class="vault-btn danger" type="button">Supprimer</button>
                     </div>
                 </div>
@@ -205,6 +209,20 @@
                     <span class="hint">Texte en filigrane, gris et flou, au fond de chaque terminal (vide = aucune) ; aperçu immédiat.</span>
                     <input id="set-watermark" type="text" maxlength="60" placeholder="ex. Prénom NOM">
                 </label>
+                <span class="settings-row signature-style">
+                    <label class="settings-check">Style
+                        <select id="set-watermark-style">
+                            <option value="text">Texte simple</option>
+                            <option value="ascii">Bannière ASCII</option>
+                        </select>
+                    </label>
+                    <label id="set-watermark-font-row" class="settings-check">Police
+                        <select id="set-watermark-font">
+                            <option>ANSI Shadow</option><option>Standard</option><option>Slant</option><option>Big</option>
+                            <option>Small</option><option>Doom</option><option>Banner3</option><option>Block</option>
+                        </select>
+                    </label>
+                </span>
                 <div class="settings-actions">
                     <button type="button" id="set-signature-pick" title="PNG sur fond transparent (signature manuscrite) ; peinte en gris flou">Image de signature…</button>
                     <button type="button" id="set-signature-remove">Retirer l'image</button>

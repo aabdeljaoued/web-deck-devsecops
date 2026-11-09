@@ -65,6 +65,9 @@ const SCHEMA = {
             return v.replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, 60);
         }
     },
+    /** Style de la signature : texte simple ou bannière ASCII (FIGlet), et police de la bannière. */
+    watermarkStyle: { default: "text", clean: oneOf("style de signature", ["text", "ascii"]) },
+    watermarkFont: { default: "ANSI Shadow", clean: oneOf("police de bannière", ["ANSI Shadow", "Standard", "Slant", "Big", "Small", "Doom", "Banner3", "Block"]) },
     /** Thème aux couleurs d'une mission ("" = aucun). */
     missionTheme: { default: "", clean: oneOf("thème de mission", ["", "allianz", "bnp", "estreem", "laposte"]) },
     /** Retour automatique à l'accueil après une action dans une rubrique : activé ou non, et délai. */

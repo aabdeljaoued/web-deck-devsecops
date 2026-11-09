@@ -19,6 +19,7 @@ import { Backups } from "./backups.mjs";
 import { copyTemporarily, flushClipboard } from "./clipboard.mjs";
 import { ScreenLock } from "./screenlock.mjs";
 import { Updater } from "./update.mjs";
+import figlet from "figlet";
 import { Journal } from "./journal.mjs";
 import { runDiagnostic } from "./diagnostic.mjs";
 import { Favorites } from "./favorites.mjs";
@@ -116,6 +117,7 @@ const nm = (p) => path.join(ROOT, "node_modules", p);
 const STATIC = {
     "/": [path.join(ROOT, "public", "index.html"), "text/html; charset=utf-8"],
     "/app.js": [path.join(ROOT, "public", "app.js"), "text/javascript; charset=utf-8"],
+    "/markdown.js": [path.join(ROOT, "public", "markdown.js"), "text/javascript; charset=utf-8"],
     "/style.css": [path.join(ROOT, "public", "style.css"), "text/css; charset=utf-8"],
     "/img/deck-bar.jpg": [path.join(ROOT, "public", "img", "deck-bar.jpg"), "image/jpeg"],
     "/img/icon-64.png": [path.join(ROOT, "public", "img", "icon-64.png"), "image/png"],
@@ -366,6 +368,14 @@ wss.on("connection", (ws) => {
                 // Sauvegardes automatiques (Réglages) : liste et restauration (la version actuelle est sauvegardée avant)
                 // Redémarrage demandé depuis les Réglages (terminaux rouverts au démarrage suivant)
                 case "restart": restart(); break;
+                // Signature en bannière ASCII (FIGlet) : dessinée ici, affichée en filigrane par la page
+                case "banner": {
+                    const text = String(msg.text ?? "").replace(/[\u0000-\u001f\u007f]/g, "").slice(0, 60);
+                    const font = settings.check({ watermarkFont: msg.font }).watermarkFont;
+                    const art = text ? figlet.textSync(text, { font }).replace(/\s+$/, "") : "";
+                    reply({ t: "banner", key: `${text}|${font}`, art });
+                    break;
+                }
                 // Journal : touche « text » ou lien (envoyé par la page), liste, export CSV, effacement
                 case "journal": logAction({ label: msg.label, page: msg.page, command: msg.command, mode: msg.mode }, msg.sid); break;
                 case "journal-list": reply({ t: "journal-list", entries: journal.recent(200) }); break;

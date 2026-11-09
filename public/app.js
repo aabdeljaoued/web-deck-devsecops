@@ -3,6 +3,7 @@ import { Terminal } from "/vendor/xterm.mjs";
 import { FitAddon } from "/vendor/addon-fit.mjs";
 import { WebLinksAddon } from "/vendor/addon-web-links.mjs";
 import { SearchAddon } from "/vendor/addon-search.mjs";
+import { toAnsi, toHtml } from "/markdown.js";
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -76,10 +77,21 @@ let currentMode = "dark";
  * Signature en filigrane au fond de chaque terminal (Réglages › Apparence) :
  * l'image signature.png si elle existe (peinte en gris par masque), sinon le texte.
  */
-function applyWatermark(text = state.settings?.watermark ?? "") {
+function applyWatermark(text = state.settings?.watermark ?? "", style = state.settings?.watermarkStyle ?? "text", font = state.settings?.watermarkFont ?? "ANSI Shadow") {
     const root = document.documentElement;
     const image = state.signature;
-    root.style.setProperty("--watermark", JSON.stringify(text));
+    // Bannière ASCII : dessinée par le serveur (FIGlet), mise en cache ; affichée à sa réception
+    const ascii = !image && style === "ascii" && text;
+    root.classList.remove("watermark-ascii");
+    if (ascii) {
+        const key = `${text}|${font}`;
+        bannerWanted = key;
+        if (bannerCache.has(key)) setBanner(bannerCache.get(key));
+        else send({ t: "banner", text, font });
+    } else {
+        bannerWanted = null;
+        root.style.setProperty("--watermark", JSON.stringify(text));
+    }
     if (image) root.style.setProperty("--wm-image", `url("/signature.png?v=${image}")`);
     root.classList.toggle("watermark", Boolean(text) || Boolean(image));
     root.classList.toggle("watermark-image", Boolean(image));
@@ -87,6 +99,21 @@ function applyWatermark(text = state.settings?.watermark ?? "") {
     if (info) info.textContent = image ? "image utilisée (elle remplace le texte)" : "aucune image : le texte ci-dessus est utilisé";
     const remove = document.querySelector("#set-signature-remove");
     if (remove) remove.disabled = !image;
+}
+
+const bannerCache = new Map();   // "texte|police" -> bannière ASCII
+let bannerWanted = null;
+
+/** Chaîne CSS (content:) : retours à la ligne en \00000A (forme longue : l'espace suivante n'est pas avalée), avec white-space: pre. */
+const cssString = (s) => `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\00000A")}"`;
+
+function setBanner(art) {
+    const root = document.documentElement;
+    const lines = art.split("\n");
+    root.style.setProperty("--watermark", cssString(art));
+    root.style.setProperty("--wm-cols", Math.max(1, ...lines.map((l) => [...l].length)));
+    root.style.setProperty("--wm-rows", lines.length);
+    root.classList.add("watermark-ascii");
 }
 
 /** Image de signature choisie dans les Réglages : envoyée au serveur (PNG, 600 Ko au plus). */
@@ -280,6 +307,10 @@ function handle(msg) {
             break;
         case "tools":
             applyTools(msg);
+            break;
+        case "banner":
+            bannerCache.set(msg.key, msg.art);
+            if (msg.key === bannerWanted) setBanner(msg.art);
             break;
         case "signature":
             state.signature = msg.version ?? null;
@@ -1678,7 +1709,7 @@ function renderNotes() {
     }));
     if (!notes.length) $("#note-list").append(Object.assign(document.createElement("li"), { className: "vault-empty", textContent: q ? "aucune note ne correspond" : "aucune note : « + Note »" }));
     const has = Boolean(vaultUi.noteId);
-    for (const id of ["#note-title", "#note-body", "#note-delete"]) $(id).disabled = !has;
+    for (const id of ["#note-title", "#note-body", "#note-delete", "#note-preview-toggle", "#note-to-terminal"]) $(id).disabled = !has;
     renderNoteColors();
 }
 
@@ -1688,6 +1719,7 @@ function loadNoteInEditor() {
     $("#note-body").value = note?.body ?? "";
     vaultUi.noteColor = note?.color ?? "";
     renderNoteColors();
+    toggleNotePreview(false);
     $("#note-status").textContent = note ? `modifiée le ${new Date(note.updated).toLocaleString("fr-FR")}` : "";
     $("#note-delete").textContent = "Supprimer";
     delete $("#note-delete").dataset.armed;
@@ -1715,6 +1747,33 @@ function flushNote() {
     if (!vaultUi.noteId || !state.vault.unlocked) return;
     noteReq = crypto.randomUUID();
     send({ t: "note-save", id: vaultUi.noteId, title: $("#note-title").value, body: $("#note-body").value, color: vaultUi.noteColor ?? "", req: noteReq });
+}
+
+// ---------- Notes en Markdown : aperçu, et affichage dans le terminal pour sélectionner puis lancer une action ----------
+
+function toggleNotePreview(show = $("#note-preview").hidden) {
+    const preview = $("#note-preview");
+    if (show) preview.innerHTML = toHtml($("#note-body").value) || '<p class="hint">note vide</p>';   // HTML échappé par markdown.js
+    preview.hidden = !show;
+    $("#note-body").hidden = show;
+    $("#note-preview-toggle").textContent = show ? "Modifier" : "Aperçu";
+    $("#note-preview-toggle").classList.toggle("on", show);
+}
+
+/**
+ * Affiche la note dans le terminal actif : écrite dans l'affichage seulement (term.write), jamais envoyée au shell.
+ * Le coffre se ferme pour laisser sélectionner une partie (une commande), puis cliquer une touche d'action.
+ */
+function noteToTerminal() {
+    const t = state.terms.get(state.active);
+    if (!t || t.ended) return toast("aucun terminal actif : ouvre un terminal (bouton +)");
+    if (!vaultUi.noteId) return toast("choisis une note");
+    flushNote();
+    t.term.write(toAnsi($("#note-body").value, $("#note-title").value, t.term.cols) + "\r\n");
+    t.term.scrollToBottom();
+    closeVault();
+    t.term.focus();
+    toast(`note affichée dans « ${t.tab.querySelector(".tab-title")?.textContent ?? "le terminal"} » : sélectionne une partie, puis clique une touche (ou ⌥ + chiffre)`, "ok");
 }
 
 function newNote() {
@@ -2390,6 +2449,9 @@ function openSettings() {
     $("#set-appearance").value = state.settings.appearance ?? "dark";
     $("#set-theme").value = state.settings.missionTheme ?? "";
     $("#set-watermark").value = state.settings.watermark ?? "";
+    $("#set-watermark-style").value = state.settings.watermarkStyle ?? "text";
+    $("#set-watermark-font").value = state.settings.watermarkFont ?? "ANSI Shadow";
+    $("#set-watermark-font-row").hidden = $("#set-watermark-style").value !== "ascii";
     renderWorldChoices();
     renderMissions();
     $("#mission-form").hidden = true;
@@ -2619,6 +2681,8 @@ $("#palette-input").addEventListener("keydown", (ev) => {
 $("#palette").addEventListener("mousedown", (ev) => { if (ev.target.id === "palette") closePalette(); });
 $("#favform").addEventListener("submit", submitFav);
 $("#vault-open").addEventListener("click", openVault);
+$("#note-preview-toggle").addEventListener("click", () => toggleNotePreview());
+$("#note-to-terminal").addEventListener("click", noteToTerminal);
 $("#settings-open").addEventListener("click", openSettings);
 $("#mission-switch").addEventListener("change", (ev) => send({ t: "mission-activate", id: ev.target.value }));
 $("#mission-new").addEventListener("click", () => openMissionForm());
@@ -2692,7 +2756,14 @@ $("#set-theme").addEventListener("change", previewAppearance);
 $("#set-signature-pick").addEventListener("click", () => $("#set-signature-file").click());
 $("#set-signature-file").addEventListener("change", (ev) => uploadSignature(ev.target.files[0]));
 $("#set-signature-remove").addEventListener("click", () => send({ t: "signature-remove" }));
-$("#set-watermark").addEventListener("input", () => applyWatermark($("#set-watermark").value.trim()));
+// Aperçu de la signature pendant la saisie (texte, style, police)
+const previewWatermark = () => {
+    $("#set-watermark-font-row").hidden = $("#set-watermark-style").value !== "ascii";
+    applyWatermark($("#set-watermark").value.trim(), $("#set-watermark-style").value, $("#set-watermark-font").value);
+};
+$("#set-watermark").addEventListener("input", previewWatermark);
+$("#set-watermark-style").addEventListener("change", previewWatermark);
+$("#set-watermark-font").addEventListener("change", previewWatermark);
 $("#settings").addEventListener("mousedown", (ev) => { if (ev.target.id === "settings") closeSettings(); });
 $("#settings-form").addEventListener("keydown", (ev) => {
     ev.stopPropagation();
@@ -2712,6 +2783,8 @@ $("#settings-form").addEventListener("submit", (ev) => {
         missionTheme: $("#set-theme").value,
         journalEnabled: $("#set-journal-on").checked,
         watermark: $("#set-watermark").value,
+        watermarkStyle: $("#set-watermark-style").value,
+        watermarkFont: $("#set-watermark-font").value,
         ...(state.worlds ? { worlds: worldChoices(), worldOrder: worldOrderChoice() } : {})
     } });
 });

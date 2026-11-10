@@ -469,6 +469,7 @@ function handle(msg) {
             // Contexte kubectl passé en (ou sorti de) production : touches protégées re-dessinées
             if (msg.id === "kube" && (state.pages[state.page] ?? []).some((k) => k?.prodGuard)) render();
             if (msg.id === "kube") updateScreensBanner();
+            if (msg.id === "certs") renderCertsPanel();
             document.querySelectorAll(`[data-status="${msg.id}"]`).forEach((el) => el.replaceWith(statusKey(el.dataset.id, msg.id)));
             numberKeys();
             break;
@@ -626,6 +627,7 @@ function statusKey(id, statusId, key) {
     el.style.setProperty("--c", s.bg);
     el.title = statusId === "git" ? `${s.repo ?? ""}\nAppui : choisir le dépôt, ouvrir un terminal dedans`
         : statusId === "kube" ? "Appui : changer de contexte ou de namespace"
+            : statusId === "certs" ? "Appui : liste de tous les certificats suivis"
             : s.detail ? `${s.detail}\nAppui : vérifier maintenant` : "Appui : rafraîchir";
 
     const title = Object.assign(document.createElement("span"), { className: "title", textContent: s.title });
@@ -640,6 +642,7 @@ function statusKey(id, statusId, key) {
         pulse(el);
         if (statusId === "kube") return openPicker(el, "kube-list", "Chargement des contextes…");
         if (statusId === "git") return openPicker(el, "git-list", "Chargement des dépôts…");
+        if (statusId === "certs") return openCertsPanel(el);
         send({ t: "press", id: statusId });
     });
     return el;
@@ -1552,6 +1555,7 @@ let pickerAnchor = null;
 
 function openPicker(anchor, request, loadingText) {
     pickerAnchor = anchor;
+    $("#picker").classList.remove("certs-panel");
     const panel = $("#picker");
     panel.replaceChildren(Object.assign(document.createElement("p"), { className: "picker-note", textContent: loadingText }));
     panel.hidden = false;
@@ -1576,6 +1580,7 @@ function placePicker() {
 
 function closePicker() {
     $("#picker").hidden = true;
+    $("#picker").classList.remove("certs-panel");
     pickerAnchor = null;
 }
 
@@ -1623,6 +1628,34 @@ function showKubePicker(msg) {
         pickerSection("Contexte", contexts, "aucun contexte dans kubeconfig"),
         pickerSection(`Namespace (${msg.current || "aucun contexte"})`, namespaces, msg.nsError ? `liste indisponible : ${msg.nsError}` : "aucun namespace")
     );
+    placePicker();
+}
+
+/** Clic sur le voyant des certificats : tous les certificats de la mission, puis vérification immédiate. */
+function openCertsPanel(anchor) {
+    pickerAnchor = anchor;
+    $("#picker").hidden = false;
+    renderCertsPanel(true);
+    send({ t: "press", id: "certs" });
+}
+
+function renderCertsPanel(checking = false) {
+    if ($("#picker").hidden || pickerAnchor?.dataset.status !== "certs") return;
+    const s = state.status.certs ?? { items: [] };
+    const items = (s.items ?? []).map((c) => {
+        const dot = c.error ? "⚪" : c.days < 7 ? "🔴" : c.days < 30 ? "🟠" : "🟢";
+        const when = c.error ? `injoignable, ${c.error}`
+            : `${c.days < 0 ? `expiré depuis ${-c.days} j` : `${c.days} j`} · ${new Date(c.until).toLocaleDateString("fr-FR")}${c.trusted ? "" : " · chaîne non reconnue"}`;
+        return { label: `${dot} ${c.target} : ${when}`, title: c.reason ? `${c.target} : ${c.reason}` : c.target, onClick: () => {}, prod: !c.error && c.days < 7 };
+    });
+    const section = pickerSection("Certificats de la mission", items, "aucun certificat : Réglages › Missions › Modifier › Certificats à surveiller");
+    const foot = Object.assign(document.createElement("p"), { className: "picker-note",
+        textContent: checking ? "vérification en cours…" : `vérifié à ${new Date(s.checked ?? Date.now()).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })} · ensuite toutes les 30 min` });
+    const again = Object.assign(document.createElement("button"), { type: "button", className: "picker-action", textContent: "Vérifier maintenant" });
+    again.addEventListener("click", () => { renderCertsPanel(true); send({ t: "press", id: "certs" }); });
+    foot.append(" ", again);
+    $("#picker").classList.add("certs-panel");
+    $("#picker").replaceChildren(section, foot);
     placePicker();
 }
 

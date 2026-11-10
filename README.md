@@ -149,7 +149,7 @@ Quand le voyant kubectl est en **production** (contexte ou namespace qui corresp
 
 **Variables de mission** : dans le formulaire, une par ligne (`registry = harbor.client.fr`, `ns = app-prod`…). Une commande (Mes actions ou `config.jsonc`) les utilise avec `{mission.registry}` : la valeur vient de la mission active, la même touche sert donc chez chaque client. Sans mission active, ou si la variable manque, la touche ne tape rien et le dit.
 
-**Certificats à surveiller** : une adresse par ligne (`api.client.fr`, `ldap.client.fr:636`). Le voyant **certificats** de la rubrique OpenSSL (ou `cert-status` dans `shortcuts`) montre le plus proche de l'expiration : vert, **orange à moins de 30 jours**, **rouge à moins de 7** ou expiré ; le détail de chaque certificat (jours restants, date, chaîne non reconnue, serveur injoignable) au survol, vérification immédiate au clic, sinon toutes les 30 min. La date est lue par une simple poignée de main TLS (Node, sans openssl).
+**Certificats à surveiller** : une adresse par ligne (`api.client.fr`, `ldap.client.fr:636`). Le voyant **certificats** de la rubrique OpenSSL (ou `cert-status` dans `shortcuts`) montre le plus proche de l'expiration : vert, **orange à moins de 30 jours**, **rouge à moins de 7** ou expiré ; **un clic** ouvre la liste de tous les certificats suivis (pastille, jours restants, date, chaîne non reconnue, serveur injoignable avec la raison en clair : réseau inaccessible, nom inconnu, port fermé…) et relance la vérification ; sinon vérification toutes les 30 min. La date est lue par une simple poignée de main TLS (Node, sans openssl).
 
 ### Rubriques activées
 

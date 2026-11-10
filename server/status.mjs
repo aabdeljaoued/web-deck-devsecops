@@ -18,6 +18,17 @@ function run(file, args, timeoutMs = 8000) {
     });
 }
 
+/** Erreurs réseau en clair (panneau des certificats). */
+const NET_ERRORS = {
+    ENOTFOUND: "nom inconnu du DNS",
+    EAI_AGAIN: "DNS indisponible",
+    ENETUNREACH: "réseau inaccessible, VPN ?",
+    EHOSTUNREACH: "hôte inaccessible, VPN ?",
+    ECONNREFUSED: "port fermé",
+    ECONNRESET: "connexion coupée",
+    ETIMEDOUT: "délai dépassé"
+};
+
 /** Date d'expiration du certificat d'un serveur TLS (8 s au plus) ; la chaîne n'est pas exigée valide. */
 function checkCert(host, port) {
     return new Promise((resolve, reject) => {
@@ -29,7 +40,7 @@ function checkCert(host, port) {
             else resolve(out);
         });
         socket.on("timeout", () => { socket.destroy(); reject(new Error("délai dépassé")); });
-        socket.on("error", (err) => reject(new Error(err.code ?? err.message)));
+        socket.on("error", (err) => reject(new Error(NET_ERRORS[err.code] ?? err.code ?? err.message)));
     });
 }
 
@@ -94,7 +105,7 @@ export class StatusHub extends EventEmitter {
      */
     async refreshCerts() {
         const targets = this.certTargets ?? [];
-        if (!targets.length) return this.publish("certs", { bg: "#455A64", title: "CERTS", lines: ["aucun", "suivi"], footer: "mission › certificats", detail: "Aucun certificat surveillé : Réglages › Missions › Modifier › Certificats" });
+        if (!targets.length) return this.publish("certs", { bg: "#455A64", title: "CERTS", lines: ["aucun", "suivi"], footer: "mission › certificats", detail: "Aucun certificat surveillé : Réglages › Missions › Modifier › Certificats", items: [] });
         const results = await Promise.all(targets.map(async (target) => {
             const [host, port = "443"] = target.split(":");
             try {
@@ -111,14 +122,20 @@ export class StatusHub extends EventEmitter {
         const day = (d) => d.toLocaleDateString("fr-FR");
         const detail = [
             ...ok.map((r) => `${r.target} : ${r.days < 0 ? `EXPIRÉ depuis ${-r.days} j` : `${r.days} j`} (${day(r.validTo)})${r.trusted ? "" : ` · non reconnu : ${r.reason}`}`),
-            ...failed.map((r) => `${r.target} : injoignable (${r.error})`)
+            ...failed.map((r) => `${r.target} : injoignable, ${r.error}`)
         ].join("\n");
         this.publish("certs", {
             bg,
             title: worst && worst.days < 30 ? "⚠ CERTS" : "CERTS",
-            lines: worst ? [worst.target.split(":")[0].split(".")[0], worst.days < 0 ? "expiré" : `${worst.days} j`] : ["injoignable"],
+            lines: worst ? [worst.target.split(":")[0].split(".")[0], worst.days < 0 ? "expiré" : `${worst.days} j`] : ["hors", "d'atteinte"],
             footer: failed.length ? `${failed.length} injoignable(s)` : `${ok.length} suivi(s)`,
-            detail
+            detail,
+            // Liste complète pour le panneau (clic sur le voyant), du plus urgent au moins urgent
+            items: [
+                ...ok.map((r) => ({ target: r.target, days: r.days, until: r.validTo.toISOString(), trusted: r.trusted, reason: r.reason })),
+                ...failed.map((r) => ({ target: r.target, error: r.error }))
+            ],
+            checked: new Date().toISOString()
         });
     }
 

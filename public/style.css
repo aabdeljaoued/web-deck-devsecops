@@ -1287,3 +1287,7 @@ main {
 .player-controls button { min-width: 44px; }
 #rec-list li { grid-template-columns: 90px minmax(0, 1fr) auto auto; }
 .rec-play { border: 1px solid var(--border); border-radius: 4px; background: var(--panel); color: var(--text); cursor: pointer; padding: 0 7px; font-size: 11px; }
+/* Panneau des certificats : lignes complètes (adresse, jours, date) */
+.picker.certs-panel { width: min(620px, 94vw); }
+.picker.certs-panel .picker-item { white-space: normal; overflow: visible; text-overflow: clip; cursor: default; }
+.picker.certs-panel .picker-note .picker-action { margin-left: 6px; }

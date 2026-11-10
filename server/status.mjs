@@ -1,7 +1,7 @@
 // Voyants : contexte kubectl, branche Git, conteneurs. Interrogés seulement quand une page est ouverte.
 import { execFile } from "node:child_process";
-import { isIP } from "node:net";
-import tls from "node:tls";
+
+import { checkCert } from "./certs.mjs";
 import { EventEmitter } from "node:events";
 import { existsSync, readdirSync } from "node:fs";
 import { stat } from "node:fs/promises";
@@ -18,30 +18,11 @@ function run(file, args, timeoutMs = 8000) {
     });
 }
 
-/** Erreurs réseau en clair (panneau des certificats). */
-const NET_ERRORS = {
-    ENOTFOUND: "nom inconnu du DNS",
-    EAI_AGAIN: "DNS indisponible",
-    ENETUNREACH: "réseau inaccessible, VPN ?",
-    EHOSTUNREACH: "hôte inaccessible, VPN ?",
-    ECONNREFUSED: "port fermé",
-    ECONNRESET: "connexion coupée",
-    ETIMEDOUT: "délai dépassé"
-};
-
-/** Date d'expiration du certificat d'un serveur TLS (8 s au plus) ; la chaîne n'est pas exigée valide. */
-function checkCert(host, port) {
-    return new Promise((resolve, reject) => {
-        const socket = tls.connect({ host, port, servername: isIP(host) ? undefined : host, rejectUnauthorized: false, timeout: 8000 }, () => {
-            const cert = socket.getPeerCertificate();
-            const out = { validTo: new Date(cert.valid_to), trusted: socket.authorized, reason: socket.authorizationError ? String(socket.authorizationError) : null };
-            socket.end();
-            if (!cert.valid_to || Number.isNaN(out.validTo.getTime())) reject(new Error("aucun certificat"));
-            else resolve(out);
-        });
-        socket.on("timeout", () => { socket.destroy(); reject(new Error("délai dépassé")); });
-        socket.on("error", (err) => reject(new Error(NET_ERRORS[err.code] ?? err.code ?? err.message)));
-    });
+/** Nom court pour la touche : « www.lecode.laposte.fr:443 » -> « lecode » (www retiré, 10 caractères au plus). */
+export function shortHost(target) {
+    const host = String(target).split(":")[0].replace(/^www\d*\./i, "");
+    const name = /^\d+(\.\d+){3}$/.test(host) ? host : host.split(".")[0];
+    return name.length > 10 ? `${name.slice(0, 9)}…` : name;
 }
 
 /**
@@ -115,24 +96,30 @@ export class StatusHub extends EventEmitter {
                 return { target, error: err.message };
             }
         }));
-        const ok = results.filter((r) => !r.error).sort((a, b) => a.days - b.days);
+        // Certificat présenté par un proxy qui déchiffre le TLS (Zscaler…) : sa date n'est pas celle du site,
+        // il est signalé à part et ne compte pas pour la couleur du voyant
+        const ok = results.filter((r) => !r.error && !r.intercepted).sort((a, b) => a.days - b.days);
+        const intercepted = results.filter((r) => !r.error && r.intercepted);
         const failed = results.filter((r) => r.error);
         const worst = ok[0];
         const bg = !worst ? "#455A64" : worst.days < 7 ? "#C62828" : worst.days < 30 ? "#EF6C00" : "#2E7D32";
         const day = (d) => d.toLocaleDateString("fr-FR");
         const detail = [
-            ...ok.map((r) => `${r.target} : ${r.days < 0 ? `EXPIRÉ depuis ${-r.days} j` : `${r.days} j`} (${day(r.validTo)})${r.trusted ? "" : ` · non reconnu : ${r.reason}`}`),
+            ...ok.map((r) => `${r.target} : ${r.days < 0 ? `EXPIRÉ depuis ${-r.days} j` : `${r.days} j`} (${day(r.validTo)}) · ${r.issuer}${r.trusted ? "" : ` · non reconnu : ${r.reason}`}`),
+            ...intercepted.map((r) => `${r.target} : certificat du proxy (${r.issuer}), date du site inconnue`),
             ...failed.map((r) => `${r.target} : injoignable, ${r.error}`)
         ].join("\n");
+        const problems = failed.length + intercepted.length;
         this.publish("certs", {
             bg,
             title: worst && worst.days < 30 ? "⚠ CERTS" : "CERTS",
-            lines: worst ? [worst.target.split(":")[0].split(".")[0], worst.days < 0 ? "expiré" : `${worst.days} j`] : ["hors", "d'atteinte"],
-            footer: failed.length ? `${failed.length} injoignable(s)` : `${ok.length} suivi(s)`,
+            lines: worst ? [shortHost(worst.target), worst.days < 0 ? "expiré" : `${worst.days} j`] : ["hors", "d'atteinte"],
+            footer: problems ? `${problems} à vérifier` : `${ok.length} suivi(s)`,
             detail,
             // Liste complète pour le panneau (clic sur le voyant), du plus urgent au moins urgent
             items: [
-                ...ok.map((r) => ({ target: r.target, days: r.days, until: r.validTo.toISOString(), trusted: r.trusted, reason: r.reason })),
+                ...ok.map((r) => ({ target: r.target, days: r.days, until: r.validTo.toISOString(), trusted: r.trusted, reason: r.reason, issuer: r.issuer, via: r.via })),
+                ...intercepted.map((r) => ({ target: r.target, intercepted: true, issuer: r.issuer, via: r.via })),
                 ...failed.map((r) => ({ target: r.target, error: r.error }))
             ],
             checked: new Date().toISOString()

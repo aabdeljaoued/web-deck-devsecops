@@ -1,0 +1,60 @@
+import assert from "node:assert/strict";
+import net from "node:net";
+import { test } from "node:test";
+
+import { checkCert, isInterception, proxyFor } from "../server/certs.mjs";
+
+test("proxy : HTTPS_PROXY / https_proxy, port par défaut, identifiants", () => {
+    assert.equal(proxyFor("a.test", 443, {}), null);
+    assert.deepEqual(proxyFor("a.test", 443, { HTTPS_PROXY: "http://proxy.corp:8080" }), { host: "proxy.corp", port: 8080, tls: false, auth: null, label: "proxy.corp:8080" });
+    assert.equal(proxyFor("a.test", 443, { https_proxy: "proxy.corp" }).port, 8080);
+    assert.equal(proxyFor("a.test", 443, { HTTPS_PROXY: "http://u%40x:p%3Aw@proxy.corp:3128" }).auth, "u@x:p:w");
+    assert.throws(() => proxyFor("a.test", 443, { HTTPS_PROXY: "socks5://proxy:1080" }), /non pris en charge/);
+});
+
+test("NO_PROXY : *, domaine et sous-domaines, port précisé", () => {
+    const env = (no) => ({ HTTPS_PROXY: "http://p:8080", NO_PROXY: no });
+    assert.equal(proxyFor("x.test", 443, env("*")), null);
+    assert.equal(proxyFor("api.interne.test", 443, env("localhost, .interne.test")), null);
+    assert.equal(proxyFor("interne.test", 443, env("interne.test")), null);
+    assert.notEqual(proxyFor("autre.test", 443, env("interne.test")), null);
+    assert.notEqual(proxyFor("pasinterne.test", 443, env("interne.test")), null, "suffixe sans point : pas couvert");
+    assert.equal(proxyFor("ldap.corp", 636, env("ldap.corp:636")), null);
+    assert.notEqual(proxyFor("ldap.corp", 443, env("ldap.corp:636")), null);
+});
+
+test("interception : émetteurs des proxys qui déchiffrent le TLS", () => {
+    assert.ok(isInterception("Zscaler Intermediate Root CA (zscaler.net)"));
+    assert.ok(isInterception("Netskope Inc"));
+    assert.ok(!isInterception("GlobalSign GCC R3 EV TLS CA 2025 · GlobalSign nv-sa"));
+});
+
+/** Proxy de test qui répond toujours `status` à la demande CONNECT. */
+async function refusingProxy(status) {
+    const seen = [];
+    const server = net.createServer((c) => c.once("data", (b) => { seen.push(b.toString("latin1")); c.end(`HTTP/1.1 ${status} Non\r\n\r\n`); }));
+    await new Promise((r) => server.listen(0, "127.0.0.1", r));
+    return { server, seen, env: { HTTPS_PROXY: `http://user:secret@127.0.0.1:${server.address().port}` } };
+}
+
+test("proxy qui refuse : raison claire (403, 407, 502), demande CONNECT avec authentification", async () => {
+    for (const [status, why] of [[403, /refuse cette destination/], [407, /authentification du proxy/], [502, /n'atteint pas l'hôte \(502\)/]]) {
+        const p = await refusingProxy(status);
+        await assert.rejects(checkCert("site.example.test", 443, { env: p.env, timeout: 3000 }), why);
+        assert.match(p.seen[0], /^CONNECT site\.example\.test:443 HTTP\/1\.1\r\nHost: site\.example\.test:443\r\nProxy-Authorization: Basic dXNlcjpzZWNyZXQ=\r\n\r\n$/);
+        p.server.close();
+    }
+});
+
+test("proxy éteint : « proxy injoignable », pas confondu avec le site", async () => {
+    await assert.rejects(checkCert("site.example.test", 443, { env: { HTTPS_PROXY: "http://127.0.0.1:1" }, timeout: 3000 }), /proxy injoignable/);
+});
+
+test("nom court du voyant : www retiré, adresse IP gardée, nom long raccourci", async () => {
+    const { shortHost } = await import("../server/status.mjs");
+    assert.equal(shortHost("www.lecode.laposte.fr"), "lecode");
+    assert.equal(shortHost("www2.exemple.fr:8443"), "exemple");
+    assert.equal(shortHost("proxmox.aabdeljaoued.synology.me"), "proxmox");
+    assert.equal(shortHost("10.0.0.5:443"), "10.0.0.5");
+    assert.equal(shortHost("devsecops-production.client.fr"), "devsecops…");
+});

@@ -1643,10 +1643,12 @@ function renderCertsPanel(checking = false) {
     if ($("#picker").hidden || pickerAnchor?.dataset.status !== "certs") return;
     const s = state.status.certs ?? { items: [] };
     const items = (s.items ?? []).map((c) => {
-        const dot = c.error ? "⚪" : c.days < 7 ? "🔴" : c.days < 30 ? "🟠" : "🟢";
+        const dot = c.error ? "⚪" : c.intercepted ? "⚠️" : c.days < 7 ? "🔴" : c.days < 30 ? "🟠" : "🟢";
+        const via = c.via ? ` · via proxy ${c.via}` : "";
         const when = c.error ? `injoignable, ${c.error}`
-            : `${c.days < 0 ? `expiré depuis ${-c.days} j` : `${c.days} j`} · ${new Date(c.until).toLocaleDateString("fr-FR")}${c.trusted ? "" : " · chaîne non reconnue"}`;
-        return { label: `${dot} ${c.target} : ${when}`, title: c.reason ? `${c.target} : ${c.reason}` : c.target, onClick: () => {}, prod: !c.error && c.days < 7 };
+            : c.intercepted ? `certificat du proxy (${c.issuer}) : la date du site n'est pas visible d'ici${via}`
+            : `${c.days < 0 ? `expiré depuis ${-c.days} j` : `${c.days} j`} · ${new Date(c.until).toLocaleDateString("fr-FR")} · émis par ${c.issuer || "?"}${c.trusted ? "" : " · chaîne non reconnue"}${via}`;
+        return { label: `${dot} ${c.target} : ${when}`, title: c.reason ? `${c.target} : ${c.reason}` : c.target, onClick: () => {}, prod: !c.error && !c.intercepted && c.days < 7 };
     });
     const section = pickerSection("Certificats de la mission", items, "aucun certificat : Réglages › Missions › Modifier › Certificats à surveiller");
     const foot = Object.assign(document.createElement("p"), { className: "picker-note",

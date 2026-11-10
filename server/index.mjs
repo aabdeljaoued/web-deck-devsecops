@@ -251,6 +251,23 @@ function applyMissionEffects() {
 applyMissionEffects();
 
 /** Active une mission ("" = aucune) : ses thème et rubriques remplacent les réglages, après vérification de l'accueil. */
+/**
+ * Réglages qui appartiennent à la mission active (rubriques, leur ordre, thème) : recopiés dans la mission,
+ * sinon la réactiver (en l'enregistrant, par exemple) remettrait ses anciennes rubriques.
+ */
+function withActiveMission(next) {
+    if (!next.activeMission) return next;
+    return {
+        ...next,
+        missions: next.missions.map((m) => (m.id === next.activeMission ? { ...m, worlds: next.worlds, worldOrder: next.worldOrder, theme: next.missionTheme } : m))
+    };
+}
+
+/** Mise à jour partielle des réglages, recopiée dans la mission active. */
+function updateSettings(partial) {
+    return settings.update(withActiveMission({ ...settings.get(), ...partial }));
+}
+
 function activateMission(id) {
     const m = settings.get().missions.find((x) => x.id === id);
     if (id && !m) throw new Error("mission introuvable");
@@ -362,7 +379,7 @@ wss.on("connection", (ws) => {
                 // Réglages (espace admin) : enregistrés, puis renvoyés à toutes les pages
                 case "settings-save": {
                     // Vérifiés d'abord (rubriques : le deck doit tenir sur l'accueil), enregistrés ensuite
-                    const next = settings.check(msg.settings);
+                    const next = withActiveMission(settings.check(msg.settings));
                     const current = settings.get();
                     const worldsChanged = JSON.stringify([next.worlds, next.worldOrder]) !== JSON.stringify([current.worlds, current.worldOrder]);
                     const nextDeck = worldsChanged ? makeDeck(next.worlds, next.worldOrder) : deck;
@@ -471,7 +488,7 @@ wss.on("connection", (ws) => {
                         actions.deleteSection(String(msg.id));
                         const s = settings.get();
                         const { [msg.id]: _removed, ...worlds } = s.worlds;
-                        settings.update({ worlds, worldOrder: s.worldOrder.filter((w) => w !== msg.id) });
+                        updateSettings({ worlds, worldOrder: s.worldOrder.filter((w) => w !== msg.id) });
                     }
                     if (msg.t === "action-save") actions.saveAction(String(msg.section), msg.action);
                     if (msg.t === "action-delete") actions.deleteAction(String(msg.section), String(msg.id));
@@ -480,7 +497,7 @@ wss.on("connection", (ws) => {
                     let shown = true;
                     if (created) {
                         const worlds = { ...settings.get().worlds, [created]: true };
-                        try { deck = makeDeck(worlds); settings.update({ worlds }); } catch { shown = false; deck = makeDeck(); }
+                        try { deck = makeDeck(worlds); updateSettings({ worlds }); } catch { shown = false; deck = makeDeck(); }
                     } else {
                         try {
                             deck = makeDeck();

@@ -51,3 +51,21 @@ test("ports d'un service : rien sans service, noms vérifiés avant kubectl", as
     assert.deepEqual(await paramOptions({ apps: { kubectl: "/bin/echo" } }, "port", { namespace: "app" }), []);
     await assert.rejects(paramOptions({ apps: { kubectl: "/bin/echo" } }, "port", { namespace: "app", service: "--all" }), /service invalide/);
 });
+
+test("clés SSH sans .pub (cas Windows) : nom classique ou en-tête de clé privée ; dossier vide signalé", async () => {
+    const { mkdtempSync, writeFileSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const path = (await import("node:path")).default;
+    const { sshKeys } = await import("../server/params.mjs");
+    const dir = mkdtempSync(path.join(tmpdir(), "deck-keys-win-"));
+    writeFileSync(path.join(dir, "id_rsa"), "x");                                         // nom classique, sans .pub
+    writeFileSync(path.join(dir, "serveur-client"), "-----BEGIN OPENSSH PRIVATE KEY-----\r\nb3Blbn\r\n");
+    writeFileSync(path.join(dir, "ancienne"), "-----BEGIN RSA PRIVATE KEY-----\n");
+    writeFileSync(path.join(dir, "notes.txt"), "-----BEGIN OPENSSH PRIVATE KEY-----\n");   // .txt ignoré
+    writeFileSync(path.join(dir, "putty.ppk"), "PuTTY-User-Key-File-3: ssh-ed25519\n");      // format PuTTY, inutilisable avec -i
+    writeFileSync(path.join(dir, "known_hosts"), "github.com ssh-ed25519 AAAA\n");
+    writeFileSync(path.join(dir, "divers"), "rien à voir\n");
+    assert.deepEqual(sshKeys(dir).map((p) => path.basename(p.replace(/"/g, ""))), ["ancienne", "id_rsa", "serveur-client"]);
+    assert.throws(() => sshKeys(mkdtempSync(path.join(tmpdir(), "deck-keys-vide-"))), /aucune clé privée dans/);
+    assert.throws(() => sshKeys(path.join(dir, "absent")), /dossier introuvable/);
+});

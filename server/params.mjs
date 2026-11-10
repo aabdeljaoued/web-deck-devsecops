@@ -2,7 +2,7 @@
 // lues avec kubectl (contexte courant) ou le client de conteneurs (docker / podman).
 // Commandes lancées sans shell ; le namespace transmis est vérifié (nom Kubernetes valide uniquement).
 import { execFile } from "node:child_process";
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { closeSync, existsSync, openSync, readdirSync, readFileSync, readSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 
@@ -36,16 +36,39 @@ const SOURCES = {
 };
 const ALIASES = { ns: "namespace", deploy: "deployment", svc: "service", ctx: "context", contexte: "context", conteneur: "container", hote: "host", "hôte": "host", serveur: "host", server: "host", identite: "identity", "identité": "identity" };
 
+/** Fichiers de ~/.ssh qui ne sont jamais des clés privées. */
+const NOT_KEYS = /^(config|known_hosts(\.old)?|authorized_keys2?|environment|rc)$|\.(pub|old|bak|txt|ppk|md)$/i;
+
+/** Première ligne d'un fichier (64 octets au plus) : l'en-tête d'une clé, jamais son contenu. */
+function header(file) {
+    let fd;
+    try {
+        fd = openSync(file, "r");
+        const buf = Buffer.alloc(64);
+        const n = readSync(fd, buf, 0, 64, 0);
+        return buf.subarray(0, n).toString("latin1").split(/\r?\n/)[0];
+    } catch {
+        return "";
+    } finally {
+        if (fd !== undefined) closeSync(fd);
+    }
+}
+
 /**
- * Clés privées de ~/.ssh pour « ssh -i » : fichiers qui ont un .pub à côté, ou en .pem / .key.
- * Seuls les noms sont lus (jamais le contenu). Chemin complet, entre guillemets s'il contient un espace.
+ * Clés privées de ~/.ssh pour « ssh -i » : fichier avec un .pub à côté, nom classique (id_rsa, id_ed25519…),
+ * extension .pem / .key, ou en-tête « -----BEGIN … PRIVATE KEY----- » (seule la première ligne est lue,
+ * jamais la clé). Chemin complet, entre guillemets s'il contient un espace. Aucune clé : erreur qui nomme
+ * le dossier exploré (affichée dans la fenêtre).
  */
 export function sshKeys(dir = path.join(homedir(), ".ssh")) {
     let files;
-    try { files = readdirSync(dir); } catch { return []; }
-    const keys = files.filter((f) => !f.endsWith(".pub") && (files.includes(`${f}.pub`) || /\.(pem|key)$/i.test(f)))
+    try { files = readdirSync(dir); } catch { throw new Error(`dossier introuvable : ${dir}`); }
+    const keys = files.filter((f) => !NOT_KEYS.test(f))
         .filter((f) => { try { return statSync(path.join(dir, f)).isFile(); } catch { return false; } })
+        .filter((f) => files.includes(`${f}.pub`) || /^id_(rsa|dsa|ecdsa|ed25519)(_sk)?$/i.test(f) || /\.(pem|key)$/i.test(f)
+            || /^-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----/.test(header(path.join(dir, f))))
         .sort();
+    if (!keys.length) throw new Error(`aucune clé privée dans ${dir}`);
     return keys.map((f) => { const p = path.join(dir, f); return /\s/.test(p) ? `"${p}"` : p; });
 }
 

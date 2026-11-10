@@ -30,6 +30,7 @@ import { iconFile } from "./icons.mjs";
 import { loadConfig, ROOT } from "./config.mjs";
 import { launch, openBrowser, openFolder, platform, windowsPty } from "./platform.mjs";
 import { Recorder } from "./recorder.mjs";
+import { buildReport } from "./report.mjs";
 import { RemoteWatch } from "./remote.mjs";
 import { StatusHub } from "./status.mjs";
 import { Terminals } from "./terminal.mjs";
@@ -309,11 +310,24 @@ const screenLock = new ScreenLock(remote);
 screenLock.on("change", (locked) => { if (locked) vault.lock("écran verrouillé"); });
 screenLock.start();
 status.on("update", (id, state) => broadcast({ t: "status", id, state }));
+// Certificat passé à l'orange / au rouge : notification dans les pages ouvertes (une fois par seuil)
+status.alertFile = path.join(ROOT, ".deck-cert-alerts.json");
+// Aucune page ouverte (vérification au démarrage) : l'alerte attend la prochaine page, elle n'est pas perdue
+let pendingCertAlerts = [];
+status.on("cert-alert", (alerts) => {
+    if ([...wss.clients].some((c) => c.readyState === c.OPEN)) broadcast({ t: "cert-alert", alerts });
+    else pendingCertAlerts.push(...alerts);
+});
 // Coffre : état et contenu (secrets sans leur valeur) renvoyés à toutes les pages à chaque changement
 vault.on("change", (reason) => broadcast({ t: "vault", ...vault.view(), ...(reason ? { reason } : {}) }));
 
 wss.on("connection", (ws) => {
     status.start();
+    if (pendingCertAlerts.length) {
+        const alerts = pendingCertAlerts;
+        pendingCertAlerts = [];
+        setTimeout(() => ws.readyState === ws.OPEN && ws.send(JSON.stringify({ t: "cert-alert", alerts })), 1500);
+    }
     ws.send(JSON.stringify({
         t: "hello",
         pages: deck.pages,
@@ -367,6 +381,22 @@ wss.on("connection", (ws) => {
                 }
                 case "rec-stop": await stopRecording(String(msg.sid)); break;
                 case "rec-list": reply({ t: "rec-list", files: recorder.list(), dir: RECORDINGS }); break;
+                // Rapport d'intervention : journal, sessions enregistrées et runbooks d'une période (relu dans la page)
+                case "report": {
+                    const from = new Date(msg.from);
+                    if (Number.isNaN(from.getTime())) throw new Error("début de période invalide");
+                    const view = vault.view();
+                    const s = settings.get();
+                    reply({ t: "report", markdown: buildReport({
+                        from, to: new Date(),
+                        entries: journal.entries,
+                        recordings: recorder.list(500), dir: RECORDINGS,
+                        notes: view.unlocked ? view.notes : null,
+                        mission: s.missions.find((m) => m.id === s.activeMission)?.name ?? null,
+                        withSessions: msg.withSessions === true
+                    }) });
+                    break;
+                }
                 case "rec-read": reply({ t: "rec-cast", name: String(msg.name), cast: recorder.read(msg.name) }); break;
                 case "rec-open": {
                     mkdirSync(RECORDINGS, { recursive: true });
@@ -558,7 +588,7 @@ wss.on("connection", (ws) => {
                     break;
                 }
                 case "diagnostic":
-                    reply({ t: "diagnostic", checks: await runDiagnostic({ ctx, remote, tools, backups, supervisor: SUPERVISOR, localUnix: LOCAL_UNIX, deckTools }) });
+                    reply({ t: "diagnostic", checks: await runDiagnostic({ ctx, remote, tools, backups, supervisor: SUPERVISOR, localUnix: LOCAL_UNIX, deckTools, root: ROOT }) });
                     break;
                 // Signature en image : PNG uniquement (vérifié à ses premiers octets), 600 Ko au plus
                 case "signature-upload": {

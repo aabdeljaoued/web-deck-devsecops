@@ -352,6 +352,7 @@
                 <span class="hint">Date, touche, commande (exécutée ou tapée), terminal, contexte kubectl (en rouge : production). Les commandes tapées à la main dans le terminal et les valeurs du coffre ne sont pas notées. Fichier <code>.deck-journal.jsonl</code>, hors Git, 5 000 entrées gardées.</span>
                 <ul id="journal-list" class="journal-list"></ul>
                 <div class="settings-actions">
+                    <button type="button" id="report-open" class="primary">Rapport d'intervention…</button>
                     <button type="button" id="journal-export">Exporter (CSV)…</button>
                     <button type="button" id="journal-clear">Effacer</button>
                 </div>
@@ -490,6 +491,38 @@
                 </select>
             </div>
             <span class="hint">Pauses de plus de 2 s écourtées. Lecture seule : rien n'est envoyé à un shell.</span>
+        </div>
+    </div>
+
+    <div id="report" class="palette" hidden>
+        <div class="palette-box report-box" role="dialog" aria-label="Rapport d'intervention">
+            <div class="player-head">
+                <strong>Rapport d'intervention</strong>
+                <span class="grow"></span>
+                <button type="button" id="report-close" title="Fermer (Échap)">✕</button>
+            </div>
+            <div class="report-options">
+                <label>Période
+                    <select id="report-period">
+                        <option value="today">Aujourd'hui</option>
+                        <option value="4h">4 dernières heures</option>
+                        <option value="yesterday">Depuis hier</option>
+                        <option value="7d">7 derniers jours</option>
+                        <option value="custom">Depuis…</option>
+                    </select>
+                </label>
+                <input id="report-from" type="datetime-local" hidden>
+                <label class="settings-check"><input id="report-sessions" type="checkbox"> Inclure le texte des sessions enregistrées</label>
+                <button type="button" id="report-build">Générer</button>
+            </div>
+            <textarea id="report-text" spellcheck="false" placeholder="Le rapport (Markdown) s'affiche ici : relis-le et modifie-le avant de l'exporter."></textarea>
+            <div class="favform-actions">
+                <span class="hint">Journal des actions, sessions ● REC et étapes de runbook cochées (coffre déverrouillé). À relire avant diffusion.</span>
+                <span class="grow"></span>
+                <button type="button" id="report-copy">Copier</button>
+                <button type="button" id="report-download">Télécharger (.md)</button>
+                <button type="button" id="report-note" class="primary">Enregistrer dans le coffre</button>
+            </div>
         </div>
     </div>
 

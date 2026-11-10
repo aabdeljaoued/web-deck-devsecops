@@ -31,7 +31,10 @@ test("chaque touche du catalogue a une description (infobulle)", () => {
 
 test("garde-fou production sur les touches qui agissent sur le cluster", () => {
     const guarded = keys(buildDeck(ctx, [])).filter((k) => k.prodGuard).map((k) => `${k.page}/${k.label}`).sort();
-    assert.deepEqual(guarded, ["helm/rollback", "helm/uninstall", "helm/upgrade -i", "k8s/exec -it"]);
+    assert.deepEqual(guarded, ["helm/rollback", "helm/uninstall", "helm/upgrade -i", "k8s/apply -f", "k8s/exec -it"]);
+    // En production, ces touches tapent d'abord la comparaison (rien n'est appliqué au 1er clic)
+    const diffs = keys(buildDeck(ctx, [])).filter((k) => k.diff).map((k) => `${k.label} → ${k.diff.trim()}`).sort();
+    assert.deepEqual(diffs, ["apply -f → kubectl diff -f", "upgrade -i → helm diff upgrade --install"]);
 });
 
 test("Ansible : touches marquées unix ; la commande des touches run n'est pas envoyée au navigateur", () => {

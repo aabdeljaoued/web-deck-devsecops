@@ -116,6 +116,8 @@ function folder(label, sym, page, color, icon) {
  * la page demande une confirmation (deuxième clic) en affichant le contexte et le namespace.
  */
 const prodGuard = (key) => key && { ...key, prodGuard: true };
+/** En production, le premier clic tape d'abord cette commande de comparaison (ce qui va changer). */
+const withDiff = (key, diff) => key && { ...key, diff };
 
 /** Logos utilisés par le catalogue : le serveur ne sert que ceux-là. */
 // Icônes de l'interface hors touches (palette : notes, secrets, missions)
@@ -215,6 +217,8 @@ function buildCatalog(ctx) {
             withPick(textIcon("port-forward", "⇄", "kubectl port-forward ", false, C.k8s, "lucide-arrow-left-right"), "kubectl port-forward -n {namespace} svc/{service} {port}:{port}"),
             // {} = emplacement du pod : texte sélectionné, sinon position du curseur
             prodGuard(withPick(text("exec -it", ">_", "kubectl exec -it {} -- sh", false, C.k8s), "kubectl exec -it -n {namespace} {pod} -- sh")),
+            // apply -f : en production, « kubectl diff -f » d'abord, puis la vraie commande au 2e clic
+            prodGuard(withDiff(textIcon("apply -f", "apply", "kubectl apply -f ", false, C.k8s, "lucide-file-check"), "kubectl diff -f ")),
             text("RBAC can-i", "🛂", "kubectl auth can-i --list", true, C.sec),
             text("NetPol", "🧱", "kubectl get networkpolicies", true, C.sec),
             // popeye : audit du cluster (ressources mal configurées, inutilisées...) sur le namespace courant
@@ -336,7 +340,8 @@ function buildCatalog(ctx) {
             text("list -A", "⎈", "helm list -A", true, C.helm),
             text("repo update", "⟳", "helm repo update", true, C.helm),
             text("search repo", "🔍", "helm search repo ", false, C.helm),
-            prodGuard(text("upgrade -i", "⬆", "helm upgrade --install ", false, C.helm)),
+            // en production : « helm diff » d'abord (extension helm-diff), puis la vraie commande au 2e clic
+            prodGuard(withDiff(text("upgrade -i", "⬆", "helm upgrade --install ", false, C.helm), "helm diff upgrade --install ")),
             text("status", "ℹ", "helm status ", false, C.helm),
             text("history", "🕘", "helm history ", false, C.helm),
             text("get values", "📄", "helm get values ", false, C.helm),

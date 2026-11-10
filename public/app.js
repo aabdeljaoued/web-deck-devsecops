@@ -399,6 +399,14 @@ function handle(msg) {
         case "rec-cast":
             startPlayer(msg.name, msg.cast);
             break;
+        case "report":
+            $("#report-text").value = msg.markdown;
+            $("#report-build").disabled = false;
+            $("#report-build").textContent = "Générer";
+            break;
+        case "cert-alert":
+            certAlert(msg.alerts);
+            break;
         case "journal-added":
             if (!$("#settings").hidden) send({ t: "journal-list" });
             break;
@@ -519,7 +527,7 @@ function numberKeys() {
     });
 }
 
-const dialogOpen = () => ["#settings", "#vault", "#favdialog", "#palette", "#picker", "#duplicate", "#params", "#player"].some((id) => $(id) && !$(id).hidden);
+const dialogOpen = () => ["#settings", "#vault", "#favdialog", "#palette", "#picker", "#duplicate", "#params", "#player", "#report"].some((id) => $(id) && !$(id).hidden);
 
 // Phase de capture : avant le terminal (sinon ⌥1 taperait « ¡ » sur macOS)
 document.addEventListener("keydown", (ev) => {
@@ -680,6 +688,8 @@ function press(key, el) {
     // Action dans une rubrique : (re)lance le compte à rebours du retour à l'accueil
     if (key.type !== "back" && state.page !== "root" && (key.type !== "folder" || isFavPage(key.page))) armAutoHome();
     // Garde-fou production : sur un contexte kubectl de prod, deuxième clic (dans les 5 s) pour confirmer
+    // Production avec comparaison (helm upgrade, kubectl apply) : 1er clic = diff tapé, 2e clic (60 s) = vraie commande
+    if (key.prodGuard && key.diff && prodContext() && prodArmed?.id !== key.id) return armDiffKey(key);
     if (key.prodGuard && prodContext() && prodArmed?.id !== key.id) return armProdKey(key);
     if (key.prodGuard) disarmProdKey(true);
     // Rubrique Linux / macOS (Ansible) sur un poste Windows : seulement dans un terminal connecté en ssh / wsl
@@ -2439,6 +2449,24 @@ function armProdKey(key) {
     render();
 }
 
+/**
+ * Production + commande de comparaison : la touche est armée 60 s et le diff est tapé (sans Entrée) avec le
+ * texte sélectionné ; ce texte est gardé pour la vraie commande du 2e clic (même release, même fichier).
+ */
+function armDiffKey(key) {
+    disarmProdKey(false);
+    const terms = [state.terms.get(state.active), ...state.terms.values()].filter(Boolean);
+    const t = terms.find((x) => !x.ended && x.term.hasSelection());
+    const selected = t ? t.term.getSelection().replace(/[\u0000-\u001f\u007f\s]+/g, " ").trim() : "";
+    const diff = withSelection(key.diff);
+    if (selected) noteSelection = { text: selected, time: Date.now() };   // repris par le 2e clic
+    prodArmed = { id: key.id, timer: setTimeout(() => disarmProdKey(true), 60000) };
+    journalAction({ ...key, label: `${key.label} (diff)` }, diff, "type");
+    typeInTerminal(diff);
+    toast(`PRODUCTION « ${prodContext()} » : comparaison tapée, vérifie-la (Entrée) ; puis reclique sur « ${key.label} » dans la minute pour la vraie commande${/^helm diff/.test(key.diff) ? " (extension helm-diff nécessaire)" : ""}`);
+    render();
+}
+
 function disarmProdKey(redraw) {
     if (!prodArmed) return;
     clearTimeout(prodArmed.timer);
@@ -3378,6 +3406,71 @@ function closePlayer() {
     $("#player").hidden = true;
 }
 
+// ---------- Alerte certificats (passage à l'orange / au rouge) ----------
+
+/** Message dans le deck et notification du système (si autorisée), une fois par seuil (géré par le serveur). */
+function certAlert(alerts) {
+    const text = alerts.map((a) => `${a.target} : ${a.days < 0 ? "EXPIRÉ" : `expire dans ${a.days} j`} (${new Date(a.until).toLocaleDateString("fr-FR")})`).join(" · ");
+    const red = alerts.some((a) => a.level === "rouge");
+    toast(`${red ? "🔴" : "🟠"} certificat ${red ? "urgent" : "à renouveler"} : ${text}`, red ? "ko" : "ok");
+    if ("Notification" in window && Notification.permission === "granted") {
+        new Notification(red ? "Deck : certificat urgent" : "Deck : certificat à renouveler", { body: text, icon: "/img/icon-64.png", tag: "deck-certs" });
+    }
+}
+
+// ---------- Rapport d'intervention ----------
+
+function reportFrom() {
+    const now = new Date();
+    const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    switch ($("#report-period").value) {
+        case "4h": return new Date(now - 4 * 3600e3);
+        case "yesterday": return new Date(midnight - 86400e3);
+        case "7d": return new Date(now - 7 * 86400e3);
+        case "custom": return $("#report-from").value ? new Date($("#report-from").value) : midnight;
+        default: return midnight;
+    }
+}
+
+function openReport() {
+    $("#report").hidden = false;
+    buildReport();
+}
+
+function buildReport() {
+    $("#report-build").disabled = true;
+    $("#report-build").textContent = "Génération…";
+    send({ t: "report", from: reportFrom().toISOString(), withSessions: $("#report-sessions").checked });
+}
+
+function reportName() {
+    const d = new Date();
+    const pad = (n) => String(n).padStart(2, "0");
+    return `rapport-intervention-${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function downloadReport() {
+    const text = $("#report-text").value;
+    if (!text.trim()) return toast("rapport vide : clique sur Générer");
+    const url = URL.createObjectURL(new Blob([text], { type: "text/markdown;charset=utf-8" }));
+    const a = Object.assign(document.createElement("a"), { href: url, download: `${reportName()}.md` });
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    toast(`rapport enregistré : ${reportName()}.md (dans Téléchargements)`, "ok");
+}
+
+/** Le rapport devient une note du coffre (chiffrée), modifiable ensuite comme les autres. */
+function reportToVault() {
+    const text = $("#report-text").value;
+    if (!text.trim()) return toast("rapport vide : clique sur Générer");
+    if (!state.vault.unlocked) return toast("déverrouille d'abord le coffre (bouton cadenas)");
+    const title = `Rapport d'intervention du ${new Date().toLocaleDateString("fr-FR")}`;
+    send({ t: "note-save", title, body: text, req: `report-${crypto.randomUUID()}` });
+    toast(`rapport enregistré dans le coffre : « ${title} »`, "ok");
+}
+
 function refreshToolbar() {
     for (const [id, on] of [["#broadcast", state.broadcast], ["#notify", state.notify]]) {
         $(id).classList.toggle("on", on);
@@ -3389,6 +3482,22 @@ $("#new-tab").addEventListener("click", () => openTerm());
 $("#broadcast").addEventListener("click", toggleBroadcast);
 $("#rec").addEventListener("click", toggleRec);
 $("#rec-open").addEventListener("click", () => send({ t: "rec-open" }));
+$("#report-open").addEventListener("click", openReport);
+$("#report-close").addEventListener("click", () => { $("#report").hidden = true; });
+$("#report").addEventListener("mousedown", (ev) => { if (ev.target.id === "report") $("#report").hidden = true; });
+$("#report-period").addEventListener("change", () => { $("#report-from").hidden = $("#report-period").value !== "custom"; if ($("#report-period").value !== "custom") buildReport(); });
+$("#report-from").addEventListener("change", buildReport);
+$("#report-sessions").addEventListener("change", buildReport);
+$("#report-build").addEventListener("click", buildReport);
+$("#report-download").addEventListener("click", downloadReport);
+$("#report-note").addEventListener("click", reportToVault);
+$("#report-copy").addEventListener("click", () => {
+    navigator.clipboard.writeText($("#report-text").value).then(() => toast("rapport copié", "ok"), () => toast("copie refusée par le navigateur"));
+});
+$("#report").addEventListener("keydown", (ev) => {
+    ev.stopPropagation();
+    if (ev.key === "Escape") { ev.preventDefault(); $("#report").hidden = true; }
+});
 $("#player-play").addEventListener("click", () => playerToggle());
 $("#player-close").addEventListener("click", closePlayer);
 $("#player").addEventListener("mousedown", (ev) => { if (ev.target.id === "player") closePlayer(); });

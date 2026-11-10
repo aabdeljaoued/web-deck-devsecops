@@ -40,6 +40,7 @@ export const DESCRIPTIONS = {
     "k8s/stern": "Logs de plusieurs pods à la fois",
     "k8s/describe": "Détail d'un pod",
     "k8s/exec -it": "Shell dans un pod",
+    "k8s/apply -f": "Applique un manifeste (diff d'abord en production)",
     "k8s/RBAC can-i": "Tes droits sur le namespace",
     "k8s/NetPol": "Network policies",
     "k8s/popeye": "Audit du cluster",

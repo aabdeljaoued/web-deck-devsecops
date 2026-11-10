@@ -4,6 +4,10 @@ import { existsSync, mkdirSync, unlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
+import { execFile } from "node:child_process";
+import { lookup } from "node:dns/promises";
+
+import { checkCert } from "./certs.mjs";
 import { read as readClipboard, write as writeClipboard } from "./clipboard.mjs";
 import { platform } from "./platform.mjs";
 
@@ -21,7 +25,46 @@ async function check(name, fn) {
 /**
  * @param deps { ctx, remote, tools, backups, supervisor, localUnix, deckTools }
  */
-export async function runDiagnostic({ ctx, remote, tools, backups, supervisor, localUnix, deckTools }) {
+/** URL du proxy sans identifiants (affichée dans le diagnostic). */
+const maskProxy = (raw) => String(raw ?? "").replace(/\/\/[^/@]*@/, "//•••@");
+
+/**
+ * Réseau : proxy, DNS, accès HTTPS (et interception TLS) et accès Git pour « Mettre à jour ».
+ * Utile sur un poste d'entreprise (proxy obligatoire, DNS interne).
+ */
+export async function networkChecks(root, env = process.env) {
+    const checks = [];
+    const proxyUrl = env.HTTPS_PROXY || env.https_proxy || "";
+    const noProxy = env.NO_PROXY || env.no_proxy || "";
+    checks.push(await check("Proxy", () => ({
+        detail: proxyUrl ? `${maskProxy(proxyUrl)}${noProxy ? ` · NO_PROXY : ${noProxy}` : ""} (variable HTTPS_PROXY)` : "aucun (HTTPS_PROXY non défini) : connexion directe"
+    })));
+    const dns = await check("DNS (nom public)", async () => {
+        const { address } = await lookup("github.com");
+        return { detail: `github.com → ${address}` };
+    });
+    // Derrière un proxy, c'est lui qui résout les noms publics : un échec ici n'est pas bloquant
+    checks.push(dns.ok || !proxyUrl ? dns : { ...dns, ok: true, warn: true, detail: `${dns.detail} : normal derrière un proxy (c'est lui qui résout les noms)` });
+    checks.push(await check("Accès HTTPS (github.com)", async () => {
+        const cert = await checkCert("github.com", 443, { env });
+        const how = cert.via ? `via le proxy ${cert.via}` : "en direct";
+        if (cert.intercepted) {
+            return { warn: true, detail: `${how}, mais le TLS est déchiffré par le proxy (certificat émis par ${cert.issuer}) : git, npm ou kubectl peuvent exiger le certificat racine de l'entreprise` };
+        }
+        return { detail: `${how} · certificat émis par ${cert.issuer}` };
+    }));
+    checks.push(await check("Accès Git (Mettre à jour)", () => new Promise((resolve) => {
+        if (!existsSync(path.join(root, ".git"))) return resolve({ warn: true, detail: "dossier hors Git : mise à jour à la main" });
+        execFile("git", ["ls-remote", "--heads", "origin"], { cwd: root, timeout: 15000, windowsHide: true, env }, (err, _out, stderr) => {
+            if (!err) return resolve({ detail: "dépôt GitHub joignable" });
+            const why = String(stderr || err.message || "").trim().split("\n").pop();
+            resolve({ ok: false, detail: `${why || "échec"}${proxyUrl ? " · git suit HTTPS_PROXY ; sinon : git config --global http.proxy <url du proxy>" : ""}` });
+        });
+    })));
+    return checks;
+}
+
+export async function runDiagnostic({ ctx, remote, tools, backups, supervisor, localUnix, deckTools, root }) {
     const checks = [];
 
     checks.push(await check("Système", () => ({
@@ -92,5 +135,6 @@ export async function runDiagnostic({ ctx, remote, tools, backups, supervisor, l
 
     checks.push(await check("Workspace", () => ({ ok: existsSync(ctx.workspace), detail: ctx.workspace })));
 
+    if (root) checks.push(...(await networkChecks(root)));
     return checks;
 }

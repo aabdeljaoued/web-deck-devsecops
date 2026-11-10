@@ -3,7 +3,7 @@ import { execFile } from "node:child_process";
 
 import { checkCert } from "./certs.mjs";
 import { EventEmitter } from "node:events";
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
@@ -109,6 +109,7 @@ export class StatusHub extends EventEmitter {
             ...intercepted.map((r) => `${r.target} : certificat du proxy (${r.issuer}), date du site inconnue`),
             ...failed.map((r) => `${r.target} : injoignable, ${r.error}`)
         ].join("\n");
+        this.checkCertAlerts(ok);
         const problems = failed.length + intercepted.length;
         this.publish("certs", {
             bg,
@@ -124,6 +125,28 @@ export class StatusHub extends EventEmitter {
             ],
             checked: new Date().toISOString()
         });
+    }
+
+    /**
+     * Alerte (événement « cert-alert ») quand un certificat passe à l'orange (< 30 j) ou au rouge (< 7 j, expiré) :
+     * une seule fois par seuil, niveaux retenus dans this.alertFile pour ne pas re-signaler après un redémarrage.
+     * Un certificat renouvelé (retour au vert) est oublié : il sera de nouveau signalé au prochain passage.
+     */
+    checkCertAlerts(ok) {
+        const rank = { ok: 0, orange: 1, rouge: 2 };
+        let seen = {};
+        try { seen = JSON.parse(readFileSync(this.alertFile, "utf8")); } catch { /* premier passage */ }
+        const alerts = [];
+        const next = {};
+        for (const r of ok) {
+            const level = r.days < 7 ? "rouge" : r.days < 30 ? "orange" : "ok";
+            if (rank[level] > rank[seen[r.target] ?? "ok"]) alerts.push({ target: r.target, level, days: r.days, until: r.validTo.toISOString() });
+            if (level !== "ok") next[r.target] = rank[level] >= rank[seen[r.target] ?? "ok"] ? level : seen[r.target];
+        }
+        if (this.alertFile && JSON.stringify(next) !== JSON.stringify(seen)) {
+            try { writeFileSync(this.alertFile, `${JSON.stringify(next)}\n`, { mode: 0o600 }); } catch { /* lecture seule */ }
+        }
+        if (alerts.length) this.emit("cert-alert", alerts);
     }
 
     // ---------- kubectl ----------

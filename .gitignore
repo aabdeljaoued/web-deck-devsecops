@@ -17,3 +17,5 @@ actions.json
 .deck-journal.jsonl
 .deck-recordings/
 .deck-cert-alerts.json
+patches.json
+.deck-patch-alerts.json

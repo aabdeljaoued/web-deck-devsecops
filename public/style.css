@@ -1347,3 +1347,48 @@ main {
 .docs-content { flex: 1; overflow-y: auto; border: none; padding: 0 6px 20px 0; max-height: none; }
 .docs-content img { display: block; max-width: 100%; margin: 10px 0 14px; border-radius: 8px; border: 1px solid var(--border); box-shadow: 0 6px 18px rgba(0, 0, 0, .35); }
 .docs-content a[data-doc] { color: var(--accent); }
+
+/* Patchs des VMs */
+.patches-box { width: min(1180px, 95vw); max-height: 86vh; display: flex; flex-direction: column; gap: 10px; padding: 14px; }
+.patches-box .player-head { gap: 10px; }
+#patch-search { width: 280px; padding: 5px 9px; border: 1px solid var(--border); border-radius: 6px; background: var(--input-bg); color: var(--text); font: inherit; font-size: 13px; }
+.patch-form { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
+.patch-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px 12px; }
+.patch-form textarea { resize: vertical; }
+.patch-table-wrap { overflow: auto; min-height: 120px; }
+.patch-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.patch-table th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); padding: 6px 8px; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--panel); }
+.patch-table td { padding: 7px 8px; border-bottom: 1px solid var(--border); vertical-align: top; color: var(--text); }
+.patch-table tr.patch-rouge td { background: color-mix(in srgb, #c62828 12%, transparent); }
+.patch-table tr.patch-orange td { background: color-mix(in srgb, #ef6c00 10%, transparent); }
+.patch-desc { max-width: 340px; color: var(--muted); white-space: pre-wrap; }
+.patch-when { font-size: 11px; font-weight: 600; }
+.patch-rouge .patch-when { color: #ef5350; }
+.patch-orange .patch-when { color: #ffa040; }
+.patch-env { display: inline-block; padding: 0 6px; border-radius: 8px; font-size: 10px; font-weight: 600; background: color-mix(in srgb, var(--accent) 20%, transparent); }
+.patch-env.env-production { background: #c62828; color: #fff; }
+.patch-actions { white-space: nowrap; }
+.patch-actions button { margin: 0 2px 2px 0; padding: 3px 8px; font-size: 12px; border: 1px solid var(--border); border-radius: 5px; background: var(--panel); color: var(--text); cursor: pointer; }
+.patch-actions button.primary { background: var(--accent-strong); color: #fff; border-color: transparent; }
+.patch-actions button.danger { color: #ef5350; }
+.share-mode #patch-list { filter: blur(6px); }
+.share-mode #patch-list:hover { filter: none; }
+.patch-form label { display: flex; flex-direction: column; gap: 4px; text-transform: none; }
+.patch-form label .hint { font-size: 11px; }
+.patch-form textarea { width: 100%; box-sizing: border-box; }
+.patch-import-errors { margin: 0; padding-left: 18px; max-height: 140px; overflow: auto; font-size: 12px; color: #ef5350; }
+.patches-box .player-head button:not(#patches-close) { padding: 4px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); color: var(--text); cursor: pointer; font-size: 13px; }
+.patches-box .player-head button.primary { background: var(--accent-strong); color: #fff; border-color: transparent; }
+#patch-template { color: var(--accent); font-weight: 600; }
+/* Patchs : filtres (environnement, tags) et tags */
+.patch-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.patch-chip { padding: 3px 10px; border: 1px solid var(--border); border-radius: 14px; background: var(--panel); color: var(--text); font-size: 12px; cursor: pointer; }
+.patch-chip:hover { border-color: var(--accent); }
+.patch-chip.on { background: var(--accent-strong); color: #fff; border-color: transparent; }
+.patch-chip.env-production.on { background: #c62828; }
+.patch-chip.tag { color: #80cbc4; }
+.patch-chip.tag.on { color: #fff; background: #00838f; }
+.patch-sep { width: 1px; height: 18px; background: var(--border); margin: 0 4px; }
+.patch-tag { display: inline-block; padding: 0 6px; border-radius: 8px; font-size: 10px; font-weight: 600; color: #80cbc4; border: 1px solid color-mix(in srgb, #00838f 70%, transparent); }
+.patch-tags-field { grid-column: span 2; }
+[data-mode="light"] .patch-tag, [data-mode="light"] .patch-chip.tag { color: #00695c; }

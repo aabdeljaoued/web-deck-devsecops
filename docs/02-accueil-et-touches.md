@@ -11,6 +11,7 @@
 - **Des voyants en direct** à droite : contexte et namespace kubectl (rouge en production), branche Git et fichiers
   modifiés, conteneurs actifs. Un clic sur le voyant kubectl change de contexte ou de namespace ; sur le voyant Git,
   il choisit le dépôt suivi.
+- **Favoris** et **clear** sont fixés à droite, sur l'accueil comme dans chaque rubrique (voir [Favoris](06-favoris.md)).
 - **clear** efface le terminal actif.
 - 18 touches au plus sur l'accueil ; **Réglages › Rubriques** choisit lesquelles et dans quel ordre.
 

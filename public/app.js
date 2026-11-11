@@ -7,6 +7,10 @@ import { toAnsi, toHtml } from "/markdown.js";
 
 const $ = (sel) => document.querySelector(sel);
 
+// Passage par les favoris depuis une rubrique : { page } de départ ; retour après le choix ou au bout de 30 s
+const FAV_RETURN_S = 30;
+let favReturn = null;
+
 /** Version de la page chargée (empreinte envoyée par le serveur dans « hello »). */
 let pageBuild = null;
 
@@ -411,6 +415,25 @@ function handle(msg) {
         case "cert-alert":
             certAlert(msg.alerts);
             break;
+        case "patches":
+            state.patches = msg.vms;
+            renderPatches();
+            break;
+        case "patch-saved":
+            patchPending = false;
+            $("#patch-form").hidden = true;
+            toast("VM enregistrée", "ok");
+            break;
+        case "patch-alert":
+            patchAlert(msg.alerts);
+            break;
+        case "patch-import":
+            showPatchImport(msg);
+            break;
+        case "patch-export":
+            downloadText(msg.csv, `vms-patchs-${new Date().toISOString().slice(0, 10)}.csv`, "text/csv;charset=utf-8");
+            toast("inventaire exporté en CSV (dans Téléchargements)", "ok");
+            break;
         case "journal-added":
             if (!$("#settings").hidden) send({ t: "journal-list" });
             break;
@@ -490,6 +513,8 @@ function handle(msg) {
             if (!msg.ok) toast(msg.error ?? "échec");
             break;
         case "error":
+            // Formulaire de VM : l'erreur s'affiche dans le formulaire (saisie gardée)
+            if (patchPending) { patchPending = false; $("#patch-error").textContent = msg.error; $("#patch-error").hidden = false; }
             // Secret en cours de lecture : la commande n'est pas tapée
             for (const w of secretWaits.values()) w.reject(new Error(msg.error));
             secretWaits.clear();
@@ -508,7 +533,7 @@ function handle(msg) {
 function render() {
     hideKeyTip();
     const grid = $("#grid");
-    const { left, right } = rowOrder(state.pages[state.page]);
+    const { left, right } = rowOrder(withPinnedFavorites(state.pages[state.page] ?? []));
     // L'espace extensible pousse Verrouiller et clear contre le bord droit de la fenêtre
     const spacer = Object.assign(document.createElement("div"), { className: "spacer" });
     grid.replaceChildren(...left.map(keyElement), spacer, ...right.map(keyElement));
@@ -534,7 +559,7 @@ function numberKeys() {
     });
 }
 
-const dialogOpen = () => ["#settings", "#vault", "#favdialog", "#palette", "#picker", "#duplicate", "#params", "#player", "#report", "#docs"].some((id) => $(id) && !$(id).hidden);
+const dialogOpen = () => ["#settings", "#vault", "#favdialog", "#palette", "#picker", "#duplicate", "#params", "#player", "#report", "#docs", "#patches"].some((id) => $(id) && !$(id).hidden);
 
 // Phase de capture : avant le terminal (sinon ⌥1 taperait « ¡ » sur macOS)
 document.addEventListener("keydown", (ev) => {
@@ -562,6 +587,19 @@ function rowOrder(keys) {
     const last = [...present.filter((k) => k.right), ...present.filter((k) => k.type === "clear")];
     const middle = present.filter((k) => !first.includes(k) && !last.includes(k));
     return { left: [...first, ...middle], right: last };
+}
+
+/**
+ * Touche Favoris toujours à portée de main : fixée à gauche de clear sur toutes les pages hors favoris (sur
+ * l'accueil, elle remplace la touche Favoris de la rangée). Absente si la rubrique Favoris est décochée.
+ */
+function withPinnedFavorites(keys) {
+    if (isFavPage(state.page)) return keys;
+    const source = (state.pages.root ?? []).find((k) => k?.type === "folder" && k.page === "favoris");
+    if (!source) return keys;
+    const pinned = { ...source, id: "pin-favoris", right: true, pinnedFav: true };
+    const rest = state.page === "root" ? keys.filter((k) => k !== source) : keys;
+    return [...rest, pinned];
 }
 
 /** Texte clair sur fond foncé, foncé sur fond clair. */
@@ -658,6 +696,7 @@ function statusKey(id, statusId, key) {
         if (statusId === "kube") return openPicker(el, "kube-list", "Chargement des contextes…");
         if (statusId === "git") return openPicker(el, "git-list", "Chargement des dépôts…");
         if (statusId === "certs") return openCertsPanel(el);
+        if (statusId === "patches") return openPatches();
         send({ t: "press", id: statusId });
     });
     return el;
@@ -682,6 +721,7 @@ function renderCrumbs() {
 const isFavPage = (page) => page === "favoris" || page.startsWith("fav-");
 
 function go(page) {
+    if (favReturn && !isFavPage(page)) favReturn = null;
     state.page = page;
     // Rubrique avec des outils « à installer » : vérification immédiate (installés depuis ?)
     if (state.tools.missing.size && (state.pages[page] ?? []).some((k) => k?.needs && state.tools.missing.has(k.needs))) send({ t: "tools-check" });
@@ -724,14 +764,27 @@ function press(key, el) {
             if (key.fav && state.favEdit) return openFavForm(key);
             // Touche Favoris de l'accueil : groupe de la mission active ouvert directement (s'il existe)
             const group = key.page === "favoris" && activeMission()?.favGroup;
-            if (group && state.pages[`fav-${group}`]) return go(`fav-${group}`);
-            return go(key.page);
+            const target = group && state.pages[`fav-${group}`] ? `fav-${group}` : key.page;
+            // Favoris ouverts depuis une rubrique : retour à cette rubrique après le choix, ou au bout de 30 s
+            if (key.page === "favoris" && !isFavPage(state.page)) {
+                const from = state.page;
+                go(target);
+                favReturn = { page: from };
+                return armAutoHome();
+            }
+            return go(target);
         }
-        case "back": return go(key.page ?? "root");
+        case "back":
+            // Haut des favoris ouverts depuis une rubrique : Retour ramène à cette rubrique
+            if (favReturn && isFavPage(state.page) && (key.page ?? "root") === "root") return backFromFavorites();
+            return go(key.page ?? "root");
         case "web":
             if (key.fav && state.favEdit) return openFavForm(key);
             journalAction(key, key.url, "link");
-            return window.open(key.url, "_blank", "noopener,noreferrer");
+            window.open(key.url, "_blank", "noopener,noreferrer");
+            // Site choisi dans les favoris ouverts depuis une rubrique : retour à cette rubrique
+            if (favReturn && isFavPage(state.page)) backFromFavorites();
+            return;
         case "fav-add": return openFavForm();
         case "vault": return openVault();
         case "fav-edit":
@@ -932,6 +985,11 @@ function loadLiveParams(after = null) {
 }
 
 function applyParamOptions(msg) {
+    // Clés SSH pour le formulaire d'une VM (Patchs)
+    if (msg.req === "patch-identity") {
+        $("#patch-identity-list").replaceChildren(...(msg.options ?? []).map((o) => new Option(o.replace(/^"(.*)"$/, "$1"))));
+        return;
+    }
     if (!paramsState || msg.req !== paramsState.req) return;
     const ns = [...$("#params-fields").querySelectorAll("input")].find((i) => isNs(i.dataset.name))?.value.trim();
     for (const input of $("#params-fields").querySelectorAll("input")) {
@@ -2441,10 +2499,21 @@ function armOrRun(btn, text, run) {
 
 /** Rubrique ("monde") d'une page : les groupes de favoris font partie du monde Favoris. */
 const worldOf = (page) => (page === "root" ? null : isFavPage(page) ? "favoris" : page);
-const autoHome = { world: null, deadline: 0, total: 0, timer: null, last: 0 };
+const autoHome = { world: null, deadline: 0, total: 0, timer: null, last: 0, target: "root" };
+
+
+function backFromFavorites() {
+    const page = favReturn?.page ?? "root";
+    favReturn = null;
+    cancelAutoHome();
+    go(page);
+    if (page !== "root") armAutoHome();   // la rubrique retrouve son propre retour à l'accueil
+}
 
 function armAutoHome() {
-    const seconds = state.settings.autoHomeEnabled === false ? 0 : Number(state.settings.autoHomeSeconds) || 0;
+    const inFavReturn = Boolean(favReturn && isFavPage(state.page));
+    const seconds = inFavReturn ? FAV_RETURN_S : state.settings.autoHomeEnabled === false ? 0 : Number(state.settings.autoHomeSeconds) || 0;
+    autoHome.target = inFavReturn ? favReturn.page : "root";
     if (!seconds || state.page === "root") return cancelAutoHome();
     autoHome.world = worldOf(state.page);
     autoHome.total = seconds * 1000;
@@ -2475,10 +2544,13 @@ function tickAutoHome() {
     autoHome.last = now;
     const left = Math.max(0, autoHome.deadline - now);
     $("#autohome-bar").style.width = `${(left / autoHome.total) * 100}%`;
-    $("#autohome").title = `retour à l'accueil dans ${Math.ceil(left / 1000)} s (Réglages pour changer le délai)`;
+    $("#autohome").title = autoHome.target !== "root"
+        ? `retour à « ${state.titles[autoHome.target] ?? autoHome.target} » dans ${Math.ceil(left / 1000)} s`
+        : `retour à l'accueil dans ${Math.ceil(left / 1000)} s (Réglages pour changer le délai)`;
     $("#autohome").classList.toggle("paused", autoHomeBlocked());
     if (left > 0) return;
     cancelAutoHome();
+    if (favReturn && isFavPage(state.page)) return backFromFavorites();
     if (state.page !== "root") go("root");
 }
 
@@ -2654,7 +2726,7 @@ function renderDiagnostic(checks) {
     toast(failed ? `diagnostic : ${failed} problème(s), voir Réglages › Serveur` : "diagnostic : tout fonctionne", failed ? "ko" : "ok");
 }
 
-const BACKUP_LABELS = { "favoris.json": "Favoris", "actions.json": "Mes actions", "settings.json": "Réglages", "vault.enc": "Coffre (chiffré)" };
+const BACKUP_LABELS = { "favoris.json": "Favoris", "actions.json": "Mes actions", "settings.json": "Réglages", "patches.json": "Patchs des VMs", "vault.enc": "Coffre (chiffré)" };
 
 function renderBackups(all) {
     $("#backup-rows").replaceChildren(...Object.entries(BACKUP_LABELS).map(([name, label]) => {
@@ -3170,7 +3242,10 @@ async function readConfigFile(file) {
         if (data?.kind !== "configuration") throw new Error("ce n'est pas un export de configuration du deck");
         pendingConfig = data;
         const count = (items) => (items ?? []).reduce((n, f) => n + (f?.type === "group" ? count(f.items) : 1), 0);
-        $("#config-import-summary").textContent = `${file.name}${data.from ? ` (depuis ${data.from.machine}, ${data.from.platform})` : ""} : ${count(data.favorites)} favori(s), ${(data.actions ?? []).length} rubrique(s) d'actions, ${(data.settings?.missions ?? []).length} mission(s)${data.signature ? ", signature" : ""}`;
+        $("#config-import-summary").textContent = `${file.name}${data.from ? ` (depuis ${data.from.machine}, ${data.from.platform})` : ""} : ${count(data.favorites)} favori(s), ${(data.actions ?? []).length} rubrique(s) d'actions, ${(data.settings?.missions ?? []).length} mission(s), ${(data.patches ?? []).length} VM(s)${data.signature ? ", signature" : ""}`;
+        // Ancien export sans inventaire de patchs : rien à remplacer
+        $("#cfg-part-patches").disabled = !Array.isArray(data.patches);
+        $("#cfg-part-patches").checked = Array.isArray(data.patches) && data.patches.length > 0;
         $("#cfg-part-signature").disabled = !data.signature;
         $("#cfg-part-signature").checked = Boolean(data.signature);
         $("#config-import-confirm").hidden = false;
@@ -3185,7 +3260,8 @@ function importConfig() {
     if (!pendingConfig) return;
     send({ t: "config-import", data: pendingConfig, parts: {
         favorites: $("#cfg-part-favorites").checked, favoritesMode: $("#cfg-fav-mode").value,
-        actions: $("#cfg-part-actions").checked, settings: $("#cfg-part-settings").checked, signature: $("#cfg-part-signature").checked
+        actions: $("#cfg-part-actions").checked, settings: $("#cfg-part-settings").checked, signature: $("#cfg-part-signature").checked,
+        patches: $("#cfg-part-patches").checked
     } });
 }
 
@@ -3519,6 +3595,189 @@ async function showDoc(page) {
     for (const a of $("#docs-nav").querySelectorAll("a")) a.classList.toggle("on", a.dataset.doc === page);
 }
 
+// ---------- Patchs des VMs (rubrique Patchs) ----------
+
+let patchEditing = null;   // VM en cours de modification (null = nouvelle)
+const patchFilter = { env: null, tags: new Set() };   // filtres de l'inventaire (environnement, tags combinés)
+let patchPending = false;  // formulaire envoyé, en attente du serveur
+
+const frDate = (d) => (d ? d.split("-").reverse().join("/") : "—");
+const patchDays = (vm) => {
+    if (!vm.nextPatch) return null;
+    const now = new Date();
+    const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+    return Math.round((Date.parse(`${vm.nextPatch}T00:00:00Z`) - today) / 86400000);
+};
+const patchLabel = (d) => (d === null ? "à planifier" : d < 0 ? `en retard de ${-d} j` : d === 0 ? "aujourd'hui" : d === 1 ? "demain" : `dans ${d} j`);
+
+function openPatches() {
+    $("#patches").hidden = false;
+    send({ t: "patch-list" });
+    renderPatches();
+}
+
+/** Inventaire : du prochain patch le plus proche au plus lointain, filtré par la recherche. */
+function renderPatches() {
+    if ($("#patches").hidden) return;
+    const vms = state.patches ?? [];
+    const q = fold($("#patch-search").value.trim());
+    renderPatchFilters(vms);
+    const shown = vms.filter((v) => !q || fold(`${v.name} ${v.host} ${v.env} ${v.description} ${(v.tags ?? []).join(" ")}`).includes(q))
+        .filter((v) => !patchFilter.env || v.env === patchFilter.env)
+        .filter((v) => [...patchFilter.tags].every((t) => (v.tags ?? []).includes(t)))
+        .sort((a, b) => (patchDays(a) ?? -1e6) - (patchDays(b) ?? -1e6));
+    const late = vms.filter((v) => (patchDays(v) ?? 0) < 0).length;
+    $("#patch-summary").textContent = vms.length ? `${vms.length} VM(s)${late ? ` · ${late} en retard` : ""}` : "";
+    $("#patch-list").replaceChildren(...shown.map((vm) => {
+        const d = patchDays(vm);
+        const level = d === null || d <= 7 ? (d === null || d > 1 ? "orange" : "rouge") : "ok";
+        const tr = Object.assign(document.createElement("tr"), { className: `patch-${level}` });
+        const cell = (content, cls = "") => { const td = Object.assign(document.createElement("td"), { className: cls }); td.append(...[content].flat()); return td; };
+        const name = Object.assign(document.createElement("strong"), { textContent: vm.name });
+        const env = Object.assign(document.createElement("span"), { className: `patch-env env-${vm.env}`, textContent: vm.env });
+        const tags = (vm.tags ?? []).map((t) => Object.assign(document.createElement("span"), { className: "patch-tag", textContent: t }));
+        const where = [vm.host && vm.host !== vm.name ? vm.host : "", vm.identity ? `clé : ${vm.identity.split(/[\\/]/).pop()}` : ""].filter(Boolean).join(" · ");
+        const host = where ? Object.assign(document.createElement("div"), { className: "hint", textContent: where, title: vm.identity || "" }) : "";
+        const next = Object.assign(document.createElement("div"), { textContent: frDate(vm.nextPatch) });
+        const when = Object.assign(document.createElement("div"), { className: "patch-when", textContent: patchLabel(d) });
+        const btn = (label, title, run, cls = "") => { const b = Object.assign(document.createElement("button"), { type: "button", textContent: label, title, className: cls }); b.addEventListener("click", run); return b; };
+        const del = btn("Supprimer", "Retirer cette VM de l'inventaire", (ev) => armOrRun(ev.target, "Confirmer ?", () => send({ t: "patch-delete", id: vm.id })), "danger");
+        tr.append(
+            cell(Object.assign(document.createElement("span"), { className: "patch-dot", textContent: level === "rouge" ? "🔴" : level === "orange" ? "🟠" : "🟢" })),
+            cell([name, " ", env, ...tags.flatMap((t) => [" ", t]), host]),
+            cell(vm.description || "—", "patch-desc"),
+            cell(`${frDate(vm.lastPatch)}${vm.everyDays ? ` · tous les ${vm.everyDays} j` : ""}`),
+            cell([next, when]),
+            cell([
+                btn("Patché", "Dernier patch = aujourd'hui ; prochain = aujourd'hui + fréquence", () => send({ t: "patch-done", id: vm.id }), "primary"),
+                btn("SSH", vm.identity ? `Tape « ssh -i ${vm.identity} » vers la VM (sans Entrée)` : "Tape « ssh » vers la VM dans le terminal (sans Entrée)", () => {
+                    $("#patches").hidden = true;
+                    const key = vm.identity ? `-i ${/\s/.test(vm.identity) ? `"${vm.identity}"` : vm.identity} ` : "";
+                    typeInTerminal(`ssh ${key}${vm.host || vm.name}`);
+                }),
+                btn("Modifier", "", () => openPatchForm(vm)),
+                del
+            ], "patch-actions")
+        );
+        return tr;
+    }));
+    if (!shown.length) {
+        const tr = document.createElement("tr");
+        tr.append(Object.assign(document.createElement("td"), { colSpan: 6, className: "hint", textContent: vms.length ? "aucune VM ne correspond" : "aucune VM : « + VM » pour commencer" }));
+        $("#patch-list").append(tr);
+    }
+}
+
+function openPatchForm(vm = null) {
+    patchEditing = vm;
+    $("#patch-form-title").textContent = vm ? `Modifier « ${vm.name} »` : "Nouvelle VM";
+    $("#patch-name").value = vm?.name ?? "";
+    $("#patch-host").value = vm?.host ?? "";
+    $("#patch-identity").value = vm?.identity ?? "";
+    // Clés privées de ~/.ssh proposées (mêmes que la touche connexion -i)
+    send({ t: "param-options", req: "patch-identity", name: "identity" });
+    $("#patch-env").value = vm?.env ?? "production";
+    $("#patch-last").value = vm?.lastPatch ?? "";
+    $("#patch-next").value = vm?.nextPatch ?? "";
+    $("#patch-every").value = vm?.everyDays ?? "";
+    $("#patch-desc").value = vm?.description ?? "";
+    $("#patch-tags").value = (vm?.tags ?? []).join(", ");
+    // Tags déjà utilisés proposés à la saisie
+    const known = [...new Set((state.patches ?? []).flatMap((v) => v.tags ?? []))].sort();
+    $("#patch-tag-list").replaceChildren(...known.map((t) => new Option(t)));
+    $("#patch-error").hidden = true;
+    $("#patch-form").hidden = false;
+    $("#patch-name").focus();
+}
+
+function savePatch() {
+    $("#patch-error").hidden = true;
+    patchPending = true;
+    send({ t: "patch-save", vm: {
+        ...(patchEditing ? { id: patchEditing.id } : {}),
+        name: $("#patch-name").value, host: $("#patch-host").value, identity: $("#patch-identity").value, env: $("#patch-env").value,
+        lastPatch: $("#patch-last").value, nextPatch: $("#patch-next").value,
+        everyDays: $("#patch-every").value, description: $("#patch-desc").value, tags: $("#patch-tags").value
+    } });
+}
+
+/**
+ * Boutons de filtre : « Toutes », un par environnement présent, un par tag (avec le nombre de VMs).
+ * Environnement : un seul à la fois ; tags : combinés (la VM doit les avoir tous). Re-cliquer retire le filtre.
+ */
+function renderPatchFilters(vms) {
+    const count = (pred) => vms.filter(pred).length;
+    const envs = [...new Set(vms.map((v) => v.env))].sort();
+    const tags = [...new Set(vms.flatMap((v) => v.tags ?? []))].sort();
+    const chip = (label, n, on, cls, click) => {
+        const b = Object.assign(document.createElement("button"), { type: "button", className: `patch-chip ${cls}${on ? " on" : ""}`, textContent: `${label} ${n}` });
+        b.setAttribute("aria-pressed", String(on));
+        b.addEventListener("click", click);
+        return b;
+    };
+    const all = chip("Toutes", vms.length, !patchFilter.env && !patchFilter.tags.size, "all", () => { patchFilter.env = null; patchFilter.tags.clear(); renderPatches(); });
+    const envChips = envs.map((e) => chip(e, count((v) => v.env === e), patchFilter.env === e, `env env-${e}`, () => { patchFilter.env = patchFilter.env === e ? null : e; renderPatches(); }));
+    const tagChips = tags.map((t) => chip(`#${t}`, count((v) => (v.tags ?? []).includes(t)), patchFilter.tags.has(t), "tag", () => { patchFilter.tags.has(t) ? patchFilter.tags.delete(t) : patchFilter.tags.add(t); renderPatches(); }));
+    // Filtre devenu sans objet (tag supprimé) : oublié
+    for (const t of patchFilter.tags) if (!tags.includes(t)) patchFilter.tags.delete(t);
+    if (patchFilter.env && !envs.includes(patchFilter.env)) patchFilter.env = null;
+    $("#patch-filters").replaceChildren(all, ...envChips, ...(tagChips.length ? [Object.assign(document.createElement("span"), { className: "patch-sep" }), ...tagChips] : []));
+    $("#patch-filters").hidden = vms.length === 0;
+}
+
+// ----- Import en masse (CSV) -----
+
+let patchImportCsv = null;   // contenu du fichier choisi, en attente de confirmation
+
+function downloadText(text, filename, type) {
+    const url = URL.createObjectURL(new Blob([text], { type }));
+    const a = Object.assign(document.createElement("a"), { href: url, download: filename });
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+async function readPatchFile(file) {
+    $("#patch-import-file").value = "";
+    if (!file) return;
+    if (file.size > 500000) return toast("fichier trop gros (500 Ko au plus)");
+    patchImportCsv = await file.text();
+    $("#patch-import-title").textContent = file.name;
+    send({ t: "patch-import", csv: patchImportCsv, dryRun: true });   // aperçu : rien n'est écrit
+}
+
+/** Aperçu (ce qui sera ajouté / mis à jour, lignes ignorées) puis résultat de l'import. */
+function showPatchImport(msg) {
+    const errors = msg.errors ?? [];
+    if (!msg.dryRun) {
+        patchImportCsv = null;
+        $("#patch-import-confirm").hidden = true;
+        return toast(`import : ${msg.added} VM(s) ajoutée(s), ${msg.updated} mise(s) à jour${errors.length ? `, ${errors.length} ligne(s) ignorée(s)` : ""}`, "ok");
+    }
+    $("#patch-import-summary").textContent = msg.added || msg.updated
+        ? `${msg.added} VM(s) à ajouter, ${msg.updated} à mettre à jour${errors.length ? ` ; ${errors.length} ligne(s) ignorée(s) :` : "."}`
+        : `aucune VM à importer${errors.length ? ` ; ${errors.length} ligne(s) en erreur :` : "."}`;
+    $("#patch-import-errors").replaceChildren(...errors.slice(0, 50).map((e) => Object.assign(document.createElement("li"), { textContent: e })));
+    $("#patch-import-ok").disabled = !(msg.added || msg.updated);
+    $("#patch-form").hidden = true;
+    $("#patch-import-confirm").hidden = false;
+}
+
+const PATCH_TEMPLATE = "\uFEFFnom;hote;cle;environnement;dernier_patch;prochain_patch;frequence;tags;description\r\n"
+    + "app-prod-01;app-prod-01;~/.ssh/id_ed25519;production;10/10/2026;;30;linux, critique;API paiement (RHEL 9), maintenance le mardi 22h\r\n"
+    + "db-recette-01;admin@10.0.0.12;;recette;;15/12/2026;;linux, postgres;PostgreSQL 16\r\n";
+
+/** VM passée à l'orange / au rouge : message et notification du système (si autorisée), une fois par seuil. */
+function patchAlert(alerts) {
+    const text = alerts.map((a) => `${a.target} : ${a.days === null ? "patch à planifier" : a.days < 0 ? `patch en retard de ${-a.days} j` : `patch ${patchLabel(a.days)}`}`).join(" · ");
+    const red = alerts.some((a) => a.level === "rouge");
+    toast(`${red ? "🔴" : "🟠"} ${text}`, red ? "ko" : "ok");
+    if ("Notification" in window && Notification.permission === "granted") {
+        new Notification(red ? "Deck : patch urgent" : "Deck : patch à prévoir", { body: text, icon: "/img/icon-64.png", tag: "deck-patches" });
+    }
+}
+
 // ---------- Rapport d'intervention ----------
 
 function reportFrom() {
@@ -3584,6 +3843,22 @@ $("#broadcast").addEventListener("click", toggleBroadcast);
 $("#rec").addEventListener("click", toggleRec);
 $("#rec-open").addEventListener("click", () => send({ t: "rec-open" }));
 $("#report-open").addEventListener("click", openReport);
+$("#patch-new").addEventListener("click", () => openPatchForm());
+$("#patch-import").addEventListener("click", () => $("#patch-import-file").click());
+$("#patch-import-file").addEventListener("change", (ev) => readPatchFile(ev.target.files[0]));
+$("#patch-import-ok").addEventListener("click", () => { if (patchImportCsv) send({ t: "patch-import", csv: patchImportCsv, dryRun: false }); });
+$("#patch-import-cancel").addEventListener("click", () => { patchImportCsv = null; $("#patch-import-confirm").hidden = true; });
+$("#patch-export").addEventListener("click", () => send({ t: "patch-export" }));
+$("#patch-template").addEventListener("click", (ev) => { ev.preventDefault(); downloadText(PATCH_TEMPLATE, "modele-vms-patchs.csv", "text/csv;charset=utf-8"); toast("modèle CSV téléchargé (dans Téléchargements)", "ok"); });
+$("#patch-cancel").addEventListener("click", () => { $("#patch-form").hidden = true; });
+$("#patch-form").addEventListener("submit", (ev) => { ev.preventDefault(); savePatch(); });
+$("#patch-search").addEventListener("input", renderPatches);
+$("#patches-close").addEventListener("click", () => { $("#patches").hidden = true; });
+$("#patches").addEventListener("mousedown", (ev) => { if (ev.target.id === "patches") $("#patches").hidden = true; });
+$("#patches").addEventListener("keydown", (ev) => {
+    ev.stopPropagation();
+    if (ev.key === "Escape") { ev.preventDefault(); $("#patches").hidden = true; }
+});
 $("#docs-open").addEventListener("click", () => openDocs());
 $("#docs-close").addEventListener("click", () => { $("#docs").hidden = true; });
 $("#docs").addEventListener("mousedown", (ev) => { if (ev.target.id === "docs") $("#docs").hidden = true; });

@@ -30,6 +30,7 @@ import { iconFile } from "./icons.mjs";
 import { loadConfig, ROOT } from "./config.mjs";
 import { launch, openBrowser, openFolder, platform, windowsPty } from "./platform.mjs";
 import { Recorder } from "./recorder.mjs";
+import { Patches, vmsFromCsv, vmsToCsv } from "./patches.mjs";
 import { buildReport } from "./report.mjs";
 import { RemoteWatch } from "./remote.mjs";
 import { StatusHub } from "./status.mjs";
@@ -44,6 +45,8 @@ const backups = new Backups(path.join(ROOT, ".deck-backups"));
 const favorites = new Favorites(path.join(ROOT, "favoris.json"), backups);
 const settings = new Settings(path.join(ROOT, "settings.json"), backups);
 const actions = new Actions(path.join(ROOT, "actions.json"), backups);
+// Patchs des VMs (rubrique Patchs) : patches.json, hors Git, sauvegardé comme les favoris
+const patches = new Patches(path.join(ROOT, "patches.json"), backups);
 /** Deck avec les favoris et les rubriques choisies dans les Réglages. */
 const makeDeck = (worlds = settings.get().worlds, order = settings.get().worldOrder) => buildDeck(ctx, favorites.list(), worlds, order, actions.list());
 let deck;
@@ -334,20 +337,30 @@ status.on("update", (id, state) => broadcast({ t: "status", id, state }));
 // Certificat passé à l'orange / au rouge : notification dans les pages ouvertes (une fois par seuil)
 status.alertFile = path.join(ROOT, ".deck-cert-alerts.json");
 // Aucune page ouverte (vérification au démarrage) : l'alerte attend la prochaine page, elle n'est pas perdue
-let pendingCertAlerts = [];
-status.on("cert-alert", (alerts) => {
-    if ([...wss.clients].some((c) => c.readyState === c.OPEN)) broadcast({ t: "cert-alert", alerts });
-    else pendingCertAlerts.push(...alerts);
-});
+let pendingAlerts = [];   // [{ t, alerts }]
+for (const t of ["cert-alert", "patch-alert"]) {
+    status.on(t, (alerts) => {
+        if ([...wss.clients].some((c) => c.readyState === c.OPEN)) broadcast({ t, alerts });
+        else pendingAlerts.push({ t, alerts });
+    });
+}
+// Patchs des VMs : le voyant lit l'inventaire ; alertes retenues dans .deck-patch-alerts.json (hors Git)
+status.patchList = () => patches.list();
+status.patchAlertFile = path.join(ROOT, ".deck-patch-alerts.json");
+/** Inventaire modifié : renvoyé aux pages, voyant recalculé. */
+function patchesChanged() {
+    broadcast({ t: "patches", vms: patches.list() });
+    status.refreshPatches();
+}
 // Coffre : état et contenu (secrets sans leur valeur) renvoyés à toutes les pages à chaque changement
 vault.on("change", (reason) => broadcast({ t: "vault", ...vault.view(), ...(reason ? { reason } : {}) }));
 
 wss.on("connection", (ws) => {
     status.start();
-    if (pendingCertAlerts.length) {
-        const alerts = pendingCertAlerts;
-        pendingCertAlerts = [];
-        setTimeout(() => ws.readyState === ws.OPEN && ws.send(JSON.stringify({ t: "cert-alert", alerts })), 1500);
+    if (pendingAlerts.length) {
+        const queued = pendingAlerts;
+        pendingAlerts = [];
+        setTimeout(() => { for (const a of queued) if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(a)); }, 1500);
     }
     ws.send(JSON.stringify({
         t: "hello",
@@ -402,6 +415,35 @@ wss.on("connection", (ws) => {
                 }
                 case "rec-stop": await stopRecording(String(msg.sid)); break;
                 case "rec-list": reply({ t: "rec-list", files: recorder.list(), dir: RECORDINGS }); break;
+                // Patchs des VMs : inventaire, ajout / modification, « patché », suppression
+                case "patch-list": reply({ t: "patches", vms: patches.list() }); break;
+                case "patch-save": {
+                    patches.save(msg.vm);
+                    patchesChanged();
+                    reply({ t: "patch-saved" });
+                    break;
+                }
+                case "patch-done": {
+                    const vm = patches.markPatched(String(msg.id));
+                    logAction({ label: `patch ${vm.name}`, page: "Patchs", command: `VM patchée le ${vm.lastPatch.split("-").reverse().join("/")}${vm.nextPatch ? `, prochain patch le ${vm.nextPatch.split("-").reverse().join("/")}` : ""}`, mode: "run" });
+                    patchesChanged();
+                    reply({ t: "vault-ok", text: `« ${vm.name} » patchée aujourd'hui${vm.nextPatch ? ` ; prochain patch le ${vm.nextPatch.split("-").reverse().join("/")}` : " ; prochain patch à planifier"}` });
+                    break;
+                }
+                case "patch-delete": patches.remove(String(msg.id)); patchesChanged(); break;
+                // Import en masse (CSV) : aperçu (dryRun), puis import confirmé ; ajout ou mise à jour par nom
+                case "patch-import": {
+                    if (String(msg.csv ?? "").length > 500000) throw new Error("fichier trop gros (500 Ko au plus)");
+                    const { vms, errors } = vmsFromCsv(msg.csv);
+                    const res = patches.importMany(vms, { dryRun: msg.dryRun !== false });
+                    if (msg.dryRun === false) {
+                        logAction({ label: "import de VMs", page: "Patchs", command: `${res.added} ajoutée(s), ${res.updated} mise(s) à jour`, mode: "run" });
+                        patchesChanged();
+                    }
+                    reply({ t: "patch-import", dryRun: msg.dryRun !== false, added: res.added, updated: res.updated, errors: [...errors, ...res.errors] });
+                    break;
+                }
+                case "patch-export": reply({ t: "patch-export", csv: vmsToCsv(patches.list()) }); break;
                 // Rapport d'intervention : journal, sessions enregistrées et runbooks d'une période (relu dans la page)
                 case "report": {
                     const from = new Date(msg.from);
@@ -663,6 +705,10 @@ wss.on("connection", (ws) => {
                         deck = makeDeck();
                         broadcast({ t: "actions", sections: actions.list() });
                         broadcast(deckMessage());
+                    } else if (name === "patches.json") {
+                        backups.restore(patches.file, String(msg.id));
+                        patches.reload();
+                        patchesChanged();
                     } else if (name === "vault.enc") {
                         vault.lock("restauré");
                         backups.restore(vault.file, String(msg.id));
@@ -682,6 +728,7 @@ wss.on("connection", (ws) => {
                         from: { machine: os.hostname(), platform },
                         favorites: favorites.dump(),
                         actions: actions.list(),
+                        patches: patches.list(),
                         settings: settings.get(),
                         signature: existsSync(SIGNATURE_FILE) ? readFileSync(SIGNATURE_FILE).toString("base64") : null
                     } });
@@ -698,6 +745,11 @@ wss.on("connection", (ws) => {
                         writeFileSync(actions.file, `${JSON.stringify({ sections: data.actions }, null, 2)}\n`);
                         actions.reload();
                         done.push(`Mes actions (${actions.list().length} rubrique(s))`);
+                    }
+                    if (parts.patches && Array.isArray(data.patches)) {
+                        patches.replace(data.patches);
+                        patchesChanged();
+                        done.push(`patchs (${patches.list().length} VM(s))`);
                     }
                     if (parts.favorites && Array.isArray(data.favorites)) {
                         const stats = favorites.import(data.favorites, parts.favoritesMode === "replace" ? "replace" : "merge");

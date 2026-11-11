@@ -14,7 +14,7 @@ export const COLORS = {
     git: "#F05032", k8s: "#326CE5", sec: "#C62828", terraform: "#7B42BC", vault: "#FFC107",
     ssh: "#2E7D32", openssl: "#AD1457", docker: "#0898C8", helm: "#1E88E5", vscode: "#007ACC",
     tool: "#37474F", web: "#00897B", danger: "#B71C1C", brew: "#FBB040", ansible: "#5BBDBF", fav: "#9CCC65",
-    linux: "#FCC624"
+    linux: "#FCC624", patch: "#00838F"
 };
 const C = COLORS;
 
@@ -392,6 +392,20 @@ function buildCatalog(ctx) {
         ]},
         // Linux / Unix : commandes d'administration d'un serveur (souvent après un ssh) ; tapées telles quelles,
         // quel que soit le shell local. Lecture seule = exécutée (vert) ; le reste est à compléter (orange).
+        // Patchs des VMs : voyant (inventaire au clic) et commandes de vérification sur la VM (après un ssh)
+        patchs: { label: "Patchs", sym: "🩹", icon: "lucide-calendar-check", color: C.patch, terminal: true, keys: [
+            status("patches", "patchs", "🩹", C.patch),
+            withPick(textIcon("ssh VM", "ssh", "ssh ", false, C.patch, "lucide-log-in"), "ssh {host}"),
+            withPick(textIcon("ssh -i VM", "-i", "ssh -i ", false, C.patch, "lucide-key-square"), "ssh -i {identity} {host}"),
+            { ...textIcon("MAJ (apt)", "apt", "sudo apt-get update -qq && apt list --upgradable 2>/dev/null | tail -n +2", true, C.patch, "lucide-package-search"), unix: true },
+            { ...textIcon("MAJ (dnf)", "dnf", "sudo dnf -q check-update", true, C.patch, "lucide-package-search"), unix: true },
+            { ...textIcon("sécurité seule", "sec", "sudo dnf -q updateinfo list --security 2>/dev/null || apt list --upgradable 2>/dev/null | grep -i security", true, C.sec, "lucide-shield-check"), unix: true },
+            { ...textIcon("reboot requis ?", "↻", "[ -f /var/run/reboot-required ] && cat /var/run/reboot-required* || needs-restarting -r 2>/dev/null || echo 'aucun redémarrage signalé'", true, C.patch, "lucide-refresh-ccw"), unix: true },
+            { ...textIcon("noyau et boot", "ℹ", "uname -r; uptime; who -b 2>/dev/null", true, C.patch, "lucide-server-cog"), unix: true },
+            { ...textIcon("historique", "🕘", "(grep -h ' upgrade ' /var/log/dpkg.log* 2>/dev/null | tail -20) || sudo dnf history list | head -15", true, C.patch, "lucide-history"), unix: true },
+            textIcon("correctifs Windows", "KB", sh(null, "Get-HotFix | Sort-Object InstalledOn -Descending | Select-Object -First 10 HotFixID, Description, InstalledOn", null), true, C.patch, "lucide-shield-check"),
+            { ...textIcon("redémarrer", "⏻", "sudo shutdown -r +1 'redemarrage apres patch'", false, C.danger, "lucide-power"), unix: true }
+        ]},
         linux: { label: "Linux / Unix", sym: "🐧", icon: "linux", color: C.linux, terminal: true, keys: [
             textIcon("système", "ℹ", "uname -a; cat /etc/os-release 2>/dev/null | head -4; uptime", true, C.linux, "lucide-info"),
             textIcon("top", "📊", "htop 2>/dev/null || top", true, C.linux, "lucide-activity"),

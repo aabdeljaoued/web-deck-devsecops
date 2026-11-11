@@ -2,6 +2,7 @@
 import { execFile } from "node:child_process";
 
 import { checkCert } from "./certs.mjs";
+import { daysUntil } from "./patches.mjs";
 import { EventEmitter } from "node:events";
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { stat } from "node:fs/promises";
@@ -46,7 +47,8 @@ export class StatusHub extends EventEmitter {
             setInterval(() => this.checkKubeconfig(), 2000),
             setInterval(() => this.refreshGit(), 5000),
             setInterval(() => this.refreshContainers(), 10000),
-            setInterval(() => this.refreshCerts(), 30 * 60 * 1000)
+            setInterval(() => this.refreshCerts(), 30 * 60 * 1000),
+            setInterval(() => this.refreshPatches(), 10 * 60 * 1000)   // dates seulement : changement de jour
         ];
     }
 
@@ -57,7 +59,7 @@ export class StatusHub extends EventEmitter {
     }
 
     refreshAll() {
-        return Promise.all([this.refreshKube(), this.refreshGit(), this.refreshContainers(), this.refreshCerts()]);
+        return Promise.all([this.refreshKube(), this.refreshGit(), this.refreshContainers(), this.refreshCerts(), this.refreshPatches()]);
     }
 
     /** Appui sur un voyant : rafraîchir, ou dépôt suivant pour Git. */
@@ -65,6 +67,7 @@ export class StatusHub extends EventEmitter {
         if (id === "kube") await this.refreshKube();
         if (id === "containers") await this.refreshContainers();
         if (id === "certs") await this.refreshCerts();
+        if (id === "patches") this.refreshPatches();
         if (id === "git") {
             const repos = this.findRepos();
             if (repos.length) this.repo = repos[(repos.indexOf(this.repo) + 1) % repos.length];
@@ -133,20 +136,58 @@ export class StatusHub extends EventEmitter {
      * Un certificat renouvelé (retour au vert) est oublié : il sera de nouveau signalé au prochain passage.
      */
     checkCertAlerts(ok) {
+        const items = ok.map((r) => ({ target: r.target, level: r.days < 7 ? "rouge" : r.days < 30 ? "orange" : "ok", days: r.days, until: r.validTo.toISOString() }));
+        this.levelAlerts(this.alertFile, items, "cert-alert");
+    }
+
+    /**
+     * Alertes par seuil (certificats, patchs) : une seule fois par passage à l'orange puis au rouge ; niveaux retenus
+     * dans `file` (pas de nouvelle alerte après un redémarrage) ; un retour au vert (renouvelé, patché) est oublié.
+     */
+    levelAlerts(file, items, event) {
         const rank = { ok: 0, orange: 1, rouge: 2 };
         let seen = {};
-        try { seen = JSON.parse(readFileSync(this.alertFile, "utf8")); } catch { /* premier passage */ }
+        try { seen = JSON.parse(readFileSync(file, "utf8")); } catch { /* premier passage */ }
         const alerts = [];
         const next = {};
-        for (const r of ok) {
-            const level = r.days < 7 ? "rouge" : r.days < 30 ? "orange" : "ok";
-            if (rank[level] > rank[seen[r.target] ?? "ok"]) alerts.push({ target: r.target, level, days: r.days, until: r.validTo.toISOString() });
-            if (level !== "ok") next[r.target] = rank[level] >= rank[seen[r.target] ?? "ok"] ? level : seen[r.target];
+        for (const it of items) {
+            if (rank[it.level] > rank[seen[it.target] ?? "ok"]) alerts.push(it);
+            if (it.level !== "ok") next[it.target] = rank[it.level] >= rank[seen[it.target] ?? "ok"] ? it.level : seen[it.target];
         }
-        if (this.alertFile && JSON.stringify(next) !== JSON.stringify(seen)) {
-            try { writeFileSync(this.alertFile, `${JSON.stringify(next)}\n`, { mode: 0o600 }); } catch { /* lecture seule */ }
+        if (file && JSON.stringify(next) !== JSON.stringify(seen)) {
+            try { writeFileSync(file, `${JSON.stringify(next)}\n`, { mode: 0o600 }); } catch { /* lecture seule */ }
         }
-        if (alerts.length) this.emit("cert-alert", alerts);
+        if (alerts.length) this.emit(event, alerts);
+    }
+
+    // ---------- Patchs des VMs (rubrique Patchs) ----------
+
+    /**
+     * Voyant « patchs » : la VM dont le prochain patch est le plus proche. Rouge : demain, aujourd'hui ou en retard ;
+     * orange : dans 7 jours ou moins ; vert sinon ; gris : aucune VM. Calculé sur les dates (aucun accès réseau).
+     */
+    refreshPatches() {
+        const vms = this.patchList?.() ?? [];
+        if (!vms.length) return this.publish("patches", { bg: "#455A64", title: "PATCHS", lines: ["aucune", "VM"], footer: "à renseigner", items: [] });
+        const items = vms.map((vm) => {
+            const days = vm.nextPatch ? daysUntil(vm.nextPatch) : null;
+            const level = days === null ? "orange" : days <= 1 ? "rouge" : days <= 7 ? "orange" : "ok";
+            return { ...vm, days, level };
+        }).sort((a, b) => (a.days ?? -1e6) - (b.days ?? -1e6));
+        const worst = items[0];
+        // Libellés courts pour la touche : J-5 (dans 5 jours), J (aujourd'hui), J+2 (2 jours de retard)
+        const label = (v) => (v.days === null ? "à planifier" : v.days < 0 ? `J+${-v.days}` : v.days === 0 ? "J" : `J-${v.days}`);
+        const long = (v) => (v.days === null ? "à planifier" : v.days < 0 ? `en retard de ${-v.days} j` : v.days === 0 ? "aujourd'hui" : v.days === 1 ? "demain" : `dans ${v.days} j`);
+        this.levelAlerts(this.patchAlertFile, items.map((v) => ({ target: v.name, level: v.level, days: v.days, until: v.nextPatch })), "patch-alert");
+        this.publish("patches", {
+            bg: worst.level === "rouge" ? "#C62828" : worst.level === "orange" ? "#EF6C00" : "#2E7D32",
+            title: worst.level === "ok" ? "PATCHS" : "⚠ PATCHS",
+            // Délai en gros (J+2, J-3), nom de la VM en bas de la touche
+            lines: [label(worst)],
+            footer: worst.name.length > 13 ? `${worst.name.slice(0, 12)}…` : worst.name,
+            detail: items.map((v) => `${v.name} : ${long(v)}${v.nextPatch ? ` (${v.nextPatch.split("-").reverse().join("/")})` : ""}`).join("\n"),
+            items: items.map((v) => ({ id: v.id, name: v.name, env: v.env, days: v.days, level: v.level, nextPatch: v.nextPatch, lastPatch: v.lastPatch }))
+        });
     }
 
     // ---------- kubectl ----------

@@ -408,6 +408,7 @@
                         <select id="cfg-fav-mode"><option value="merge">fusionner</option><option value="replace">remplacer</option></select></label>
                     <label class="settings-check"><input id="cfg-part-actions" type="checkbox" checked> Mes actions (remplacées)</label>
                     <label class="settings-check"><input id="cfg-part-settings" type="checkbox" checked> Réglages et missions (remplacés)</label>
+                    <label class="settings-check"><input id="cfg-part-patches" type="checkbox" checked> Patchs des VMs (remplacés)</label>
                     <label class="settings-check"><input id="cfg-part-signature" type="checkbox" checked> Signature</label>
                     <span class="hint">Chaque fichier remplacé est sauvegardé avant (Réglages › Sauvegardes).</span>
                     <span class="settings-actions">
@@ -544,6 +545,67 @@
                 </div>
                 <div id="docs-content" class="note-preview docs-content"></div>
             </article>
+        </div>
+    </div>
+
+    <div id="patches" class="palette" hidden>
+        <div class="palette-box patches-box" role="dialog" aria-label="Patchs des VMs">
+            <div class="player-head">
+                <strong>Patchs des VMs</strong>
+                <span id="patch-summary" class="hint"></span>
+                <span class="grow"></span>
+                <input id="patch-search" type="search" placeholder="Filtrer : nom, environnement, description…" spellcheck="false">
+                <button type="button" id="patch-new" class="primary">+ VM</button>
+                <button type="button" id="patch-import" title="Importer des VMs depuis un fichier CSV (Excel) : ajout, ou mise à jour si le nom existe">Importer…</button>
+                <button type="button" id="patch-export" title="Exporter l'inventaire en CSV (modifiable dans Excel, puis réimportable)">Exporter (CSV)</button>
+                <input id="patch-import-file" type="file" accept=".csv,.txt,text/csv,text/plain" hidden>
+                <button type="button" id="patches-close" title="Fermer (Échap)">✕</button>
+            </div>
+            <div id="patch-import-confirm" class="fav-import-confirm mission-form" hidden>
+                <strong id="patch-import-title"></strong>
+                <span id="patch-import-summary"></span>
+                <ul id="patch-import-errors" class="patch-import-errors"></ul>
+                <span class="hint">Colonnes reconnues : nom (obligatoire), hote, cle, environnement, dernier_patch, prochain_patch, frequence, tags, description ; séparateur « ; » ou « , » ; dates JJ/MM/AAAA. Les VMs existantes (même nom) sont mises à jour, aucune n'est supprimée. <a href="#" id="patch-template">Télécharger un modèle CSV</a></span>
+                <span class="settings-actions">
+                    <button type="button" id="patch-import-ok" class="primary">Importer</button>
+                    <button type="button" id="patch-import-cancel">Annuler</button>
+                </span>
+            </div>
+            <form id="patch-form" class="mission-form patch-form" hidden autocomplete="off">
+                <strong id="patch-form-title">Nouvelle VM</strong>
+                <div class="patch-grid">
+                    <label>Nom <input id="patch-name" type="text" maxlength="60" placeholder="app-prod-01" required spellcheck="false"></label>
+                    <label>Hôte SSH <span class="hint">facultatif (défaut : le nom)</span> <input id="patch-host" type="text" maxlength="120" placeholder="app-prod-01 ou admin@10.0.0.5" spellcheck="false"></label>
+                    <label>Clé SSH <span class="hint">facultatif : ssh -i</span> <input id="patch-identity" type="text" maxlength="300" list="patch-identity-list" placeholder="~/.ssh/id_ed25519" spellcheck="false"><datalist id="patch-identity-list"></datalist></label>
+                    <label>Environnement
+                        <select id="patch-env">
+                            <option value="production">production</option>
+                            <option value="recette">recette</option>
+                            <option value="qualification">qualification</option>
+                            <option value="développement">développement</option>
+                            <option value="autre">autre</option>
+                        </select>
+                    </label>
+                    <label>Dernier patch <input id="patch-last" type="date"></label>
+                    <label>Prochain patch <input id="patch-next" type="date"></label>
+                    <label>Fréquence <span class="hint">jours, facultatif (ex. 30)</span> <input id="patch-every" type="number" min="1" max="730" step="1"></label>
+                    <label class="patch-tags-field">Tags <span class="hint">facultatif, séparés par des virgules (ex. linux, dmz, critique)</span> <input id="patch-tags" type="text" maxlength="260" list="patch-tag-list" spellcheck="false"><datalist id="patch-tag-list"></datalist></label>
+                </div>
+                <label>Description <textarea id="patch-desc" rows="2" maxlength="500" placeholder="Rôle, OS, contraintes (fenêtre de maintenance, contact…)"></textarea></label>
+                <span id="patch-error" class="mission-error" role="alert" hidden></span>
+                <span class="settings-actions">
+                    <button type="submit" id="patch-save" class="primary">Enregistrer</button>
+                    <button type="button" id="patch-cancel">Annuler</button>
+                </span>
+            </form>
+            <div id="patch-filters" class="patch-filters" role="group" aria-label="Filtrer par environnement ou par tag"></div>
+            <div class="patch-table-wrap">
+                <table class="patch-table">
+                    <thead><tr><th></th><th>VM</th><th>Description</th><th>Dernier patch</th><th>Prochain patch</th><th></th></tr></thead>
+                    <tbody id="patch-list"></tbody>
+                </table>
+            </div>
+            <span class="hint">Rouge : patch demain, aujourd'hui ou en retard · orange : dans 7 jours ou moins · alerte une fois par seuil. « Patché » : dernier patch = aujourd'hui, prochain = aujourd'hui + fréquence. Fichier patches.json, hors Git.</span>
         </div>
     </div>
 

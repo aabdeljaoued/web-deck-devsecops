@@ -44,8 +44,8 @@ Avant chaque modification des favoris, de Mes actions, des réglages ou du coffr
 
 ## Configuration complète et mise à jour
 
-- **Configuration complète** : export / import en un fichier de tes favoris, Mes actions, réglages, missions et
-  signature (le coffre s'exporte à part, chiffré). Idéal pour passer de ton Mac à ton PC.
+- **Configuration complète** : export / import en un fichier de tes favoris, Mes actions, réglages, missions,
+  [patchs des VMs](13-patchs.md) et signature (le coffre s'exporte à part, chiffré). Idéal pour passer de ton Mac à ton PC.
 - **Mettre à jour** (Réglages › Serveur) : compare avec GitHub, fait `git pull`, installe les dépendances si besoin et
   redémarre. Refusé si des fichiers suivis ont été modifiés sur la machine, pour ne rien écraser.
 

@@ -22,21 +22,37 @@ Les missions sont dans `settings.json`, hors Git.
 
 ![Certificats](img/certificats.jpg)
 
-Dans la mission, une adresse par ligne (`api.client.fr`, `ldap.client.fr:636` ; une URL complète est acceptée). Le
-voyant **certificats**, première touche de la rubrique **OpenSSL** (ou `cert-status` sur l'accueil via `config.jsonc`),
-affiche le certificat qui expire le plus tôt :
+Dans la mission, une ligne par certificat : l'adresse (`api.client.fr`, `ldap.client.fr:636` ; une URL complète est
+acceptée), puis son **environnement** :
 
-| Couleur | Signification |
-|---|---|
-| 🟢 vert | plus de 30 jours |
-| 🟠 orange | moins de 30 jours |
-| 🔴 rouge | moins de 7 jours, ou expiré |
-| ⚪ gris | aucun certificat suivi, ou serveurs injoignables |
+```text
+api.client.fr production
+portail.client.fr prod
+recette-api.client.fr recette
+dev-api.client.fr dev
+```
 
-- **Clic** : la liste de tous les certificats (jours restants, date, **émetteur**, chaîne non reconnue, serveur
-  injoignable avec la raison en clair), et **Vérifier maintenant**. Sinon, vérification toutes les 30 min.
-- **Alerte** au passage à l'orange puis au rouge : message dans le deck et notification du système (si autorisée avec
-  la cloche des terminaux), une seule fois par seuil.
+Environnements : `production`, `recette`, `qualification`, `développement`, `autre` (abréviations `prod`, `rec`,
+`qualif`, `dev` acceptées). **Sans environnement, le certificat est considéré comme de production** : rien n'échappe à
+la surveillance la plus stricte.
+
+Les seuils dépendent de l'environnement :
+
+| Environnement | 🟠 orange | 🔴 rouge | Alertes |
+|---|---|---|---|
+| Production | moins de 30 jours | moins de 7 jours, ou expiré | orange puis rouge |
+| Hors production | moins de 14 jours | moins de 3 jours, ou expiré | rouge seulement |
+
+Le voyant **certificats**, première touche de la rubrique **OpenSSL** (ou `cert-status` sur l'accueil via
+`config.jsonc`), affiche **le certificat de production le plus urgent** (titre **CERTS PROD**). Un problème hors
+production ne change pas sa couleur : il est signalé en bas de la touche (« 1⚠ hors prod »). Gris : aucun certificat
+suivi, ou serveurs injoignables.
+
+- **Clic** : la liste de tous les certificats en deux parties, **Production** puis **Hors production** (avec
+  l'environnement de chacun), avec les jours restants, la date, l'**émetteur**, une chaîne non reconnue ou un serveur
+  injoignable avec la raison en clair, et **Vérifier maintenant**. Sinon, vérification toutes les 30 min.
+- **Alerte** : message dans le deck et notification du système (si autorisée avec la cloche des terminaux), une seule
+  fois par seuil ; hors production, seulement au rouge.
 - La date est lue par une simple poignée de main TLS (Node, sans openssl, 10 s au plus). Rien d'autre n'est envoyé.
 
 ## Poste d'entreprise et proxy

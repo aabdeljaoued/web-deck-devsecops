@@ -81,11 +81,17 @@ test("variables de mission : noms et valeurs vérifiés, gardées à l'enregistr
     assert.deepEqual(new Settings(path.join(tmpDir(), "s2.json")).get().missions, []);
 });
 
-test("certificats d'une mission : hôte ou hôte:port, minuscules, sans doublon", () => {
+test("certificats d'une mission : hôte ou hôte:port et environnement, minuscules, sans doublon", () => {
     const s = new Settings(path.join(tmpDir(), "settings.json"));
     const m = (certs) => ({ missions: [{ id: "m-1", name: "Client", certs }] });
-    s.update(m(["API.client.test", "ldap.client.test:636", "api.client.test"]));
-    assert.deepEqual(s.get().missions[0].certs, ["api.client.test", "ldap.client.test:636"]);
+    // Ancien format (texte seul) : production par défaut ; doublons retirés
+    s.update(m(["API.client.test", { target: "ldap.client.test:636", env: "rec" }, "api.client.test", { target: "dev.client.test", env: "dev" }]));
+    assert.deepEqual(s.get().missions[0].certs, [
+        { target: "api.client.test", env: "production" },
+        { target: "ldap.client.test:636", env: "recette" },
+        { target: "dev.client.test", env: "développement" }
+    ]);
+    assert.throws(() => s.update(m([{ target: "x.test", env: "bac-a-sable" }])), /environnement inconnu/);
     assert.throws(() => s.update(m(["https://x.test"])), /invalide/);
     assert.throws(() => s.update(m(["x.test:70000"])), /port invalide/);
     assert.throws(() => s.update(m(["a.test; rm -rf /"])), /invalide/);

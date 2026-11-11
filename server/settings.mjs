@@ -2,6 +2,8 @@
 // Chaque réglage a une valeur par défaut et une validation ; une valeur invalide du fichier est ignorée.
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 
+import { normalizeEnv } from "./patches.mjs";
+
 /** Définition des réglages : défaut et validation (renvoie la valeur propre, ou lève une erreur lisible). */
 const oneOf = (name, allowed) => (v) => {
     if (!allowed.includes(v)) throw new Error(`${name} : valeur inconnue "${v}" (possibles : ${allowed.map((a) => a || "aucun").join(", ")})`);
@@ -32,14 +34,27 @@ function cleanMission(m) {
 }
 
 /** Certificats surveillés : « hôte » ou « hôte:port » (443 par défaut), 20 au plus. */
+/**
+ * Certificats surveillés : { target: « hôte » ou « hôte:port » (443 par défaut), env } ; 20 au plus.
+ * Ancien format (texte seul) ou environnement absent : production (rien n'échappe à la surveillance la plus stricte).
+ */
 function cleanCerts(v, mission) {
     if (!Array.isArray(v) || v.length > 20) throw new Error(`mission « ${mission} » : 20 certificats au plus`);
-    return [...new Set(v.map((c) => String(c ?? "").trim().toLowerCase()).filter(Boolean))].map((c) => {
-        if (!/^[a-z0-9]([a-z0-9.-]{0,252}[a-z0-9])?(:\d{1,5})?$/.test(c)) throw new Error(`mission « ${mission} » : certificat « ${c} » invalide (hôte ou hôte:port)`);
-        const port = Number(c.split(":")[1] ?? 443);
-        if (port < 1 || port > 65535) throw new Error(`mission « ${mission} » : port invalide pour ${c}`);
-        return c;
-    });
+    const seen = new Set();
+    const out = [];
+    for (const item of v) {
+        const raw = typeof item === "string" ? { target: item } : item ?? {};
+        const target = String(raw.target ?? "").trim().toLowerCase();
+        if (!target || seen.has(target)) continue;
+        if (!/^[a-z0-9]([a-z0-9.-]{0,252}[a-z0-9])?(:\d{1,5})?$/.test(target)) throw new Error(`mission « ${mission} » : certificat « ${target} » invalide (hôte ou hôte:port)`);
+        const port = Number(target.split(":")[1] ?? 443);
+        if (port < 1 || port > 65535) throw new Error(`mission « ${mission} » : port invalide pour ${target}`);
+        const env = raw.env == null || String(raw.env).trim() === "" ? "production" : normalizeEnv(raw.env);
+        if (!env) throw new Error(`mission « ${mission} » : environnement inconnu « ${raw.env} » pour ${target} (production, recette, qualification, développement, autre)`);
+        seen.add(target);
+        out.push({ target, env });
+    }
+    return out;
 }
 
 /** Variables d'une mission ({mission.nom} dans les commandes) : 30 au plus, valeurs sur une ligne. */

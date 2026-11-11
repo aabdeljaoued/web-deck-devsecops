@@ -58,3 +58,23 @@ test("nom court du voyant : www retiré, adresse IP gardée, nom long raccourci"
     assert.equal(shortHost("10.0.0.5:443"), "10.0.0.5");
     assert.equal(shortHost("devsecops-production.client.fr"), "devsecops…");
 });
+
+test("niveau d'un certificat selon l'environnement : production 30 / 7 j, hors production 14 / 3 j", async () => {
+    const { certLevel } = await import("../server/status.mjs");
+    assert.deepEqual([45, 20, 5, -1].map((d) => certLevel("production", d)), ["ok", "orange", "rouge", "rouge"]);
+    assert.deepEqual([20, 10, 2, -1].map((d) => certLevel("recette", d)), ["ok", "orange", "rouge", "rouge"]);
+});
+
+test("alertes certificats : production orange puis rouge ; hors production seulement au rouge", async () => {
+    const { StatusHub } = await import("../server/status.mjs");
+    const { tmpDir } = await import("./helpers.mjs");
+    const path = (await import("node:path")).default;
+    const hub = new StatusHub({ cfg: {}, apps: {}, containerCli: ["docker"] });
+    hub.alertFile = path.join(tmpDir(), "alerts.json");
+    const got = [];
+    hub.on("cert-alert", (a) => got.push(a.map((x) => `${x.target}:${x.level}`).join(",")));
+    const cert = (target, env, days) => ({ target, env, days, validTo: new Date(Date.now() + days * 86400e3) });
+    hub.checkCertAlerts([cert("api.prod.test", "production", 20), cert("api.rec.test", "recette", 10)]);
+    hub.checkCertAlerts([cert("api.prod.test", "production", 20), cert("api.rec.test", "recette", 2)]);
+    assert.deepEqual(got, ["api.prod.test:orange", "api.rec.test:rouge"], "recette à 10 j : pas d'alerte ; à 2 j : rouge");
+});

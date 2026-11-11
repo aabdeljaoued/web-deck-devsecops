@@ -1762,22 +1762,30 @@ function openCertsPanel(anchor) {
 function renderCertsPanel(checking = false) {
     if ($("#picker").hidden || pickerAnchor?.dataset.status !== "certs") return;
     const s = state.status.certs ?? { items: [] };
-    const items = (s.items ?? []).map((c) => {
-        const dot = c.error ? "⚪" : c.intercepted ? "⚠️" : c.days < 7 ? "🔴" : c.days < 30 ? "🟠" : "🟢";
+    const row = (c) => {
+        // Niveau calculé par le serveur selon l'environnement (production 30 / 7 j, hors production 14 / 3 j)
+        const level = c.level ?? (c.days < 7 ? "rouge" : c.days < 30 ? "orange" : "ok");
+        const dot = c.error ? "⚪" : c.intercepted ? "⚠️" : level === "rouge" ? "🔴" : level === "orange" ? "🟠" : "🟢";
+        const env = c.env && c.env !== "production" ? `[${c.env}] ` : "";
         const via = c.via ? ` · via proxy ${c.via}` : "";
         const when = c.error ? `injoignable, ${c.error}`
             : c.intercepted ? `certificat du proxy (${c.issuer}) : la date du site n'est pas visible d'ici${via}`
             : `${c.days < 0 ? `expiré depuis ${-c.days} j` : `${c.days} j`} · ${new Date(c.until).toLocaleDateString("fr-FR")} · émis par ${c.issuer || "?"}${c.trusted ? "" : " · chaîne non reconnue"}${via}`;
-        return { label: `${dot} ${c.target} : ${when}`, title: c.reason ? `${c.target} : ${c.reason}` : c.target, onClick: () => {}, prod: !c.error && !c.intercepted && c.days < 7 };
-    });
-    const section = pickerSection("Certificats de la mission", items, "aucun certificat : Réglages › Missions › Modifier › Certificats à surveiller");
+        return { label: `${dot} ${env}${c.target} : ${when}`, title: c.reason ? `${c.target} : ${c.reason}` : c.target, onClick: () => {}, prod: !c.error && !c.intercepted && level === "rouge" };
+    };
+    // Production d'abord (seuils 30 / 7 j), puis les autres environnements (14 / 3 j)
+    const all = s.items ?? [];
+    const prod = all.filter((c) => (c.env ?? "production") === "production").map(row);
+    const others = all.filter((c) => (c.env ?? "production") !== "production").map(row);
+    const sections = [pickerSection(`Production · alerte à 30 et 7 jours`, prod, all.length ? "aucun certificat de production" : "aucun certificat : Réglages › Missions › Modifier › Certificats à surveiller")];
+    if (others.length) sections.push(pickerSection("Hors production · alerte à 14 et 3 jours", others, ""));
     const foot = Object.assign(document.createElement("p"), { className: "picker-note",
         textContent: checking ? "vérification en cours…" : `vérifié à ${new Date(s.checked ?? Date.now()).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })} · ensuite toutes les 30 min` });
     const again = Object.assign(document.createElement("button"), { type: "button", className: "picker-action", textContent: "Vérifier maintenant" });
     again.addEventListener("click", () => { renderCertsPanel(true); send({ t: "press", id: "certs" }); });
     foot.append(" ", again);
     $("#picker").classList.add("certs-panel");
-    $("#picker").replaceChildren(section, foot);
+    $("#picker").replaceChildren(...sections, foot);
     placePicker();
 }
 
@@ -3047,7 +3055,7 @@ function openMissionForm(m = null) {
     fav.replaceChildren(new Option("Aucun (page Favoris)", ""), ...(state.favGroups ?? []).map((g) => new Option(g.path, g.id)));
     fav.value = m?.favGroup ?? "";
     $("#mission-vars").value = Object.entries(m?.vars ?? {}).map(([k, v]) => `${k} = ${v}`).join("\n");
-    $("#mission-certs").value = (m?.certs ?? []).join("\n");
+    $("#mission-certs").value = (m?.certs ?? []).map((c) => (typeof c === "string" ? c : `${c.target} ${c.env}`)).join("\n");
     $("#mission-capture").checked = !m;
     showMissionError("");
     $("#mission-form").hidden = false;
@@ -3081,7 +3089,11 @@ function saveMission() {
         favGroup: $("#mission-fav").value,
         vars,
         // « https://api.client.fr/chemin » accepté : seul l'hôte (et le port) est gardé
-        certs: $("#mission-certs").value.split(/[\n,]/).map((l) => l.trim().replace(/^[a-z]+:\/\//i, "").replace(/\/.*$/, "")).filter(Boolean),
+        // « hôte[:port] environnement » par ligne ; une URL complète est acceptée (seul l'hôte est gardé)
+        certs: $("#mission-certs").value.split(/\n/).map((l) => l.trim()).filter(Boolean).map((l) => {
+            const [first, ...rest] = l.split(/[\s;,]+/);
+            return { target: first.replace(/^[a-z]+:\/\//i, "").replace(/\/.*$/, ""), env: rest.join(" ") };
+        }),
         captureWorlds: $("#mission-capture").checked
     } });
     // Pas de fermeture ici : seulement quand le serveur confirme (une erreur garde la saisie)
@@ -3102,7 +3114,7 @@ function showMissionError(text) {
     el.textContent = text;
     el.hidden = !text;
     if (!text) return;
-    const field = /certificat|port invalide/i.test(text) ? "#mission-certs" : /variable/i.test(text) ? "#mission-vars" : /dossier/i.test(text) ? "#mission-workspace" : /motif/i.test(text) ? "#mission-prod" : /nom/i.test(text) ? "#mission-name" : null;
+    const field = /certificat|port invalide|environnement inconnu/i.test(text) ? "#mission-certs" : /variable/i.test(text) ? "#mission-vars" : /dossier/i.test(text) ? "#mission-workspace" : /motif/i.test(text) ? "#mission-prod" : /nom/i.test(text) ? "#mission-name" : null;
     if (field) { $(field).focus(); $(field).select(); }
 }
 

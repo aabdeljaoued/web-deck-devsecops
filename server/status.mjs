@@ -19,6 +19,15 @@ function run(file, args, timeoutMs = 8000) {
     });
 }
 
+/**
+ * Niveau d'un certificat selon son environnement : production orange < 30 j, rouge < 7 j ;
+ * hors production (recette, qualification, développement…) orange < 14 j, rouge < 3 j.
+ */
+export function certLevel(env, days) {
+    const [red, orange] = env === "production" ? [7, 30] : [3, 14];
+    return days < red ? "rouge" : days < orange ? "orange" : "ok";
+}
+
 /** Nom court pour la touche : « www.lecode.laposte.fr:443 » -> « lecode » (www retiré, 10 caractères au plus). */
 export function shortHost(target) {
     const host = String(target).split(":")[0].replace(/^www\d*\./i, "");
@@ -88,15 +97,17 @@ export class StatusHub extends EventEmitter {
      * sans rien envoyer d'autre. Rouge : expiré ou moins de 7 jours ; orange : moins de 30 ; vert sinon.
      */
     async refreshCerts() {
-        const targets = this.certTargets ?? [];
+        // Certificats de la mission : { target, env } (ancien format texte = production)
+        const targets = (this.certTargets ?? []).map((t) => (typeof t === "string" ? { target: t, env: "production" } : t));
         if (!targets.length) return this.publish("certs", { bg: "#455A64", title: "CERTS", lines: ["aucun", "suivi"], footer: "mission › certificats", detail: "Aucun certificat surveillé : Réglages › Missions › Modifier › Certificats", items: [] });
-        const results = await Promise.all(targets.map(async (target) => {
+        const results = await Promise.all(targets.map(async ({ target, env }) => {
             const [host, port = "443"] = target.split(":");
             try {
                 const cert = await checkCert(host, Number(port));
-                return { target, ...cert, days: Math.floor((cert.validTo - Date.now()) / 86400000) };
+                const days = Math.floor((cert.validTo - Date.now()) / 86400000);
+                return { target, env, ...cert, days, level: certLevel(env, days) };
             } catch (err) {
-                return { target, error: err.message };
+                return { target, env, error: err.message };
             }
         }));
         // Certificat présenté par un proxy qui déchiffre le TLS (Zscaler…) : sa date n'est pas celle du site,
@@ -104,39 +115,48 @@ export class StatusHub extends EventEmitter {
         const ok = results.filter((r) => !r.error && !r.intercepted).sort((a, b) => a.days - b.days);
         const intercepted = results.filter((r) => !r.error && r.intercepted);
         const failed = results.filter((r) => r.error);
-        const worst = ok[0];
-        const bg = !worst ? "#455A64" : worst.days < 7 ? "#C62828" : worst.days < 30 ? "#EF6C00" : "#2E7D32";
+        const isProd = (r) => r.env === "production";
+        // Voyant : le certificat de production le plus urgent (à défaut, le plus urgent de tous) ; hors production,
+        // un problème est signalé en bas de la touche sans changer sa couleur
+        const prodOk = ok.filter(isProd);
+        const worst = prodOk[0] ?? ok[0];
+        const color = { rouge: "#C62828", orange: "#EF6C00", ok: "#2E7D32" };
+        const bg = worst ? color[worst.level] : "#455A64";
+        const otherIssues = ok.filter((r) => !isProd(r) && r.level !== "ok").length + failed.filter((r) => !isProd(r)).length;
+        const prodProblems = failed.filter(isProd).length + intercepted.filter(isProd).length;
         const day = (d) => d.toLocaleDateString("fr-FR");
+        const envTag = (r) => (isProd(r) ? "[prod]" : `[${r.env}]`);
         const detail = [
-            ...ok.map((r) => `${r.target} : ${r.days < 0 ? `EXPIRÉ depuis ${-r.days} j` : `${r.days} j`} (${day(r.validTo)}) · ${r.issuer}${r.trusted ? "" : ` · non reconnu : ${r.reason}`}`),
-            ...intercepted.map((r) => `${r.target} : certificat du proxy (${r.issuer}), date du site inconnue`),
-            ...failed.map((r) => `${r.target} : injoignable, ${r.error}`)
+            ...ok.map((r) => `${envTag(r)} ${r.target} : ${r.days < 0 ? `EXPIRÉ depuis ${-r.days} j` : `${r.days} j`} (${day(r.validTo)}) · ${r.issuer}${r.trusted ? "" : ` · non reconnu : ${r.reason}`}`),
+            ...intercepted.map((r) => `${envTag(r)} ${r.target} : certificat du proxy (${r.issuer}), date du site inconnue`),
+            ...failed.map((r) => `${envTag(r)} ${r.target} : injoignable, ${r.error}`)
         ].join("\n");
         this.checkCertAlerts(ok);
-        const problems = failed.length + intercepted.length;
         this.publish("certs", {
             bg,
-            title: worst && worst.days < 30 ? "⚠ CERTS" : "CERTS",
+            title: !worst ? "CERTS" : `${worst.level !== "ok" ? "⚠ " : ""}${isProd(worst) ? "CERTS PROD" : "CERTS"}`,
             lines: worst ? [shortHost(worst.target), worst.days < 0 ? "expiré" : `${worst.days} j`] : ["hors", "d'atteinte"],
-            footer: problems ? `${problems} à vérifier` : `${ok.length} suivi(s)`,
+            footer: prodProblems ? `${prodProblems}⚠ prod` : otherIssues ? `${otherIssues}⚠ hors prod` : `${ok.length} suivi(s)`,
             detail,
-            // Liste complète pour le panneau (clic sur le voyant), du plus urgent au moins urgent
+            // Liste complète pour le panneau (clic sur le voyant) : production d'abord, puis du plus urgent au moins urgent
             items: [
-                ...ok.map((r) => ({ target: r.target, days: r.days, until: r.validTo.toISOString(), trusted: r.trusted, reason: r.reason, issuer: r.issuer, via: r.via })),
-                ...intercepted.map((r) => ({ target: r.target, intercepted: true, issuer: r.issuer, via: r.via })),
-                ...failed.map((r) => ({ target: r.target, error: r.error }))
+                ...ok.map((r) => ({ target: r.target, env: r.env, level: r.level, days: r.days, until: r.validTo.toISOString(), trusted: r.trusted, reason: r.reason, issuer: r.issuer, via: r.via })),
+                ...intercepted.map((r) => ({ target: r.target, env: r.env, intercepted: true, issuer: r.issuer, via: r.via })),
+                ...failed.map((r) => ({ target: r.target, env: r.env, error: r.error }))
             ],
             checked: new Date().toISOString()
         });
     }
 
     /**
-     * Alerte (événement « cert-alert ») quand un certificat passe à l'orange (< 30 j) ou au rouge (< 7 j, expiré) :
-     * une seule fois par seuil, niveaux retenus dans this.alertFile pour ne pas re-signaler après un redémarrage.
-     * Un certificat renouvelé (retour au vert) est oublié : il sera de nouveau signalé au prochain passage.
+     * Alertes certificats (événement « cert-alert ») : en production au passage à l'orange (< 30 j) puis au rouge
+     * (< 7 j, expiré) ; hors production seulement au rouge (< 3 j, expiré). Une fois par seuil (voir levelAlerts).
      */
     checkCertAlerts(ok) {
-        const items = ok.map((r) => ({ target: r.target, level: r.days < 7 ? "rouge" : r.days < 30 ? "orange" : "ok", days: r.days, until: r.validTo.toISOString() }));
+        const items = ok.map((r) => {
+            const level = r.level ?? certLevel(r.env ?? "production", r.days);
+            return { target: r.target, env: r.env ?? "production", level: r.env && r.env !== "production" && level === "orange" ? "ok" : level, days: r.days, until: r.validTo.toISOString() };
+        });
         this.levelAlerts(this.alertFile, items, "cert-alert");
     }
 

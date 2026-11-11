@@ -7,6 +7,15 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 export const MAX_VMS = 200;
 export const ENVIRONMENTS = ["production", "recette", "qualification", "développement", "autre"];
 
+/** Environnement saisi librement -> valeur de ENVIRONMENTS (prod, rec, qualif, dev… acceptés) ; null si inconnu. */
+export function normalizeEnv(v) {
+    const s = String(v ?? "").trim().toLowerCase().normalize("NFD").replace(/\p{M}/gu, "");
+    const aliases = { prod: "production", production: "production", prd: "production", rec: "recette", recette: "recette", recet: "recette", uat: "recette",
+        qualif: "qualification", qualification: "qualification", qa: "qualification", preprod: "qualification", dev: "développement", developpement: "développement",
+        development: "développement", autre: "autre", other: "autre" };
+    return aliases[s] ?? null;
+}
+
 const text = (v, max) => String(v ?? "").replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, max);
 const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -246,7 +255,7 @@ export function vmsFromCsv(text) {
         fields.forEach((f, i) => { if (f) def[f] = r.cells[i] ?? ""; });
         if (def.lastPatch != null) def.lastPatch = isoDay(def.lastPatch);
         if (def.nextPatch != null) def.nextPatch = isoDay(def.nextPatch);
-        if (def.env != null) def.env = String(def.env).trim().toLowerCase().replace(/^prod$/, "production").replace(/^dev$/, "développement").replace(/^developpement$/, "développement").replace(/^qualif$/, "qualification") || "autre";
+        if (def.env != null) def.env = String(def.env).trim() ? normalizeEnv(def.env) ?? String(def.env).trim().toLowerCase() : "autre";
         try {
             const vm = cleanVm(def);
             if (!vm.nextPatch) throw new Error("prochain patch manquant (ou dernier patch et fréquence)");

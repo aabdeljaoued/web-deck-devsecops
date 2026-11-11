@@ -268,8 +268,8 @@
                     <label>Variables <span class="hint">une par ligne, « nom = valeur » ; dans une commande : {mission.nom}</span>
                         <textarea id="mission-vars" rows="4" spellcheck="false" placeholder="registry = harbor.client.fr&#10;namespace = app-prod&#10;api = https://api.client.fr"></textarea>
                     </label>
-                    <label>Certificats à surveiller <span class="hint">un par ligne : hôte ou hôte:port (443 par défaut) ; voyant « certificats » de la rubrique OpenSSL</span>
-                        <textarea id="mission-certs" rows="3" spellcheck="false" placeholder="api.client.fr&#10;portail.client.fr&#10;ldap.client.fr:636"></textarea>
+                    <label>Certificats à surveiller <span class="hint">un par ligne : hôte ou hôte:port (443 par défaut), puis l'environnement (production, recette, qualification, développement, autre ; prod, rec, dev acceptés ; sans rien = production) ; voyant « certificats » de la rubrique OpenSSL</span>
+                        <textarea id="mission-certs" rows="4" spellcheck="false" placeholder="api.client.fr production&#10;portail.client.fr prod&#10;recette-api.client.fr recette&#10;ldap.client.fr:636"></textarea>
                     </label>
                     <label class="settings-check"><input id="mission-capture" type="checkbox" checked> Reprendre les rubriques et l'ordre affichés actuellement</label>
                     <span id="mission-error" class="mission-error" role="alert" hidden></span>

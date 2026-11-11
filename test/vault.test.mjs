@@ -80,3 +80,27 @@ test("avancement d'un runbook : lignes gardées (sans doublon), liste vide = rec
     assert.throws(() => v.setNoteDone("inconnue", []), /introuvable/);
     v.lock();
 });
+
+test("secrets : nom unique (casse et espaces ignorés), renommés à la fusion d'un coffre", async () => {
+    const v = new Vault(path.join(tmpDir(), "vault.enc"));
+    const password = pw();
+    await v.create(password);
+    v.saveSecret({ name: "harbor-robot", value: "a" });
+    assert.throws(() => v.saveSecret({ name: "  Harbor-ROBOT ", value: "b" }), /s'appelle déjà « harbor-robot »/);
+    assert.throws(() => v.saveSecret({ name: "token gitlab", value: "b" }), /sans espace attendu \(ex\. token-gitlab\)/);
+    const id = v.view().secrets[0].id;
+    v.saveSecret({ id, name: "harbor-robot", user: "robot" });   // le modifier lui-même reste possible
+    v.saveSecret({ name: "GitLab", value: "c" });
+    assert.throws(() => v.saveSecret({ id, name: "gitlab" }), /déjà « GitLab »/);
+
+    // Autre coffre avec un secret au même nom (autre identifiant) : renommé à la fusion
+    const other = new Vault(path.join(tmpDir(), "vault.enc"));
+    const pw2 = pw();
+    await other.create(pw2);
+    other.saveSecret({ name: "harbor-robot", value: "z" });
+    const stats = await v.importBox(other.exportBox(), "merge", pw2);
+    assert.equal(stats.renamed, 1);
+    assert.deepEqual(v.view().secrets.map((s) => s.name).sort(), ["GitLab", "harbor-robot", "harbor-robot-importe"]);
+    v.lock();
+    other.lock();
+});

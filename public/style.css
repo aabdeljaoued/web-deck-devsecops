@@ -1298,3 +1298,40 @@ main {
 .report-options label { display: flex; align-items: center; gap: 6px; text-transform: none; }
 .report-options select, .report-options input[type="datetime-local"] { padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--input-bg); color: var(--text); font: inherit; font-size: 13px; }
 #report-text { min-height: 46vh; resize: vertical; padding: 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--input-bg); color: var(--text); font-family: Consolas, Menlo, monospace; font-size: 12.5px; line-height: 1.45; }
+
+/* Mode partage d'écran : informations du client floutées, révélées au survol ; le terminal reste visible */
+.share-badge { padding: 2px 8px; border-radius: 10px; background: #e65100; color: #fff; font-size: 11px; font-weight: 700; letter-spacing: .05em; }
+#share-mode.on { color: #fff; background: #e65100; border-color: #e65100; }
+.share-mode .key.status .lines,
+.share-mode .key.status .footer,
+.share-mode #mission-switch,
+.share-mode .screens-banner .banner-prod,
+.share-mode #note-list, .share-mode #note-title, .share-mode #note-body, .share-mode #note-preview,
+.share-mode #secret-list,
+.share-mode .param-options, .share-mode #params-preview, .share-mode #params-fields input,
+.share-mode #picker,
+.share-mode #keytip,
+.share-mode #palette-list,
+.share-mode #mission-list, .share-mode #mission-vars, .share-mode #mission-certs, .share-mode #mission-workspace, .share-mode #mission-prod,
+.share-mode #act-list, .share-mode #journal-list, .share-mode #rec-list,
+.share-mode #report-text,
+.share-mode #player-screen {
+    filter: blur(6px);
+    transition: filter .15s;
+}
+.share-mode .key.status:hover .lines, .share-mode .key.status:hover .footer,
+.share-mode #mission-switch:hover, .share-mode #mission-switch:focus,
+.share-mode .screens-banner:hover .banner-prod,
+.share-mode #note-list:hover, .share-mode #note-title:hover, .share-mode #note-title:focus, .share-mode #note-body:hover, .share-mode #note-body:focus, .share-mode #note-preview:hover,
+.share-mode #secret-list:hover,
+.share-mode .param-options:hover, .share-mode #params-preview:hover, .share-mode #params-fields input:hover, .share-mode #params-fields input:focus,
+.share-mode #picker:hover,
+.share-mode #palette-list:hover,
+.share-mode #mission-list:hover, .share-mode #mission-vars:hover, .share-mode #mission-vars:focus, .share-mode #mission-certs:hover, .share-mode #mission-certs:focus, .share-mode #mission-workspace:hover, .share-mode #mission-workspace:focus, .share-mode #mission-prod:hover, .share-mode #mission-prod:focus,
+.share-mode #act-list:hover, .share-mode #journal-list:hover, .share-mode #rec-list:hover,
+.share-mode #report-text:hover, .share-mode #report-text:focus,
+.share-mode #player-screen:hover {
+    filter: none;
+}
+/* La bannière PRODUCTION reste rouge et lisible comme alerte ; seul le contexte est flouté */
+.share-mode .screens-banner { pointer-events: auto; }

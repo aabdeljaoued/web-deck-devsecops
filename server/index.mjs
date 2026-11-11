@@ -444,6 +444,18 @@ wss.on("connection", (ws) => {
                     reply({ t: "vault-ok", text: "secret tapé dans le terminal (sans Entrée)" });
                     break;
                 }
+                // Secret dans une commande ({secret:Nom}) : le shell le lit sans écho dans une variable, le serveur
+                // lui transmet la valeur une fois l'invite affichée ; la valeur ne passe jamais par la page
+                case "secret-read": {
+                    const sid = String(msg.sid);
+                    if (!terminals.sessions.has(sid)) throw new Error("aucun terminal actif");
+                    const value = vault.secretValue(String(msg.id));
+                    if (/[\r\n]/.test(value)) throw new Error("secret sur plusieurs lignes : non utilisable dans une commande");
+                    const n = Math.max(1, Math.min(9, Number(msg.n) || 1));
+                    await readSecretInShell(sid, msg.kind === "powershell" ? "powershell" : "posix", `DECK_SECRET_${n}`, value);
+                    reply({ t: "secret-read", req: msg.req });
+                    break;
+                }
                 // Favoris : modifiés depuis la page, puis deck reconstruit et renvoyé à toutes les pages
                 case "fav-add":
                 case "fav-update":
@@ -814,6 +826,39 @@ function restart() {
         child.unref();
         process.exit(0);
     }, 300);
+}
+
+/**
+ * Fait lire un secret par le shell du terminal sid, sans écho, dans la variable `name` : commande de lecture tapée,
+ * attente de l'invite (repère dans la sortie, 10 s au plus), puis valeur + Entrée écrites directement au terminal.
+ * La commande de lecture ne contient pas la valeur (rien dans l'historique) ; read -s / Read-Host -AsSecureString
+ * coupent l'écho (rien à l'écran, rien dans les enregistrements ● REC).
+ */
+function readSecretInShell(sid, kind, name, value) {
+    const marker = `[deck] secret ${name.slice(-1)}`;
+    const line = kind === "powershell"
+        // repère découpé dans la commande : seul son affichage (pas l'écho de la commande) le contient en entier
+        ? ` Write-Host -NoNewline ('[deck] secret ' + '${name.slice(-1)} : '); $${name} = [System.Net.NetworkCredential]::new('', (Read-Host -AsSecureString)).Password\r`
+        : ` printf '%s : ' '${marker}'; read -rs ${name}; echo\r`;
+    return new Promise((resolve, reject) => {
+        let seen = "";
+        let sent = false;   // la valeur n'est écrite qu'une fois
+        const done = (err) => { clearTimeout(timer); terminals.off("output", onOut); terminals.off("exit", onExit); err ? reject(err) : resolve(); };
+        const onOut = (id, data) => {
+            if (id !== sid) return;
+            seen = (seen + data).slice(-400);
+            // L'invite s'affiche juste avant la lecture : petite attente pour que l'écho soit bien coupé
+            if (!sent && seen.includes(`${marker} : `)) {
+                sent = true;
+                setTimeout(() => { terminals.write(sid, `${value}\r`); done(); }, 250);
+            }
+        };
+        const onExit = (id) => { if (id === sid) done(new Error("terminal fermé")); };
+        const timer = setTimeout(() => done(new Error("le shell n'a pas affiché l'invite de lecture (terminal occupé ?)")), 10000);
+        terminals.on("output", onOut);
+        terminals.on("exit", onExit);
+        terminals.write(sid, line);
+    });
 }
 
 /** Arrêt : presse-papiers vidé s'il contient encore un secret copié (au plus 2 s d'attente), puis fermeture. */

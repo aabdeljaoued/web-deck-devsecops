@@ -399,6 +399,10 @@ function handle(msg) {
         case "rec-cast":
             startPlayer(msg.name, msg.cast);
             break;
+        case "secret-read":
+            secretWaits.get(msg.req)?.resolve();
+            secretWaits.delete(msg.req);
+            break;
         case "report":
             $("#report-text").value = msg.markdown;
             $("#report-build").disabled = false;
@@ -430,7 +434,7 @@ function handle(msg) {
         case "vault-imported": {
             hideVaultImport();
             const n = `${msg.notes} note(s), ${msg.secrets} secret(s)`;
-            toast(msg.mode === "merge" ? `coffre fusionné : ${msg.added} ajouté(s), ${msg.updated} mis à jour (fichier : ${n})`
+            toast(msg.mode === "merge" ? `coffre fusionné : ${msg.added} ajouté(s), ${msg.updated} mis à jour${msg.renamed ? `, ${msg.renamed} secret(s) renommé(s) « -importe » (nom déjà pris)` : ""} (fichier : ${n})`
                 : msg.mode === "replace" ? `coffre remplacé (${n}) ; il s'ouvre maintenant avec le mot de passe du fichier ; ancien coffre dans vault.enc.bak`
                 : `coffre importé et déverrouillé (${n})`, "ok");
             break;
@@ -486,6 +490,9 @@ function handle(msg) {
             if (!msg.ok) toast(msg.error ?? "échec");
             break;
         case "error":
+            // Secret en cours de lecture : la commande n'est pas tapée
+            for (const w of secretWaits.values()) w.reject(new Error(msg.error));
+            secretWaits.clear();
             // Réglages refusés par le serveur : le panneau revient pour corriger
             if (settingsPending) { settingsPending = false; $("#settings").hidden = false; }
             if (state.update) applyUpdate(state.update);   // bouton Mettre à jour / Vérifier réactivé après une erreur
@@ -746,14 +753,9 @@ function press(key, el) {
             if (namedParams(command).length) return openParams(key, command);
             // Touche intégrée (logs -f, exec -it…) sans rien de sélectionné : choix dans la liste réelle (pods, conteneurs)
             if (pickCommand && !hasPendingSelection()) return openParams(key, pickCommand);
-            if (key.enter) {
-                journalAction(key, command, "run");
-                return typeInTerminal(command + "\r");
-            }
+            if (key.enter) return typeCommand(key, command, true);
             // Commande à compléter : le texte sélectionné dans le terminal est ajouté à la fin (sans Entrée)
-            const typed = withSelection(command);
-            journalAction(key, typed, "type");
-            return typeInTerminal(typed);
+            return typeCommand(key, withSelection(command), false);
         }
         case "clear": {
             const t = state.terms.get(state.active);
@@ -1034,8 +1036,7 @@ function submitParams() {
     const command = paramsCommand();
     for (const i of inputs) rememberParam(i.dataset.name, i.value.trim());
     closeParams();
-    journalAction(key, command, key.enter ? "run" : "type");
-    typeInTerminal(key.enter ? `${command}\r` : command);
+    typeCommand(key, command, key.enter);
 }
 
 function closeParams() {
@@ -1119,6 +1120,57 @@ function withSelection(command) {
     if (!selected) return command;
     const sep = /[\s"'=:]$/.test(command) ? "" : " ";
     return command + sep + selected;
+}
+
+// ---------- Secrets dans les commandes : {secret:Nom du secret} ----------
+
+const SECRET_RE = /\{secret:([^{}\r\n]{1,80})\}/g;
+const secretWaits = new Map();   // req -> { resolve, reject }
+
+/**
+ * Tape une commande (journalisée) ; si elle contient {secret:Nom}, chaque secret est d'abord lu par le shell,
+ * sans écho, dans DECK_SECRET_n (le serveur lui transmet la valeur), et la commande utilise la variable,
+ * effacée juste après. La valeur ne passe ni par la page, ni par l'écran, ni par l'historique, ni par le journal.
+ */
+async function typeCommand(key, command, enter) {
+    const names = [...new Set([...command.matchAll(SECRET_RE)].map((m) => m[1].trim()))];
+    if (!names.length) {
+        journalAction(key, command, enter ? "run" : "type");
+        return typeInTerminal(enter ? `${command}\r` : command);
+    }
+    const t = state.terms.get(state.active);
+    if (!t || t.ended) return toast("aucun terminal actif pour lire le secret");
+    if (state.broadcast) return toast("secret : désactive d'abord la diffusion (il ne serait lu que dans un terminal)");
+    if (!state.vault.unlocked) { openVault(); return toast("déverrouille le coffre : la commande utilise un secret"); }
+    // Terminal connecté en ssh : shell distant de type Unix ; sinon le shell local
+    const kind = state.remote[state.active] ? "posix" : activeKind();
+    if (kind === "cmd") return toast("secret : non pris en charge dans cmd (utilise PowerShell ou Git Bash)");
+    const matches = names.map((n) => state.vault.secrets.filter((s) => s.name.trim().toLowerCase() === n.toLowerCase()));
+    const missing = names.find((n, i) => !matches[i].length);
+    if (missing) return toast(`secret « ${missing} » introuvable dans le coffre (nom exact attendu)`);
+    // Ancien coffre avec deux secrets du même nom : on ne devine pas lequel utiliser
+    const twin = names.find((n, i) => matches[i].length > 1);
+    if (twin) return toast(`plusieurs secrets s'appellent « ${twin} » : renomme l'un d'eux dans le coffre (Modifier)`);
+    const ids = matches.map((m) => m[0]);
+    let final = command;
+    try {
+        for (const [i, secret] of ids.entries()) {
+            const req = crypto.randomUUID();
+            const wait = new Promise((resolve, reject) => secretWaits.set(req, { resolve, reject }));
+            send({ t: "secret-read", sid: state.active, id: secret.id, kind, n: i + 1, req });
+            await wait;
+            const ref = kind === "powershell" ? `$DECK_SECRET_${i + 1}` : `"$DECK_SECRET_${i + 1}"`;
+            final = final.replace(SECRET_RE, (all, n) => (n.trim().toLowerCase() === names[i].toLowerCase() ? ref : all));
+        }
+    } catch {
+        return;   // message déjà affiché (erreur du serveur)
+    }
+    const vars = names.map((_, i) => `DECK_SECRET_${i + 1}`);
+    final += kind === "powershell" ? `; Remove-Variable ${vars.join(",")}` : `; unset ${vars.join(" ")}`;
+    journalAction(key, final, enter ? "run" : "type");
+    // Laisse le shell terminer la lecture (sinon la commande s'affiche deux fois)
+    await new Promise((r) => setTimeout(r, 400));
+    typeInTerminal(enter ? `${final}\r` : final);
 }
 
 /** Remplace {mission.nom} par la valeur de la mission active ; erreur claire si elle manque. */
@@ -3418,6 +3470,21 @@ function certAlert(alerts) {
     }
 }
 
+// ---------- Mode partage d'écran ----------
+
+/**
+ * Floute à l'écran ce qui révèle l'infrastructure d'un client (contexte kubectl, mission, notes, secrets, hôtes,
+ * listes, réglages) ; le survol d'une zone l'affiche. Le terminal reste visible. Gardé d'une session à l'autre.
+ */
+function applyShare(on, announce = false) {
+    document.body.classList.toggle("share-mode", on);
+    $("#share-mode").classList.toggle("on", on);
+    $("#share-mode").setAttribute("aria-pressed", String(on));
+    $("#share-badge").hidden = !on;
+    savePref("deck-share", on ? "1" : "0");
+    if (announce) toast(on ? "mode partage d'écran : informations du client floutées (survol pour afficher)" : "mode partage d'écran désactivé", "ok");
+}
+
 // ---------- Rapport d'intervention ----------
 
 function reportFrom() {
@@ -3483,6 +3550,14 @@ $("#broadcast").addEventListener("click", toggleBroadcast);
 $("#rec").addEventListener("click", toggleRec);
 $("#rec-open").addEventListener("click", () => send({ t: "rec-open" }));
 $("#report-open").addEventListener("click", openReport);
+// Nom de secret sans espace : chaque espace tapé devient un tiret (curseur conservé)
+$("#secret-name").addEventListener("input", (ev) => {
+    const el = ev.target;
+    if (!/\s/.test(el.value)) return;
+    const pos = el.selectionStart;
+    el.value = el.value.replace(/\s/g, "-");
+    el.setSelectionRange(pos, pos);
+});
 $("#report-close").addEventListener("click", () => { $("#report").hidden = true; });
 $("#report").addEventListener("mousedown", (ev) => { if (ev.target.id === "report") $("#report").hidden = true; });
 $("#report-period").addEventListener("change", () => { $("#report-from").hidden = $("#report-period").value !== "custom"; if ($("#report-period").value !== "custom") buildReport(); });
@@ -3558,6 +3633,8 @@ $("#params-form").addEventListener("keydown", (ev) => {
 });
 $("#note-to-terminal").addEventListener("click", noteToTerminal);
 $("#settings-open").addEventListener("click", openSettings);
+$("#share-mode").addEventListener("click", () => applyShare(!document.body.classList.contains("share-mode"), true));
+applyShare(loadPref("deck-share") === "1");
 $("#mission-switch").addEventListener("change", (ev) => send({ t: "mission-activate", id: ev.target.value }));
 $("#mission-new").addEventListener("click", () => openMissionForm());
 $("#act-section-new").addEventListener("click", () => openSectionForm());

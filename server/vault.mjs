@@ -16,6 +16,9 @@ export const IDLE_LOCK_MS = 15 * 60 * 1000;
 const clip = (v, max) => String(v ?? "").replace(/\u0000/g, "").slice(0, max);
 
 /** Événement "change" : état ou contenu modifié (à renvoyer aux pages). */
+/** Même nom de secret : sans tenir compte de la casse ni des espaces autour. */
+const sameName = (a, b) => String(a ?? "").trim().toLowerCase() === String(b ?? "").trim().toLowerCase();
+
 export class Vault extends EventEmitter {
     /** @param backups sauvegardes automatiques (server/backups.mjs), facultatif */
     constructor(file, backups = null) {
@@ -177,6 +180,14 @@ export class Vault extends EventEmitter {
                     else if (String(item.updated ?? "") > String(mine.updated ?? "")) { Object.assign(mine, item); stats.updated++; }
                 }
             }
+            // Secrets importés au nom déjà pris : renommés « nom-importe », « nom-importe-2 »… (sans espace)
+            const seen = [];
+            for (const s of this.data.secrets) {
+                let name = s.name;
+                for (let n = 1; seen.some((x) => sameName(x, name)); n++) name = `${s.name.replace(/\s+/g, "-")}-importe${n > 1 ? `-${n}` : ""}`;
+                if (name !== s.name) { s.name = name; stats.renamed = (stats.renamed ?? 0) + 1; }
+                seen.push(name);
+            }
             this.save();
         } else {
             if (mode === "replace") copyFileSync(this.file, `${this.file}.bak`);
@@ -256,6 +267,11 @@ export class Vault extends EventEmitter {
         this.need();
         const meta = { name: clip(name, 80).trim(), user: clip(user, 200).trim(), url: clip(url, 500).trim(), note: clip(note, 2000), updated: new Date().toISOString() };
         if (!meta.name) throw new Error("le nom est obligatoire");
+        // Sans espace : {secret:nom} s'écrit d'un seul mot dans une commande
+        if (/\s/.test(meta.name)) throw new Error(`nom sans espace attendu (ex. ${meta.name.replace(/\s+/g, "-")})`);
+        // Nom unique (sans tenir compte de la casse ni des espaces) : {secret:Nom} dans une commande doit désigner un seul secret
+        const twin = this.data.secrets.find((s) => s.id !== id && sameName(s.name, meta.name));
+        if (twin) throw new Error(`un secret s'appelle déjà « ${twin.name} » : choisis un autre nom`);
         const existing = id && this.data.secrets.find((s) => s.id === id);
         if (existing) {
             Object.assign(existing, meta);

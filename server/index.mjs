@@ -40,7 +40,12 @@ import { Terminals } from "./terminal.mjs";
 import { neededTool, Tools } from "./tools.mjs";
 
 const HOST = "127.0.0.1";
-const COOKIE = "deck_token";
+// Cookie du jeton : un par port. Les cookies d'une même adresse sont partagés entre ports : sans cela, un second deck
+// (démonstration, autre copie) écrasait celui-ci et la page répondait « Accès refusé ».
+const LEGACY_COOKIE = "deck_token";
+// Persistant (400 jours, maximum accepté par Chrome, prolongé à chaque ouverture) : l'application installée s'ouvre
+// encore après avoir quitté le navigateur. HttpOnly + SameSite=Strict ; « Renouveler le jeton » l'invalide.
+const COOKIE_MAX_AGE = 400 * 24 * 3600;
 
 const ctx = loadConfig();
 const backups = new Backups(path.join(ROOT, ".deck-backups"));
@@ -110,9 +115,35 @@ function loadToken() {
 
 const sameToken = (value) => typeof value === "string" && value.length === token.length && timingSafeEqual(Buffer.from(value), Buffer.from(token));
 
+const COOKIE = () => `deck_token_${port}`;
+const cookieHeader = () => `${COOKIE()}=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${COOKIE_MAX_AGE}`;
+/** Jeton du cookie de ce port ; à défaut l'ancien cookie commun (versions précédentes), s'il est encore valide. */
 function cookieToken(req) {
-    const m = new RegExp(`(?:^|;\\s*)${COOKIE}=([0-9a-f]+)`).exec(req.headers.cookie ?? "");
-    return m?.[1];
+    const read = (name) => new RegExp(`(?:^|;\\s*)${name}=([0-9a-f]+)`).exec(req.headers.cookie ?? "")?.[1];
+    const own = read(COOKIE());
+    return own && sameToken(own) ? own : read(LEGACY_COOKIE) ?? own;
+}
+
+/** Page « accès refusé » : comment rouvrir le deck avec son jeton (jamais le jeton lui-même). */
+function deniedPage() {
+    const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+    const tokenFile = path.join(ROOT, ".deck-token");
+    const mac = `open "http://127.0.0.1:${port}/?token=$(cat '${tokenFile}')"`;
+    const win = `Start-Process "http://127.0.0.1:${port}/?token=$(Get-Content '${tokenFile}')"`;
+    return `<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8"><title>Deck DevSecOps : accès refusé</title>
+<meta name="viewport" content="width=device-width, initial-scale=1"><style>
+body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0f1623;color:#e6edf6;font:15px/1.5 -apple-system,"Segoe UI",sans-serif}
+main{max-width:720px;padding:28px 32px;border:1px solid #2a3547;border-radius:12px;background:#151e2d}
+h1{margin:0 0 6px;font-size:20px}p{margin:8px 0;color:#b8c4d6}code,pre{font-family:Menlo,Consolas,monospace;font-size:12.5px}
+pre{white-space:pre-wrap;word-break:break-all;padding:10px 12px;border-radius:8px;background:#0b111b;border:1px solid #2a3547;color:#e6edf6}
+h2{margin:18px 0 4px;font-size:14px;color:#8fb8ff}</style></head><body><main>
+<h1>🔒 Accès refusé</h1>
+<p>Ce navigateur n'a pas (ou plus) le jeton d'accès du deck : premier lancement, jeton renouvelé, ou cookies effacés.
+Ouvre le deck <strong>une fois</strong> avec son adresse complète ; ensuite, l'application et ce lien s'ouvrent directement.</p>
+<h2>macOS (Terminal)</h2><pre>${esc(mac)}</pre>
+<h2>Windows (PowerShell)</h2><pre>${esc(win)}</pre>
+<p>L'adresse complète est aussi affichée par le serveur à son démarrage (fenêtre de lancement ou <code>.deck.log</code>).</p>
+</main></body></html>`;
 }
 
 /** Refuse les noms d'hôte inattendus (protection contre le DNS rebinding). */
@@ -168,7 +199,7 @@ const server = http.createServer((req, res) => {
         if (!sameToken(url.searchParams.get("token"))) return send(res, 403, "Jeton invalide");
         return send(res, 303, "", undefined, {
             Location: "/",
-            "Set-Cookie": `${COOKIE}=${token}; HttpOnly; SameSite=Strict; Path=/`
+            "Set-Cookie": cookieHeader()
         });
     }
     // Application installable (PWA) : manifeste, service worker et icônes lisibles sans jeton (le navigateur les
@@ -176,6 +207,7 @@ const server = http.createServer((req, res) => {
     const pub = req.method === "GET" && PUBLIC[url.pathname];
     if (pub) return send(res, 200, readFileSync(pub[0]), pub[1], url.pathname === "/sw.js" ? { "Service-Worker-Allowed": "/", "Cache-Control": "no-cache" } : {});
     if (!sameToken(cookieToken(req))) {
+        if (req.method === "GET" && (url.pathname === "/" || url.pathname === "/index.html")) return send(res, 401, deniedPage(), "text/html; charset=utf-8");
         return send(res, 401, `Accès refusé : ouvre l'adresse affichée par le serveur au démarrage (avec ?token=...).`);
     }
     // Icônes des touches, seulement celles du catalogue (voir server/icons.mjs)
@@ -197,7 +229,9 @@ const server = http.createServer((req, res) => {
     }
     const entry = req.method === "GET" && STATIC[url.pathname];
     if (!entry) return send(res, 404, "Introuvable");
-    send(res, 200, readFileSync(entry[0]), entry[1]);
+    // Page principale : cookie de ce port reposé (durée prolongée, passage depuis l'ancien cookie commun)
+    const page = url.pathname === "/" || url.pathname === "/index.html";
+    send(res, 200, readFileSync(entry[0]), entry[1], page ? { "Set-Cookie": cookieHeader() } : {});
 });
 
 // ---------- WebSocket : terminaux, voyants, lanceurs ----------

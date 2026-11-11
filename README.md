@@ -22,7 +22,7 @@ bouton **?** de l'en-tête.
 
 Le deck peut aussi s'installer comme **application** (fenêtre à part, icône dans la barre des tâches, le menu Démarrer
 ou le Dock) : **Réglages › Serveur › Installer l'application**, ou dans Edge / Chrome **⋯ › Applications › Installer ce
-site en tant qu'application**. C'est le même deck, servi par le même service local ; le navigateur reste utilisable.
+site en tant qu'application**. C'est le même deck, servi par le même service local ; le navigateur reste utilisable. Elle partage le cookie du jeton avec le navigateur : si elle affiche « Accès refusé », ouvre une fois l'adresse complète (la page donne la commande).
 Aucun droit admin ni `.exe` à signer. Manifeste, service worker (sans cache) et icônes sont les seuls fichiers lisibles
 sans jeton.
 
@@ -308,7 +308,7 @@ Ils tournent aussi sur **GitHub Actions** à chaque push, sur Windows, macOS et 
 Le terminal donne un shell complet : l'accès est verrouillé.
 
 - Le serveur n'écoute que sur `127.0.0.1`.
-- Un **jeton** aléatoire (fichier `.deck-token`, non versionné) est demandé dans l'URL de démarrage, puis échangé contre un cookie `HttpOnly`, `SameSite=Strict`. Supprimer `.deck-token` en génère un nouveau au démarrage suivant.
+- Un **jeton** aléatoire (fichier `.deck-token`, non versionné) est demandé dans l'URL de démarrage, puis échangé contre un cookie `HttpOnly`, `SameSite=Strict`, propre au port (`deck_token_7777` : un second deck sur la même machine ne l'écrase pas), gardé 400 jours et prolongé à chaque ouverture (l'application installée s'ouvre directement). Supprimer `.deck-token` en génère un nouveau au démarrage suivant.
 - L'en-tête `Host` est vérifié (protection contre le DNS rebinding), ainsi que l'`Origin` des WebSockets (une autre page ouverte dans le navigateur ne peut pas s'y connecter).
 - Le navigateur n'envoie que l'identifiant d'une touche `run` : le serveur ne lance que les commandes de son catalogue.
 - La page interdit l'affichage dans une iframe et applique une Content-Security-Policy stricte.
@@ -331,7 +331,7 @@ Le terminal donne un shell complet : l'accès est verrouillé.
 
 - **Une adresse `?token=…` a pu fuiter** (capture, message, autre poste) : **Réglages › Serveur › Renouveler le jeton** (deux clics). L'ancien jeton ne fonctionne plus nulle part, les autres navigateurs sont déconnectés ; la page qui renouvelle bascule seule sur le nouveau (le fichier `.deck-token` est mis à jour).
 - **Le deck s'arrête tout seul** : lancé avec `start.command` / `start.cmd`, fermer sa fenêtre l'arrête. Installer le service (voir *Lancement automatique*) ; en cas de plantage, le journal du service en donne la cause.
-- **« Accès refusé »** : ouvrir l'adresse complète affichée dans la fenêtre du serveur (avec `?token=…`).
+- **« Accès refusé »** : la page affiche la commande à lancer une fois (Terminal sur Mac, PowerShell sous Windows) pour rouvrir le deck avec son adresse complète (`?token=…`) ; ensuite l'application installée s'ouvre directement.
 - **Un outil est « introuvable »** au démarrage alors qu'il marche dans un terminal : indiquer son chemin complet dans `paths.<machine>.json`.
 - **Un voyant affiche « erreur »** : lancer la même commande dans le terminal intégré pour voir le message (`kubectl config current-context`, `git status`, `docker ps`).
 - **Le port 7777 est pris** par un autre programme : changer `port` dans `config.jsonc`.

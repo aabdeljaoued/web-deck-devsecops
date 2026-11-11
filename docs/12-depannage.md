@@ -7,7 +7,7 @@ Commence toujours par **Réglages › Serveur › Diagnostic** : chaque ligne di
 
 | Problème | Solution |
 |---|---|
-| **« Accès refusé »** | Ouvre l'adresse complète affichée au démarrage (avec `?token=…`). |
+| **« Accès refusé »** (navigateur ou application installée) | Le navigateur n'a pas, ou plus, le jeton : premier lancement, jeton renouvelé, cookies effacés. La page affiche la commande à lancer une fois (Terminal sur Mac, PowerShell sous Windows) pour rouvrir le deck avec son adresse complète ; ensuite l'application s'ouvre directement. |
 | **Le deck s'arrête tout seul** | Lancé avec `start.command` / `start.cmd`, fermer sa fenêtre l'arrête : installe le service (voir [Prise en main](01-prise-en-main.md)). |
 | **Une adresse `?token=…` a fuité** | Réglages › Serveur › **Renouveler le jeton** : l'ancien ne fonctionne plus nulle part. |
 | **Un onglet affiche l'ancienne version** | Il se recharge seul à la reconnexion ; sinon `⌘R`. |

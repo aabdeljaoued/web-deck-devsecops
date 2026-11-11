@@ -8,7 +8,8 @@ Le deck donne un shell complet et garde des secrets : l'accès est verrouillé, 
 
 - Le serveur n'écoute que sur `127.0.0.1` : aucune autre machine ne peut s'y connecter.
 - Un **jeton** aléatoire (`.deck-token`, hors Git) est demandé dans l'adresse de démarrage, puis échangé contre un
-  cookie `HttpOnly`, `SameSite=Strict`. **Renouveler le jeton** (Réglages › Serveur) l'invalide partout s'il a fuité.
+  cookie `HttpOnly`, `SameSite=Strict`, propre au port du deck (un autre deck sur la même machine ne peut pas
+  l'écraser) et gardé 400 jours (prolongé à chaque ouverture) pour que l'application installée s'ouvre directement. **Renouveler le jeton** (Réglages › Serveur) l'invalide partout s'il a fuité.
 - L'en-tête `Host` est vérifié (protection contre le DNS rebinding), ainsi que l'`Origin` des WebSockets : une autre
   page ouverte dans le navigateur ne peut pas s'y connecter.
 - La page refuse d'être affichée dans une iframe et applique une Content-Security-Policy stricte.

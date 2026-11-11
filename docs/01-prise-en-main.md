@@ -53,7 +53,8 @@ Launchpad (macOS).
 
 ## Premier démarrage
 
-- La page s'ouvre toute seule ; l'adresse contient le jeton (`?token=…`), gardé ensuite dans un cookie.
+- La page s'ouvre toute seule ; l'adresse contient le jeton (`?token=…`), gardé ensuite dans un cookie (400 jours,
+  prolongé à chaque ouverture) : les fois suivantes, `http://127.0.0.1:7777/` et l'application installée suffisent.
 - Un seul onglet pilote les terminaux : si tu en ouvres un autre, le précédent propose **« Utiliser ici »**.
 - Après une mise à jour, les onglets ouverts **se rechargent tout seuls** à la reconnexion.
 

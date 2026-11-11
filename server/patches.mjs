@@ -79,8 +79,22 @@ export function cleanVm(def) {
         lastPatch,
         // Prochain patch déduit du dernier et de la fréquence s'il n'est pas donné
         nextPatch: nextPatch || (lastPatch && every ? addDays(lastPatch, every) : ""),
-        everyDays: every
+        everyDays: every,
+        check: cleanCheck(def?.check)
     };
+}
+
+/**
+ * Résultat de la dernière vérification d'une VM (bouton « Vérifier ») : nombres et textes courts, ou erreur.
+ * null si absent ou illisible.
+ */
+export function cleanCheck(c) {
+    if (!c || typeof c !== "object" || Number.isNaN(new Date(c.at).getTime())) return null;
+    const n = (v) => (v === null || v === undefined || v === "" || !Number.isFinite(Number(v)) ? null : Math.max(0, Math.min(99999, Math.floor(Number(v)))));
+    const t = (v, max) => String(v ?? "").replace(/[\u0000-\u001f]/g, " ").trim().slice(0, max);
+    if (c.error) return { at: new Date(c.at).toISOString(), error: t(c.error, 300) };
+    return { at: new Date(c.at).toISOString(), os: t(c.os, 80), kernel: t(c.kernel, 80), uptimeDays: n(c.uptimeDays),
+        manager: t(c.manager, 10), updates: n(c.updates), security: n(c.security), reboot: c.reboot === true };
 }
 
 export class Patches {
@@ -118,7 +132,10 @@ export class Patches {
         if (id) {
             const i = this.vms.findIndex((v) => v.id === id);
             if (i < 0) throw new Error("VM introuvable");
-            this.vms[i] = { id, ...vm };
+            // Dernière vérification gardée, sauf si l'hôte ou la clé changent (elle ne vaut plus pour cette VM)
+            const old = this.vms[i];
+            const sameTarget = old.host === vm.host && old.identity === vm.identity && old.name === vm.name;
+            this.vms[i] = { id, ...vm, check: vm.check ?? (sameTarget ? old.check : null) };
         } else {
             if (this.vms.length >= MAX_VMS) throw new Error(`${MAX_VMS} VMs au plus`);
             this.vms.push({ id: newId(), ...vm });
@@ -134,7 +151,23 @@ export class Patches {
         vm.lastPatch = cleanDay(day, "date du patch");
         if (vm.everyDays) vm.nextPatch = addDays(vm.lastPatch, vm.everyDays);
         else if (vm.nextPatch <= vm.lastPatch) vm.nextPatch = "";
+        vm.check = null;   // mises à jour en attente : plus à jour après le patch, à re-vérifier
         this.write();
+        return vm;
+    }
+
+    /** Résultat d'une vérification (lecture seule sur la VM) enregistré dans l'inventaire. */
+    setCheck(id, check) {
+        const vm = this.vms.find((v) => v.id === id);
+        if (!vm) throw new Error("VM introuvable");
+        vm.check = cleanCheck(check);
+        this.write(false);
+        return vm;
+    }
+
+    get(id) {
+        const vm = this.vms.find((v) => v.id === id);
+        if (!vm) throw new Error("VM introuvable");
         return vm;
     }
 
@@ -159,7 +192,7 @@ export class Patches {
             if (seen.has(key)) { errors.push(`ligne ${line} : « ${vm.name} » apparaît deux fois dans le fichier`); continue; }
             seen.add(key);
             const i = next.findIndex((v) => v.name.toLowerCase() === key);
-            if (i >= 0) { next[i] = { id: next[i].id, ...vm }; updated++; }
+            if (i >= 0) { next[i] = { id: next[i].id, ...vm, check: vm.check ?? next[i].check ?? null }; updated++; }
             else { next.push({ id: newId(), ...vm }); added++; }
         }
         if (next.length > MAX_VMS) throw new Error(`l'inventaire dépasserait ${MAX_VMS} VMs`);

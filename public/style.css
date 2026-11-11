@@ -909,7 +909,27 @@ main {
 .settings-open { padding: 4px 8px; }
 .settings-open svg { width: 15px; height: 15px; }
 #settings { padding-top: 20px; }
-.settings-box { width: min(520px, 92vw); max-height: calc(100vh - 40px); overflow-y: auto; }
+.settings-box { width: min(900px, 94vw); height: min(720px, calc(100vh - 40px)); display: flex; flex-direction: column; overflow: hidden; }
+/* Une section à la fois : menu à gauche, contenu qui défile à droite, boutons toujours visibles en bas */
+.settings-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 215px minmax(0, 1fr); gap: 16px; }
+.settings-nav { display: flex; flex-direction: column; gap: 2px; overflow-y: auto; padding-right: 12px; border-right: 1px solid var(--border); }
+.settings-nav-group { margin: 8px 0 2px; padding: 0 10px; font-size: 10.5px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+.settings-nav-group:first-child { margin-top: 0; }
+.favform .settings-tab { flex: none; text-align: left; padding: 5px 10px; border: 0; border-radius: 6px; background: transparent; color: var(--text); font-size: 13.5px; white-space: nowrap; cursor: pointer; }
+.favform .settings-tab:hover { background: color-mix(in srgb, var(--text) 7%, transparent); }
+.favform .settings-tab.on { background: color-mix(in srgb, var(--accent) 22%, transparent); color: var(--text); font-weight: 600; box-shadow: inset 3px 0 0 var(--accent); }
+.settings-pane { min-height: 0; overflow-y: auto; padding-right: 6px; display: flex; flex-direction: column; gap: 12px; }
+.settings-pane > .settings-group { border: 0; padding: 0; }
+.settings-pane > .settings-group[hidden] { display: none; }
+.settings-pane > .settings-group > legend { float: left; width: 100%; padding: 0 0 4px; margin-bottom: 6px; font-size: 18px; font-weight: 600; color: var(--text); text-transform: none; letter-spacing: 0; border-bottom: 1px solid var(--border); }
+.settings-pane > .settings-group > legend + * { clear: both; }
+.settings-where { flex: 1 1 auto; font-size: 11.5px; }
+@media (max-width: 720px) {
+    .settings-body { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); }
+    .settings-nav { flex-direction: row; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--border); padding: 0 0 6px; }
+    .settings-nav-group { display: none; }
+    .favform .settings-tab { white-space: nowrap; }
+}
 .settings-row { display: flex; align-items: center; gap: 8px; color: var(--text); font-size: 14px; }
 .settings-row input { width: 110px; }
 
@@ -1005,9 +1025,8 @@ main {
 /* Réglages : Annuler / Enregistrer toujours visibles en bas du panneau (seul le contenu défile).
    Sans cela, sur un petit écran, le bouton coupé glissait sous la souris au premier clic. */
 .settings-box > .favform-actions {
-    position: sticky;
-    bottom: -16px;
-    margin: 0 -18px -16px;
+    position: relative;
+    margin: 12px -18px -16px;
     padding: 12px 18px 16px;
     background: var(--panel);
     border-top: 1px solid var(--border);
@@ -1378,7 +1397,7 @@ main {
 .patch-form textarea { width: 100%; box-sizing: border-box; }
 .patch-import-errors { margin: 0; padding-left: 18px; max-height: 140px; overflow: auto; font-size: 12px; color: #ef5350; }
 .patches-box .player-head button:not(#patches-close) { padding: 4px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); color: var(--text); cursor: pointer; font-size: 13px; }
-.patches-box .player-head button.primary { background: var(--accent-strong); color: #fff; border-color: transparent; }
+.patches-box .player-head button.primary:not(#patches-close) { background: var(--accent-strong); color: #fff; border-color: transparent; }
 #patch-template { color: var(--accent); font-weight: 600; }
 /* Patchs : filtres (environnement, tags) et tags */
 .patch-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
@@ -1392,3 +1411,73 @@ main {
 .patch-tag { display: inline-block; padding: 0 6px; border-radius: 8px; font-size: 10px; font-weight: 600; color: #80cbc4; border: 1px solid color-mix(in srgb, #00838f 70%, transparent); }
 .patch-tags-field { grid-column: span 2; }
 [data-mode="light"] .patch-tag, [data-mode="light"] .patch-chip.tag { color: #00695c; }
+/* Patchs : dernière vérification d'une VM (ssh, lecture seule) */
+.patch-check { margin-top: 3px; font-size: 11.5px; color: var(--muted); }
+.patch-check.ok { color: #66bb6a; }
+.patch-check.info { color: #4fc3f7; }
+.patch-check.warn { color: #ffa040; font-weight: 600; }
+.patch-check.err { color: #ef9a9a; }
+.patch-check.checking { color: var(--accent); font-style: italic; }
+[data-mode="light"] .patch-check.ok { color: #2e7d32; }
+[data-mode="light"] .patch-check.info { color: #0277bd; }
+[data-mode="light"] .patch-check.warn { color: #e65100; }
+[data-mode="light"] .patch-check.err { color: #c62828; }
+#patch-search { width: 220px; }
+/* Échéances : calendrier du mois et liste des 60 prochains jours */
+.agenda-box { width: min(1180px, 95vw); max-height: 88vh; display: flex; flex-direction: column; gap: 10px; padding: 14px; }
+.agenda-box .player-head { gap: 10px; }
+.agenda-box .player-head button:not(#agenda-close), .agenda-nav button { padding: 4px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); color: var(--text); cursor: pointer; font-size: 13px; }
+.agenda-box .player-head button.primary:not(#agenda-close) { background: var(--accent-strong); color: #fff; border-color: transparent; }
+.agenda-body { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 14px; min-height: 0; overflow: auto; }
+.agenda-nav { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.agenda-nav strong { min-width: 150px; text-align: center; text-transform: capitalize; }
+.agenda-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px; }
+.ag-head { font-size: 11px; text-transform: uppercase; color: var(--muted); text-align: center; padding: 2px 0; }
+.ag-day { min-height: 74px; padding: 3px; border: 1px solid var(--border); border-radius: 6px; display: flex; flex-direction: column; gap: 2px; overflow: hidden; }
+.ag-day.weekend { background: color-mix(in srgb, var(--text) 3%, transparent); }
+.ag-day.other { opacity: .4; }
+.ag-day.today { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.ag-num { font-size: 11px; color: var(--muted); }
+.ag-day.today .ag-num { color: var(--accent); font-weight: 700; }
+.ag-chip { display: block; padding: 1px 5px; border-radius: 4px; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #fff; border: 1px solid transparent; }
+.ag-chip.ag-patch { background: #00838f; }
+.ag-chip.ag-cert { background: #6a1b9a; }
+.ag-chip.ag-prod { border-color: #ef5350; box-shadow: inset 3px 0 0 #ef5350; }
+.ag-chip.lvl-rouge { background: #c62828; }
+.ag-chip.lvl-orange.ag-patch, .ag-chip.lvl-orange.ag-cert { background: #e65100; }
+.ag-chip.clickable { cursor: pointer; }
+.ag-more { font-size: 10px; color: var(--muted); }
+.agenda-legend { margin-top: 6px; font-size: 11px; }
+.agenda-legend .ag-patch { color: #00838f; }
+.agenda-legend .ag-cert { color: #8e24aa; }
+.agenda-list { display: flex; flex-direction: column; gap: 6px; min-height: 0; }
+.agenda-list ul { list-style: none; margin: 0; padding: 0; overflow: auto; max-height: 60vh; display: flex; flex-direction: column; gap: 6px; }
+.agenda-list li { display: grid; grid-template-columns: 1fr auto; gap: 2px 6px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; font-size: 12.5px; }
+.agenda-list li .ag-date { grid-column: 1 / -1; font-size: 11px; color: var(--muted); }
+.agenda-list li .ag-chip { white-space: normal; }
+.agenda-list li .patch-env { align-self: center; }
+.share-mode #agenda-grid, .share-mode #agenda-list, .share-mode #summary-view { filter: blur(6px); }
+.share-mode #agenda-grid:hover, .share-mode #agenda-list:hover, .share-mode #summary-view:hover { filter: none; }
+/* Synthèse du client */
+.summary-box .player-head { gap: 10px; }
+.summary-box .player-head button:not(#summary-close) { padding: 4px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); color: var(--text); cursor: pointer; font-size: 13px; }
+.summary-view { min-height: 46vh; max-height: 66vh; overflow: auto; padding: 4px 14px; border: 1px solid var(--border); border-radius: 6px; }
+.summary-view table { font-size: 12.5px; }
+.summary-box .favform-actions button, .report-box .favform-actions button { white-space: nowrap; }
+@media (max-width: 860px) { .agenda-body { grid-template-columns: 1fr; } }
+/* Patchs : légende compacte sous l'inventaire */
+.patch-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; padding-top: 10px; border-top: 1px solid var(--border); font-size: 12px; color: var(--muted); }
+.patch-legend > span { display: inline-flex; align-items: center; gap: 6px; }
+.patch-legend b { color: var(--text); font-weight: 600; }
+.patch-legend .grow { flex: 1; }
+.lg-dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+.lg-rouge { background: #e53935; }
+.lg-orange { background: #fb8c00; }
+.lg-vert { background: #43a047; }
+.lg-sep { width: 1px; height: 14px; background: var(--border); }
+.lg-file code { font-size: 11px; }
+/* Champs de date : calendrier aux couleurs du thème, icône visible, tout le champ cliquable */
+input[type="date"], input[type="datetime-local"] { color-scheme: dark; cursor: pointer; }
+[data-mode="light"] input[type="date"], [data-mode="light"] input[type="datetime-local"] { color-scheme: light; }
+input[type="date"]::-webkit-calendar-picker-indicator, input[type="datetime-local"]::-webkit-calendar-picker-indicator { opacity: .85; cursor: pointer; padding: 2px; border-radius: 4px; }
+input[type="date"]::-webkit-calendar-picker-indicator:hover, input[type="datetime-local"]::-webkit-calendar-picker-indicator:hover { opacity: 1; background: color-mix(in srgb, var(--accent) 25%, transparent); }

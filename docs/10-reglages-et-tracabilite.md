@@ -4,6 +4,21 @@
 
 La **roue dentée** de l'en-tête ouvre les Réglages.
 
+![Les Réglages](img/reglages.jpg)
+
+Une section à la fois : le **menu de gauche** les regroupe en quatre parties, et le contenu défile à droite.
+
+| Partie | Sections |
+|---|---|
+| Personnaliser | Apparence, Navigation, Rubriques, Mes actions, Missions |
+| Traçabilité | Journal des actions (et rapport d'intervention), Enregistrements de sessions |
+| Données | Favoris, Coffre, Sauvegardes, Configuration complète |
+| Système | Serveur (mise à jour, diagnostic, application) |
+
+Le panneau se rouvre sur la dernière section consultée. **Annuler** et **Enregistrer** restent visibles en bas, quelle
+que soit la section ; **Enregistrer** enregistre toutes les sections d'un coup. Un champ invalide dans une autre section
+(ex. délai de retour à l'accueil) l'affiche automatiquement. Sur un écran étroit, le menu passe en haut.
+
 ## Apparence
 
 ![Mode clair](img/mode-clair.jpg)
@@ -32,7 +47,9 @@ ou depuis une date) :
 
 - les actions du journal, avec **⚠ PROD** quand c'était la production ;
 - les sessions **● REC** (texte inclus sur demande) ;
-- les étapes de runbook cochées (coffre déverrouillé).
+- les étapes de runbook cochées (coffre déverrouillé) ;
+- les **patchs réalisés** sur la période et l'**état du parc à date** (certificats et VMs par environnement), voir
+  [Échéances et synthèse](14-echeances-et-synthese.md#rapport-dintervention-enrichi).
 
 Tu le relis et le modifies, puis **Copier**, **Télécharger (.md)** ou **Enregistrer dans le coffre**. Rien n'est
 envoyé ailleurs.

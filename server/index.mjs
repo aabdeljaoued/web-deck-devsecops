@@ -32,6 +32,8 @@ import { launch, openBrowser, openFolder, platform, windowsPty } from "./platfor
 import { Recorder } from "./recorder.mjs";
 import { Patches, vmsFromCsv, vmsToCsv } from "./patches.mjs";
 import { buildReport } from "./report.mjs";
+import { agendaEvents, buildSummary, toIcs } from "./summary.mjs";
+import { checkVm } from "./vmcheck.mjs";
 import { RemoteWatch } from "./remote.mjs";
 import { StatusHub } from "./status.mjs";
 import { Terminals } from "./terminal.mjs";
@@ -444,6 +446,44 @@ wss.on("connection", (ws) => {
                     break;
                 }
                 case "patch-export": reply({ t: "patch-export", csv: vmsToCsv(patches.list()) }); break;
+                // Vérification en lecture seule (ssh non interactif) : une VM, ou toutes (4 à la fois)
+                case "patch-check": {
+                    const list = msg.all ? patches.list() : [patches.get(String(msg.id))];
+                    broadcast({ t: "patch-checking", ids: list.map((v) => v.id) });
+                    let i = 0, failed = 0;
+                    const worker = async () => {
+                        while (i < list.length) {
+                            const vm = list[i++];
+                            const res = await checkVm(vm);
+                            if (res.error) failed++;
+                            try { patches.setCheck(vm.id, res); } catch { continue; }   // supprimée entre-temps
+                            broadcast({ t: "patches", vms: patches.list() });
+                        }
+                    };
+                    await Promise.all(Array.from({ length: Math.min(4, list.length) }, worker));
+                    broadcast({ t: "patch-checked", ids: list.map((v) => v.id) });
+                    status.refreshPatches();
+                    reply({ t: "vault-ok", text: list.length === 1 ? (failed ? `« ${list[0].name} » : vérification impossible` : `« ${list[0].name} » vérifiée`) : `${list.length - failed} VM(s) vérifiée(s)${failed ? `, ${failed} injoignable(s)` : ""}` });
+                    break;
+                }
+                // Échéances (patchs, certificats) : calendrier dans la page, export .ics pour Outlook / Google Agenda
+                case "agenda": {
+                    const events = agendaEvents({ vms: patches.list(), certs: status.states.certs?.items ?? [] });
+                    const s = settings.get();
+                    const mission = s.missions.find((m) => m.id === s.activeMission)?.name;
+                    reply({ t: "agenda", events, ...(msg.ics ? { ics: toIcs(events, { name: `Échéances${mission ? ` ${mission}` : ""} (Deck DevSecOps)` }) } : {}) });
+                    break;
+                }
+                // Synthèse du client (mission active) en Markdown, relue dans la page
+                case "summary": {
+                    const s = settings.get();
+                    reply({ t: "summary", markdown: buildSummary({
+                        mission: s.missions.find((m) => m.id === s.activeMission)?.name ?? null,
+                        kube: status.states.kube ?? null,
+                        vms: patches.list(), certs: status.states.certs?.items ?? [], entries: journal.entries
+                    }) });
+                    break;
+                }
                 // Rapport d'intervention : journal, sessions enregistrées et runbooks d'une période (relu dans la page)
                 case "report": {
                     const from = new Date(msg.from);
@@ -456,7 +496,8 @@ wss.on("connection", (ws) => {
                         recordings: recorder.list(500), dir: RECORDINGS,
                         notes: view.unlocked ? view.notes : null,
                         mission: s.missions.find((m) => m.id === s.activeMission)?.name ?? null,
-                        withSessions: msg.withSessions === true
+                        withSessions: msg.withSessions === true,
+                        vms: patches.list(), certs: status.states.certs?.items ?? []
                     }) });
                     break;
                 }

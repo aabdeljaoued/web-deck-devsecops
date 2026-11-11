@@ -196,6 +196,9 @@
     <div id="settings" class="palette" hidden>
         <form id="settings-form" class="palette-box favform settings-box" autocomplete="off">
             <h2>Réglages</h2>
+            <div class="settings-body">
+                <nav id="settings-nav" class="settings-nav" aria-label="Sections des réglages"></nav>
+                <div id="settings-pane" class="settings-pane">
             <fieldset class="settings-group">
                 <legend>Apparence</legend>
                 <label>Mode
@@ -281,7 +284,7 @@
             </fieldset>
             <fieldset class="settings-group">
                 <legend>Mes actions</legend>
-                <span class="hint">Tes propres rubriques et touches, sans éditer de fichier : une commande (exécutée tout de suite, ou à compléter ; <code>{}</code> = texte sélectionné dans le terminal) ou un lien. Enregistrées dans <code>actions.json</code>, hors Git. Une rubrique créée apparaît aussi dans « Rubriques » ci-dessous.</span>
+                <span class="hint">Tes propres rubriques et touches, sans éditer de fichier : une commande (exécutée tout de suite, ou à compléter ; <code>{}</code> = texte sélectionné dans le terminal) ou un lien. Enregistrées dans <code>actions.json</code>, hors Git. Une rubrique créée apparaît aussi dans la section « Rubriques », pour l'afficher ou la masquer.</span>
                 <div id="act-list" class="act-list"></div>
                 <div class="settings-actions">
                     <button type="button" id="act-section-new">Nouvelle rubrique…</button>
@@ -396,7 +399,7 @@
             </fieldset>
             <fieldset class="settings-group">
                 <legend>Configuration complète</legend>
-                <span class="hint">Pour retrouver toute ta configuration sur une autre machine en un fichier : favoris, Mes actions, réglages et missions, signature. Le coffre s'exporte à part (rubrique Coffre ci-dessous). Le fichier contient tes adresses et commandes de mission : garde-le hors des dépôts.</span>
+                <span class="hint">Pour retrouver toute ta configuration sur une autre machine en un fichier : favoris, Mes actions, réglages et missions, signature. Le coffre s'exporte à part (section « Coffre »). Les patchs des VMs sont inclus. Le fichier contient tes adresses et commandes de mission : garde-le hors des dépôts.</span>
                 <div class="settings-actions">
                     <button type="button" id="config-export">Exporter…</button>
                     <button type="button" id="config-import">Importer…</button>
@@ -455,8 +458,10 @@
                     </span>
                 </div>
             </fieldset>
-            <p class="hint">Réglages enregistrés côté serveur (<code>settings.json</code>, hors Git) : les mêmes pour tous les onglets et navigateurs.</p>
+                </div>
+            </div>
             <div class="favform-actions">
+                <span class="hint settings-where">Enregistrés côté serveur (<code>settings.json</code>, hors Git) : les mêmes pour tous les onglets et navigateurs.</span>
                 <span class="grow"></span>
                 <button type="button" id="settings-cancel">Annuler</button>
                 <button type="submit" class="primary">Enregistrer</button>
@@ -525,11 +530,59 @@
             </div>
             <textarea id="report-text" spellcheck="false" placeholder="Le rapport (Markdown) s'affiche ici : relis-le et modifie-le avant de l'exporter."></textarea>
             <div class="favform-actions">
-                <span class="hint">Journal des actions, sessions ● REC et étapes de runbook cochées (coffre déverrouillé). À relire avant diffusion.</span>
+                <span class="hint">Journal des actions, sessions ● REC, runbooks cochés (coffre déverrouillé), patchs réalisés et état du parc. À relire avant diffusion.</span>
                 <span class="grow"></span>
                 <button type="button" id="report-copy">Copier</button>
                 <button type="button" id="report-download">Télécharger (.md)</button>
                 <button type="button" id="report-note" class="primary">Enregistrer dans le coffre</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="agenda" class="palette" hidden>
+        <div class="palette-box agenda-box" role="dialog" aria-label="Échéances">
+            <div class="player-head">
+                <strong>Échéances</strong>
+                <span id="agenda-summary" class="hint"></span>
+                <span class="grow"></span>
+                <button type="button" id="agenda-ics" class="primary" title="Fichier .ics à ouvrir dans Outlook ou Google Agenda : un événement par échéance, rappel 3 jours avant en production (1 jour sinon) ; réimporter met à jour sans dupliquer">Exporter (.ics)</button>
+                <button type="button" id="agenda-summary-open" title="Synthèse du client (mission active)">Synthèse</button>
+                <button type="button" id="agenda-close" title="Fermer (Échap)">✕</button>
+            </div>
+            <div class="agenda-body">
+                <section class="agenda-month">
+                    <div class="agenda-nav">
+                        <button type="button" id="agenda-prev" title="Mois précédent">‹</button>
+                        <strong id="agenda-title"></strong>
+                        <button type="button" id="agenda-next" title="Mois suivant">›</button>
+                        <button type="button" id="agenda-today">Aujourd'hui</button>
+                    </div>
+                    <div id="agenda-grid" class="agenda-grid"></div>
+                    <div class="agenda-legend hint"><span class="ag-patch">■</span> patch · <span class="ag-cert">■</span> certificat · contour rouge : production</div>
+                </section>
+                <section class="agenda-list">
+                    <strong>En retard et 60 prochains jours</strong>
+                    <ul id="agenda-list"></ul>
+                </section>
+            </div>
+        </div>
+    </div>
+
+    <div id="summary" class="palette" hidden>
+        <div class="palette-box report-box summary-box" role="dialog" aria-label="Synthèse du client">
+            <div class="player-head">
+                <strong>Synthèse du client</strong>
+                <span class="hint">mission active : certificats, patchs, échéances, actions en production</span>
+                <span class="grow"></span>
+                <button type="button" id="summary-refresh">Actualiser</button>
+                <button type="button" id="summary-close" title="Fermer (Échap)">✕</button>
+            </div>
+            <div id="summary-view" class="note-preview summary-view"></div>
+            <div class="favform-actions">
+                <span class="hint">Calculée à partir du voyant certificats, de l'inventaire des patchs et du journal. À relire avant diffusion.</span>
+                <span class="grow"></span>
+                <button type="button" id="summary-copy">Copier (Markdown)</button>
+                <button type="button" id="summary-download">Télécharger (.md)</button>
             </div>
         </div>
     </div>
@@ -556,6 +609,8 @@
                 <span class="grow"></span>
                 <input id="patch-search" type="search" placeholder="Filtrer : nom, environnement, description…" spellcheck="false">
                 <button type="button" id="patch-new" class="primary">+ VM</button>
+                <button type="button" id="patch-check-all" title="Vérifier toutes les VMs en ssh, en lecture seule : mises à jour en attente, reboot requis (4 à la fois)">Vérifier tout</button>
+                <button type="button" id="patch-agenda" title="Calendrier des échéances (patchs et certificats), export pour Outlook / Google Agenda">Calendrier</button>
                 <button type="button" id="patch-import" title="Importer des VMs depuis un fichier CSV (Excel) : ajout, ou mise à jour si le nom existe">Importer…</button>
                 <button type="button" id="patch-export" title="Exporter l'inventaire en CSV (modifiable dans Excel, puis réimportable)">Exporter (CSV)</button>
                 <input id="patch-import-file" type="file" accept=".csv,.txt,text/csv,text/plain" hidden>
@@ -605,7 +660,16 @@
                     <tbody id="patch-list"></tbody>
                 </table>
             </div>
-            <span class="hint">Rouge : patch demain, aujourd'hui ou en retard · orange : dans 7 jours ou moins · alerte une fois par seuil. « Patché » : dernier patch = aujourd'hui, prochain = aujourd'hui + fréquence. Fichier patches.json, hors Git.</span>
+            <div class="patch-legend" title="Une alerte par seuil : au passage à l'orange, puis au rouge">
+                <span><i class="lg-dot lg-rouge"></i>en retard, aujourd'hui ou demain</span>
+                <span><i class="lg-dot lg-orange"></i>7 jours ou moins, ou à planifier</span>
+                <span><i class="lg-dot lg-vert"></i>plus tard</span>
+                <span class="lg-sep"></span>
+                <span><b>Patché</b> dernier = aujourd'hui, prochain = + fréquence</span>
+                <span><b>Vérifier</b> ssh par clé, lecture seule</span>
+                <span class="grow"></span>
+                <span class="lg-file"><code>patches.json</code> · hors Git</span>
+            </div>
         </div>
     </div>
 

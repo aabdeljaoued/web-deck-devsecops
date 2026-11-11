@@ -418,6 +418,28 @@ function handle(msg) {
         case "patches":
             state.patches = msg.vms;
             renderPatches();
+            if (!$("#agenda").hidden) send({ t: "agenda" });
+            break;
+        case "patch-checking":
+            for (const id of msg.ids) patchChecking.add(id);
+            renderPatches();
+            break;
+        case "patch-checked":
+            for (const id of msg.ids) patchChecking.delete(id);
+            renderPatches();
+            break;
+        case "agenda":
+            agendaEvents = msg.events;
+            renderAgenda();
+            if (msg.ics) {
+                downloadText(msg.ics, `echeances-${new Date().toISOString().slice(0, 10)}.ics`, "text/calendar;charset=utf-8");
+                toast(`${msg.events.length} échéance(s) exportée(s) : ouvre le fichier .ics (Téléchargements) avec Outlook ou Google Agenda`, "ok");
+            }
+            break;
+        case "summary":
+            summaryMarkdown = msg.markdown;
+            $("#summary-view").innerHTML = toHtml(msg.markdown);   // HTML échappé par markdown.js
+            $("#summary-refresh").disabled = false;
             break;
         case "patch-saved":
             patchPending = false;
@@ -559,7 +581,7 @@ function numberKeys() {
     });
 }
 
-const dialogOpen = () => ["#settings", "#vault", "#favdialog", "#palette", "#picker", "#duplicate", "#params", "#player", "#report", "#docs", "#patches"].some((id) => $(id) && !$(id).hidden);
+const dialogOpen = () => ["#settings", "#vault", "#favdialog", "#palette", "#picker", "#duplicate", "#params", "#player", "#report", "#docs", "#patches", "#agenda", "#summary"].some((id) => $(id) && !$(id).hidden);
 
 // Phase de capture : avant le terminal (sinon ⌥1 taperait « ¡ » sur macOS)
 document.addEventListener("keydown", (ev) => {
@@ -1783,7 +1805,9 @@ function renderCertsPanel(checking = false) {
         textContent: checking ? "vérification en cours…" : `vérifié à ${new Date(s.checked ?? Date.now()).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })} · ensuite toutes les 30 min` });
     const again = Object.assign(document.createElement("button"), { type: "button", className: "picker-action", textContent: "Vérifier maintenant" });
     again.addEventListener("click", () => { renderCertsPanel(true); send({ t: "press", id: "certs" }); });
-    foot.append(" ", again);
+    const cal = Object.assign(document.createElement("button"), { type: "button", className: "picker-action", textContent: "Calendrier", title: "Échéances (certificats et patchs), export Outlook" });
+    cal.addEventListener("click", openAgenda);
+    foot.append(" ", again, " ", cal);
     $("#picker").classList.add("certs-panel");
     $("#picker").replaceChildren(...sections, foot);
     placePicker();
@@ -1833,6 +1857,9 @@ function paletteEntries() {
         entries.push({ key: { label: m.name, icon: "lucide-briefcase", color: m.color || "#00897b" }, where: "Mission", detail: active ? "mission active : Entrée pour la désactiver" : "activer cette mission", hay: `mission ${m.name}`.toLowerCase(), run: () => send({ t: "mission-activate", id: active ? "" : m.id }) });
     }
     entries.push({ key: { type: "vault", label: "Coffre : notes et secrets", icon: "lock", color: "#5c6bc0" }, where: "Coffre", detail: "notes et secrets chiffrés", hay: "coffre vault notes secrets mots de passe tokens password" });
+    entries.push({ key: { label: "Échéances", icon: "lucide-calendar-check", color: "#00838F" }, where: "Suivi", detail: "calendrier des patchs et certificats, export Outlook (.ics)", hay: "echeances calendrier agenda outlook ics patchs certificats expiration", run: openAgenda });
+    entries.push({ key: { label: "Synthèse du client", icon: "lucide-clipboard-list", color: "#00838F" }, where: "Suivi", detail: "état de la mission : certificats, patchs, échéances, actions en production", hay: "synthese client mission etat parc point hebdo comite", run: openSummary });
+    entries.push({ key: { label: "Rapport d'intervention", icon: "lucide-file-text", color: "#00838F" }, where: "Suivi", detail: "compte rendu d'une période (journal, sessions, patchs, état du parc)", hay: "rapport intervention compte rendu", run: openReport });
     for (const [page, keys] of Object.entries(state.pages)) {
         for (const key of keys) {
             if (!key || ["status", "back", "clear", "fav-edit"].includes(key.type)) continue;
@@ -3212,6 +3239,58 @@ function worldChoices() {
         .map((box) => [box.dataset.id, box.checked]));
 }
 
+// ---------- Réglages : une section à la fois, menu à gauche ----------
+
+/** Sections regroupées dans le menu (titre de la section = sa légende dans index.html). */
+const SETTINGS_GROUPS = [
+    ["Personnaliser", ["Apparence", "Navigation", "Rubriques", "Mes actions", "Missions"]],
+    ["Traçabilité", ["Journal des actions", "Enregistrements de sessions"]],
+    ["Données", ["Favoris", "Coffre", "Sauvegardes", "Configuration complète"]],
+    ["Système", ["Serveur"]]
+];
+let settingsTab = (() => { try { return localStorage.getItem("deck-settings-tab") || "Apparence"; } catch { return "Apparence"; } })();
+const settingsSections = () => [...document.querySelectorAll("#settings-pane > fieldset.settings-group")];
+const sectionName = (fs) => fs.querySelector(":scope > legend")?.textContent.trim() ?? "";
+
+function renderSettingsNav() {
+    const byName = new Map(settingsSections().map((fs) => [sectionName(fs), fs]));
+    const nav = $("#settings-nav");
+    nav.replaceChildren();
+    const placed = new Set();
+    const button = (name) => {
+        placed.add(name);
+        const b = Object.assign(document.createElement("button"), { type: "button", className: `settings-tab${name === settingsTab ? " on" : ""}`, textContent: name });
+        b.setAttribute("aria-current", String(name === settingsTab));
+        b.addEventListener("click", () => showSettingsTab(name));
+        return b;
+    };
+    for (const [group, names] of SETTINGS_GROUPS) {
+        const present = names.filter((n) => byName.has(n));
+        if (!present.length) continue;
+        nav.append(Object.assign(document.createElement("span"), { className: "settings-nav-group", textContent: group }), ...present.map(button));
+    }
+    // Section ajoutée plus tard sans être rangée dans un groupe : en fin de menu plutôt qu'invisible
+    const rest = [...byName.keys()].filter((n) => !placed.has(n));
+    if (rest.length) nav.append(Object.assign(document.createElement("span"), { className: "settings-nav-group", textContent: "Autres" }), ...rest.map(button));
+}
+
+/** Affiche une section (par sa légende), garde le choix pour la prochaine ouverture. */
+function showSettingsTab(name) {
+    const sections = settingsSections();
+    if (!sections.some((fs) => sectionName(fs) === name)) name = sectionName(sections[0]);
+    settingsTab = name;
+    try { localStorage.setItem("deck-settings-tab", name); } catch { /* stockage indisponible : choix non retenu */ }
+    for (const fs of sections) fs.hidden = sectionName(fs) !== name;
+    renderSettingsNav();
+    $("#settings-pane").scrollTop = 0;
+}
+
+// Champ invalide dans une section cachée (ex. délai de retour à l'accueil) : la section s'affiche pour le montrer
+$("#settings-form").addEventListener("invalid", (ev) => {
+    const fs = ev.target.closest("fieldset.settings-group");
+    if (fs?.hidden) showSettingsTab(sectionName(fs));
+}, true);
+
 function openSettings() {
     $("#set-autohome").value = state.settings.autoHomeSeconds;
     $("#set-autohome-on").checked = state.settings.autoHomeEnabled !== false;
@@ -3239,7 +3318,7 @@ function openSettings() {
     refreshVaultIo();
     // Pas de focus sur un champ : le premier clic doit agir directement (sinon il ne sert qu'à quitter ce champ)
     document.activeElement?.blur();
-    $(".settings-box").scrollTop = 0;
+    showSettingsTab(settingsTab);
 }
 
 // ---------- Configuration complète (Réglages) : favoris, Mes actions, réglages et missions, signature ----------
@@ -3612,6 +3691,40 @@ async function showDoc(page) {
 let patchEditing = null;   // VM en cours de modification (null = nouvelle)
 const patchFilter = { env: null, tags: new Set() };   // filtres de l'inventaire (environnement, tags combinés)
 let patchPending = false;  // formulaire envoyé, en attente du serveur
+const patchChecking = new Set();   // VMs en cours de vérification (ssh, lecture seule)
+
+/** « il y a 2 h » / « hier » à partir d'une date ISO. */
+function ago(iso) {
+    const min = Math.round((Date.now() - Date.parse(iso)) / 60000);
+    if (min < 1) return "à l'instant";
+    if (min < 60) return `il y a ${min} min`;
+    if (min < 24 * 60) return `il y a ${Math.round(min / 60)} h`;
+    const d = Math.round(min / 1440);
+    return d === 1 ? "hier" : `il y a ${d} j`;
+}
+
+/** Ligne « dernière vérification » d'une VM (bouton Vérifier). */
+function patchCheckLine(vm) {
+    const div = Object.assign(document.createElement("div"), { className: "patch-check" });
+    if (patchChecking.has(vm.id)) {
+        div.classList.add("checking");
+        div.textContent = "⏳ vérification en cours (ssh, lecture seule)…";
+        return div;
+    }
+    const c = vm.check;
+    if (!c) return "";
+    if (c.error) {
+        div.classList.add("err");
+        div.textContent = `⚠ ${c.error} · ${ago(c.at)}`;
+        return div;
+    }
+    const sec = c.security ? ` dont ${c.security} de sécurité` : "";
+    const todo = c.updates === null ? "mises à jour : inconnu" : c.updates ? `${c.updates} MAJ en attente${sec}` : "à jour";
+    div.classList.add(c.reboot || c.security ? "warn" : c.updates ? "info" : "ok");
+    div.textContent = `${c.reboot || c.security ? "⚠" : c.updates ? "↻" : "✓"} ${todo}${c.reboot ? " · reboot requis" : ""} · ${(c.os || "?").replace(/\s*\(.*\)$/, "").replace(/^Red Hat Enterprise Linux/, "RHEL")} · ${ago(c.at)}`;
+    div.title = [`Vérifié le ${new Date(c.at).toLocaleString("fr-FR")}`, c.os, c.kernel && `noyau ${c.kernel}`, c.uptimeDays !== null && `démarrée depuis ${c.uptimeDays} j`, c.manager && `gestionnaire ${c.manager}`].filter(Boolean).join("\n");
+    return div;
+}
 
 const frDate = (d) => (d ? d.split("-").reverse().join("/") : "—");
 const patchDays = (vm) => {
@@ -3656,7 +3769,7 @@ function renderPatches() {
         const del = btn("Supprimer", "Retirer cette VM de l'inventaire", (ev) => armOrRun(ev.target, "Confirmer ?", () => send({ t: "patch-delete", id: vm.id })), "danger");
         tr.append(
             cell(Object.assign(document.createElement("span"), { className: "patch-dot", textContent: level === "rouge" ? "🔴" : level === "orange" ? "🟠" : "🟢" })),
-            cell([name, " ", env, ...tags.flatMap((t) => [" ", t]), host]),
+            cell([name, " ", env, ...tags.flatMap((t) => [" ", t]), host, patchCheckLine(vm)]),
             cell(vm.description || "—", "patch-desc"),
             cell(`${frDate(vm.lastPatch)}${vm.everyDays ? ` · tous les ${vm.everyDays} j` : ""}`),
             cell([next, when]),
@@ -3667,6 +3780,7 @@ function renderPatches() {
                     const key = vm.identity ? `-i ${/\s/.test(vm.identity) ? `"${vm.identity}"` : vm.identity} ` : "";
                     typeInTerminal(`ssh ${key}${vm.host || vm.name}`);
                 }),
+                btn(patchChecking.has(vm.id) ? "…" : "Vérifier", "Se connecte en ssh (sans mot de passe) et lit, sans rien modifier : mises à jour en attente dont sécurité, reboot requis, OS, noyau", () => send({ t: "patch-check", id: vm.id })),
                 btn("Modifier", "", () => openPatchForm(vm)),
                 del
             ], "patch-actions")
@@ -3790,6 +3904,90 @@ function patchAlert(alerts) {
     }
 }
 
+// ---------- Échéances (calendrier) et synthèse du client ----------
+
+let agendaEvents = [];
+const monthStart = (d) => new Date(d.getFullYear(), d.getMonth(), 1);
+let agendaMonth = monthStart(new Date());
+let summaryMarkdown = "";
+const isoDay = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+function openAgenda() {
+    $("#patches").hidden = true;
+    $("#picker").hidden = true;
+    $("#agenda").hidden = false;
+    agendaMonth = monthStart(new Date());
+    send({ t: "agenda" });
+    renderAgenda();
+}
+
+/** Étiquette d'une échéance (calendrier, liste) : couleur par type, contour par environnement, niveau d'urgence. */
+function agendaChip(e, short = false) {
+    const chip = Object.assign(document.createElement("span"), {
+        className: `ag-chip ${e.kind === "patch" ? "ag-patch" : "ag-cert"} lvl-${e.level}${e.env === "production" ? " ag-prod" : ""}`,
+        textContent: short ? e.title.replace(/^Patch /, "").replace(/^Expiration du certificat /, "🔒 ") : e.title,
+        title: `${e.title} (${e.env})${e.detail ? `\n${e.detail}` : ""}`
+    });
+    if (e.kind === "patch") {
+        chip.classList.add("clickable");
+        chip.addEventListener("click", () => {
+            $("#agenda").hidden = true;
+            openPatches();
+            $("#patch-search").value = e.title.replace(/^Patch /, "");
+            renderPatches();
+        });
+    }
+    return chip;
+}
+
+function renderAgenda() {
+    if ($("#agenda").hidden) return;
+    const today = isoDay(new Date());
+    const y = agendaMonth.getFullYear(), m = agendaMonth.getMonth();
+    $("#agenda-title").textContent = agendaMonth.toLocaleDateString("fr-FR", { month: "long", year: "numeric" });
+    const byDay = new Map();
+    for (const e of agendaEvents) byDay.set(e.date, [...(byDay.get(e.date) ?? []), e]);
+    const cells = ["lun.", "mar.", "mer.", "jeu.", "ven.", "sam.", "dim."].map((d) => Object.assign(document.createElement("div"), { className: "ag-head", textContent: d }));
+    const first = new Date(y, m, 1);
+    const offset = (first.getDay() + 6) % 7;   // lundi en premier
+    const days = new Date(y, m + 1, 0).getDate();
+    const total = Math.ceil((offset + days) / 7) * 7;
+    for (let i = 0; i < total; i++) {
+        const d = new Date(y, m, 1 - offset + i);
+        const key = isoDay(d);
+        const cell = Object.assign(document.createElement("div"), { className: `ag-day${d.getMonth() !== m ? " other" : ""}${key === today ? " today" : ""}${d.getDay() === 0 || d.getDay() === 6 ? " weekend" : ""}` });
+        cell.append(Object.assign(document.createElement("span"), { className: "ag-num", textContent: d.getDate() }));
+        const list = byDay.get(key) ?? [];
+        for (const e of list.slice(0, 3)) cell.append(agendaChip(e, true));
+        if (list.length > 3) cell.append(Object.assign(document.createElement("span"), { className: "ag-more", textContent: `+${list.length - 3}`, title: list.slice(3).map((e) => e.title).join("\n") }));
+        cells.push(cell);
+    }
+    $("#agenda-grid").replaceChildren(...cells);
+    // Liste : en retard, puis les 60 prochains jours
+    const limit = isoDay(new Date(Date.now() + 60 * 86400000));
+    const late = agendaEvents.filter((e) => e.date < today);
+    const soon = agendaEvents.filter((e) => e.date >= today && e.date <= limit);
+    const item = (e) => {
+        const li = document.createElement("li");
+        const days = Math.round((Date.parse(`${e.date}T00:00:00`) - Date.parse(`${today}T00:00:00`)) / 86400000);
+        li.append(Object.assign(document.createElement("span"), { className: "ag-date", textContent: `${frDate(e.date)} · ${days < 0 ? (e.kind === "certificat" ? `expiré depuis ${-days} j` : `${-days} j de retard`) : days === 0 ? "aujourd'hui" : `J-${days}`}` }),
+            agendaChip(e), Object.assign(document.createElement("span"), { className: `patch-env env-${e.env}`, textContent: e.env }));
+        return li;
+    };
+    const items = [...late.map(item), ...soon.map(item)];
+    if (!items.length) items.push(Object.assign(document.createElement("li"), { className: "hint", textContent: agendaEvents.length ? "rien dans les 60 prochains jours" : "aucune échéance : ajoute des VMs (Patchs) ou des certificats (mission)" }));
+    $("#agenda-list").replaceChildren(...items);
+    const prod = soon.filter((e) => e.env === "production").length;
+    $("#agenda-summary").textContent = `${soon.length} dans les 60 jours${prod ? ` dont ${prod} en production` : ""}${late.length ? ` · ${late.length} en retard` : ""}`;
+}
+
+function openSummary() {
+    $("#summary").hidden = false;
+    $("#summary-refresh").disabled = true;
+    if (!summaryMarkdown) $("#summary-view").innerHTML = '<p class="hint">calcul de la synthèse…</p>';
+    send({ t: "summary" });
+}
+
 // ---------- Rapport d'intervention ----------
 
 function reportFrom() {
@@ -3856,6 +4054,38 @@ $("#rec").addEventListener("click", toggleRec);
 $("#rec-open").addEventListener("click", () => send({ t: "rec-open" }));
 $("#report-open").addEventListener("click", openReport);
 $("#patch-new").addEventListener("click", () => openPatchForm());
+// Champs de date : un clic n'importe où dans le champ ouvre le calendrier (pas seulement sur la petite icône)
+document.addEventListener("click", (ev) => {
+    const input = ev.target.closest?.('input[type="date"], input[type="datetime-local"]');
+    if (!input || input.disabled || input.readOnly) return;
+    try { input.showPicker(); } catch { /* navigateur sans showPicker : icône du champ */ }
+});
+$("#patch-check-all").addEventListener("click", () => {
+    if (!(state.patches ?? []).length) return toast("aucune VM à vérifier");
+    send({ t: "patch-check", all: true });
+    toast(`vérification de ${state.patches.length} VM(s) en ssh (lecture seule)…`);
+});
+$("#patch-agenda").addEventListener("click", openAgenda);
+$("#agenda-close").addEventListener("click", () => { $("#agenda").hidden = true; });
+$("#agenda").addEventListener("mousedown", (ev) => { if (ev.target.id === "agenda") $("#agenda").hidden = true; });
+$("#agenda").addEventListener("keydown", (ev) => { ev.stopPropagation(); if (ev.key === "Escape") { ev.preventDefault(); $("#agenda").hidden = true; } });
+$("#agenda-prev").addEventListener("click", () => { agendaMonth = new Date(agendaMonth.getFullYear(), agendaMonth.getMonth() - 1, 1); renderAgenda(); });
+$("#agenda-next").addEventListener("click", () => { agendaMonth = new Date(agendaMonth.getFullYear(), agendaMonth.getMonth() + 1, 1); renderAgenda(); });
+$("#agenda-today").addEventListener("click", () => { agendaMonth = monthStart(new Date()); renderAgenda(); });
+$("#agenda-ics").addEventListener("click", () => send({ t: "agenda", ics: true }));
+$("#agenda-summary-open").addEventListener("click", () => { $("#agenda").hidden = true; openSummary(); });
+$("#summary-close").addEventListener("click", () => { $("#summary").hidden = true; });
+$("#summary").addEventListener("mousedown", (ev) => { if (ev.target.id === "summary") $("#summary").hidden = true; });
+$("#summary").addEventListener("keydown", (ev) => { ev.stopPropagation(); if (ev.key === "Escape") { ev.preventDefault(); $("#summary").hidden = true; } });
+$("#summary-refresh").addEventListener("click", openSummary);
+$("#summary-copy").addEventListener("click", () => {
+    navigator.clipboard.writeText(summaryMarkdown).then(() => toast("synthèse copiée (Markdown)", "ok"), () => toast("copie refusée par le navigateur"));
+});
+$("#summary-download").addEventListener("click", () => {
+    const name = `synthese-${new Date().toISOString().slice(0, 10)}.md`;
+    downloadText(summaryMarkdown, name, "text/markdown;charset=utf-8");
+    toast(`synthèse enregistrée : ${name} (dans Téléchargements)`, "ok");
+});
 $("#patch-import").addEventListener("click", () => $("#patch-import-file").click());
 $("#patch-import-file").addEventListener("change", (ev) => readPatchFile(ev.target.files[0]));
 $("#patch-import-ok").addEventListener("click", () => { if (patchImportCsv) send({ t: "patch-import", csv: patchImportCsv, dryRun: false }); });

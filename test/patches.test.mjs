@@ -8,7 +8,7 @@ import { tmpDir } from "./helpers.mjs";
 
 test("VM : champs vérifiés, prochain patch déduit du dernier et de la fréquence", () => {
     const vm = cleanVm({ name: " app-prod-01 ", env: "production", lastPatch: "2026-10-01", everyDays: 30, description: "API\npaiement" });
-    assert.deepEqual(vm, { name: "app-prod-01", host: "", identity: "", env: "production", description: "API paiement", tags: [], lastPatch: "2026-10-01", nextPatch: "2026-10-31", everyDays: 30 });
+    assert.deepEqual(vm, { name: "app-prod-01", host: "", identity: "", env: "production", description: "API paiement", tags: [], lastPatch: "2026-10-01", nextPatch: "2026-10-31", everyDays: 30, check: null });
     // Tags libres : séparés par virgule, espace ou |, en minuscules, sans doublon
     assert.deepEqual(cleanVm({ name: "a", nextPatch: "2026-12-01", tags: "Linux, DMZ  critique|#linux" }).tags, ["linux", "dmz", "critique"]);
     assert.throws(() => cleanVm({ name: "a", nextPatch: "2026-12-01", tags: "ok, pas<bon>" }), /tag invalide/);

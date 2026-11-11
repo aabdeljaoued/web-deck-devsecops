@@ -117,6 +117,15 @@ const allowedOrigins = new Set([...allowedHosts].map((h) => `http://${h}`));
 // ---------- Fichiers statiques ----------
 
 const nm = (p) => path.join(ROOT, "node_modules", p);
+const PUBLIC = {
+    "/manifest.webmanifest": [path.join(ROOT, "public", "manifest.webmanifest"), "application/manifest+json"],
+    "/sw.js": [path.join(ROOT, "public", "sw.js"), "text/javascript; charset=utf-8"],
+    "/img/icon-192.png": [path.join(ROOT, "public", "img", "icon-192.png"), "image/png"],
+    "/img/icon-512.png": [path.join(ROOT, "public", "img", "icon-512.png"), "image/png"],
+    "/img/icon-maskable-512.png": [path.join(ROOT, "public", "img", "icon-maskable-512.png"), "image/png"],
+    "/img/icon.svg": [path.join(ROOT, "public", "img", "icon.svg"), "image/svg+xml"]
+};
+
 const STATIC = {
     "/": [path.join(ROOT, "public", "index.html"), "text/html; charset=utf-8"],
     "/app.js": [path.join(ROOT, "public", "app.js"), "text/javascript; charset=utf-8"],
@@ -157,6 +166,10 @@ const server = http.createServer((req, res) => {
             "Set-Cookie": `${COOKIE}=${token}; HttpOnly; SameSite=Strict; Path=/`
         });
     }
+    // Application installable (PWA) : manifeste, service worker et icônes lisibles sans jeton (le navigateur les
+    // charge sans cookie) ; ils ne contiennent rien de sensible. Tout le reste exige le jeton.
+    const pub = req.method === "GET" && PUBLIC[url.pathname];
+    if (pub) return send(res, 200, readFileSync(pub[0]), pub[1], url.pathname === "/sw.js" ? { "Service-Worker-Allowed": "/", "Cache-Control": "no-cache" } : {});
     if (!sameToken(cookieToken(req))) {
         return send(res, 401, `Accès refusé : ouvre l'adresse affichée par le serveur au démarrage (avec ?token=...).`);
     }
@@ -168,6 +181,14 @@ const server = http.createServer((req, res) => {
     if (req.method === "GET" && url.pathname === "/signature.png") {
         if (!existsSync(SIGNATURE_FILE)) return send(res, 404, "Introuvable");
         return send(res, 200, readFileSync(SIGNATURE_FILE), "image/png", { "Cache-Control": "no-cache" });
+    }
+    // Documentation (docs/, Doc as Code) : pages .md et images, noms contrôlés (aucun chemin)
+    const doc = req.method === "GET" && /^\/docs\/([A-Za-z0-9_-]+\.md|img\/[A-Za-z0-9_.-]+\.(?:jpe?g|png|svg|gif))$/.exec(url.pathname);
+    if (doc) {
+        const file = path.join(ROOT, "docs", ...doc[1].split("/"));
+        if (doc[1].includes("..") || !existsSync(file)) return send(res, 404, "Introuvable");
+        const type = { md: "text/markdown; charset=utf-8", jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", svg: "image/svg+xml", gif: "image/gif" }[doc[1].split(".").pop()];
+        return send(res, 200, readFileSync(file), type, { "Cache-Control": "no-cache" });
     }
     const entry = req.method === "GET" && STATIC[url.pathname];
     if (!entry) return send(res, 404, "Introuvable");

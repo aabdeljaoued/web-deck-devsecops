@@ -8,7 +8,7 @@
 export const sanitize = (s) => String(s ?? "").replace(/\t/g, "    ").replace(/[\u0000-\u0009\u000b-\u001f\u007f-\u009f]/g, "");
 
 /** Découpe en blocs : { type, ... } (titre, code, liste, citation, tableau, séparateur, paragraphe, vide). */
-export function parse(markdown) {
+export function parse(markdown, { join = false } = {}) {
     const lines = sanitize(markdown).replace(/\r\n?/g, "\n").split("\n");
     const blocks = [];
     for (let i = 0; i < lines.length; i++) {
@@ -38,6 +38,11 @@ export function parse(markdown) {
             blocks.push({ type: "table", rows });
             continue;
         }
+        // join (documentation) : lignes consécutives d'un paragraphe ou d'un élément de liste réunies, comme en
+        // Markdown standard ; les notes du coffre gardent une ligne par paragraphe
+        const prev = blocks.at(-1);
+        if (join && line.trim() && prev?.type === "para") { prev.text += ` ${line.trim()}`; continue; }
+        if (join && /^\s{2,}\S/.test(line) && prev?.type === "item") { prev.text += ` ${line.trim()}`; continue; }
         blocks.push(line.trim() ? { type: "para", text: line } : { type: "blank" });
     }
     return blocks;
@@ -102,8 +107,19 @@ export function toAnsi(markdown, title = "", cols = 80) {
 
 const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
-function inlineHtml(text) {
-    return protectCode(esc(text), (c) => `<code>${c}</code>`, (t) => t
+/**
+ * Options de la documentation (docs/) : images de docs/img et liens entre pages (data-doc, suivis par la page) ;
+ * jamais pour les notes du coffre.
+ */
+function docsInline(t, docs) {
+    if (!docs) return t;
+    return t
+        .replace(/!\[([^\]]*)\]\((img\/[\w.-]+\.(?:jpe?g|png|svg|gif))\)/g, '<img src="/docs/$2" alt="$1" loading="lazy">')
+        .replace(/\[([^\]]+)\]\(([\w-]+\.md)(#[^)\s]*)?\)/g, '<a href="#" data-doc="$2">$1</a>');
+}
+
+function inlineHtmlBase(text, docs = false) {
+    return protectCode(esc(text), (c) => `<code>${c}</code>`, (t) => docsInline(t, docs)
         .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)"]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
         .replace(/\*\*([^*]+)\*\*|__([^_]+)__/g, (_, a, b) => `<strong>${a ?? b}</strong>`)
         .replace(/~~([^~]+)~~/g, "<del>$1</del>")
@@ -111,9 +127,11 @@ function inlineHtml(text) {
         .replace(/(^|[\s(])_([^_\s][^_]*)_/g, "$1<em>$2</em>"));
 }
 
-export function toHtml(markdown) {
+/** HTML de l'aperçu ; { docs: true } pour la documentation (images de docs/img, liens entre pages). */
+export function toHtml(markdown, { docs = false } = {}) {
+    const inlineHtml = (t) => inlineHtmlBase(t, docs);
     const html = [];
-    for (const b of parse(markdown)) {
+    for (const b of parse(markdown, { join: docs })) {
         if (b.type === "heading") html.push(`<h${b.level}>${inlineHtml(b.text)}</h${b.level}>`);
         // Une ligne de code par <span> : cliquable dans l'aperçu (tapée dans le terminal) ; le texte copié reste le même
         else if (b.type === "code") html.push(`<pre${b.lang ? ` data-lang="${esc(b.lang)}"` : ""}><code>${b.lines.map((l) => `<span class="md-code-line">${esc(l)}</span>`).join("\n")}</code></pre>`);

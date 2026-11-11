@@ -42,3 +42,22 @@ test("aperçu : une ligne de code par élément (cliquable), texte du bloc incha
     assert.equal((html.match(/class="md-code-line"/g) ?? []).length, 2);
     assert.match(html, /<span class="md-code-line">kubectl get pods<\/span>\n<span class="md-code-line">kubectl get svc<\/span>/);
 });
+
+test("documentation : images de docs/img et liens entre pages, seulement avec { docs: true }", () => {
+    const md = "![Accueil](img/accueil.jpg)\n\nVoir [Coffre](05-coffre.md#secrets) et [site](https://example.test).\n\n![x](../secret.png) ![y](http://evil.test/a.png)";
+    const docs = toHtml(md, { docs: true });
+    assert.match(docs, /<img src="\/docs\/img\/accueil\.jpg" alt="Accueil" loading="lazy">/);
+    assert.match(docs, /<a href="#" data-doc="05-coffre\.md">Coffre<\/a>/);
+    assert.match(docs, /<a href="https:\/\/example\.test" target="_blank"/);
+    assert.equal((docs.match(/<img/g) ?? []).length, 1, "seules les images de img/ sont affichées");
+    const note = toHtml(md);
+    assert.ok(!note.includes("<img") && !note.includes("data-doc"), "rien de tout cela dans une note du coffre");
+});
+
+test("documentation : lignes d'un paragraphe et d'un élément de liste réunies (pas dans les notes)", () => {
+    const md = "Une phrase **coupée\nen deux** lignes.\n\n- élément sur\n  deux lignes";
+    const docs = toHtml(md, { docs: true });
+    assert.match(docs, /<p>Une phrase <strong>coupée en deux<\/strong> lignes\.<\/p>/);
+    assert.match(docs, /élément sur deux lignes/);
+    assert.equal((toHtml(md).match(/<p>/g) ?? []).length, 3, "notes : une ligne par paragraphe, comme avant");
+});

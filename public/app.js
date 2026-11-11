@@ -534,7 +534,7 @@ function numberKeys() {
     });
 }
 
-const dialogOpen = () => ["#settings", "#vault", "#favdialog", "#palette", "#picker", "#duplicate", "#params", "#player", "#report"].some((id) => $(id) && !$(id).hidden);
+const dialogOpen = () => ["#settings", "#vault", "#favdialog", "#palette", "#picker", "#duplicate", "#params", "#player", "#report", "#docs"].some((id) => $(id) && !$(id).hidden);
 
 // Phase de capture : avant le terminal (sinon ⌥1 taperait « ¡ » sur macOS)
 document.addEventListener("keydown", (ev) => {
@@ -3485,6 +3485,40 @@ function applyShare(on, announce = false) {
     if (announce) toast(on ? "mode partage d'écran : informations du client floutées (survol pour afficher)" : "mode partage d'écran désactivé", "ok");
 }
 
+// ---------- Documentation (docs/, Doc as Code) ----------
+
+/** Ouvre la documentation : sommaire à gauche (liens du sommaire docs/README.md), page à droite. */
+async function openDocs(page = "README.md") {
+    $("#docs").hidden = false;
+    if (!$("#docs-nav").childElementCount) {
+        try {
+            const summary = await (await fetch("/docs/README.md")).text();
+            const links = [["README.md", "Accueil de la documentation"], ...[...summary.matchAll(/^\d+\.\s+\[([^\]]+)\]\(([\w-]+\.md)\)/gm)].map((m) => [m[2], m[1]])];
+            $("#docs-nav").replaceChildren(...links.map(([file, label]) => {
+                const a = Object.assign(document.createElement("a"), { href: "#", textContent: label });
+                a.dataset.doc = file;
+                return a;
+            }));
+        } catch { /* sommaire indisponible : la page s'affiche quand même */ }
+    }
+    showDoc(page);
+}
+
+async function showDoc(page) {
+    const box = $("#docs-content");
+    try {
+        const res = await fetch(`/docs/${page}`);
+        if (!res.ok) throw new Error(`page introuvable : ${page}`);
+        const md = await res.text();
+        box.innerHTML = toHtml(md, { docs: true });   // texte échappé par markdown.js ; images et liens limités à docs/
+        $("#docs-title").textContent = /^#\s+(.+)$/m.exec(md)?.[1] ?? "Documentation";
+    } catch (err) {
+        box.textContent = err.message;
+    }
+    box.scrollTop = 0;
+    for (const a of $("#docs-nav").querySelectorAll("a")) a.classList.toggle("on", a.dataset.doc === page);
+}
+
 // ---------- Rapport d'intervention ----------
 
 function reportFrom() {
@@ -3550,6 +3584,20 @@ $("#broadcast").addEventListener("click", toggleBroadcast);
 $("#rec").addEventListener("click", toggleRec);
 $("#rec-open").addEventListener("click", () => send({ t: "rec-open" }));
 $("#report-open").addEventListener("click", openReport);
+$("#docs-open").addEventListener("click", () => openDocs());
+$("#docs-close").addEventListener("click", () => { $("#docs").hidden = true; });
+$("#docs").addEventListener("mousedown", (ev) => { if (ev.target.id === "docs") $("#docs").hidden = true; });
+// Liens entre pages (sommaire et contenu) : suivis dans la fenêtre
+$("#docs").addEventListener("click", (ev) => {
+    const a = ev.target.closest("a[data-doc]");
+    if (!a) return;
+    ev.preventDefault();
+    showDoc(a.dataset.doc);
+});
+$("#docs").addEventListener("keydown", (ev) => {
+    ev.stopPropagation();
+    if (ev.key === "Escape") { ev.preventDefault(); $("#docs").hidden = true; }
+});
 // Nom de secret sans espace : chaque espace tapé devient un tiret (curseur conservé)
 $("#secret-name").addEventListener("input", (ev) => {
     const el = ev.target;
@@ -3633,6 +3681,26 @@ $("#params-form").addEventListener("keydown", (ev) => {
 });
 $("#note-to-terminal").addEventListener("click", noteToTerminal);
 $("#settings-open").addEventListener("click", openSettings);
+// Application installable (Edge / Chrome : « Installer ce site en tant qu'application ») ; le navigateur reste utilisable
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
+// Le navigateur signale que le deck est installable : bouton « Installer l'application » (Réglages › Serveur)
+let installPrompt = null;
+const standalone = () => window.matchMedia("(display-mode: standalone)").matches;
+function refreshInstall() {
+    $("#install-app").hidden = !installPrompt || standalone();
+    $("#install-state").textContent = standalone() ? "Ouvert comme application installée (le navigateur reste utilisable en parallèle)."
+        : installPrompt ? "" : "Application : dans Edge ou Chrome, menu ⋯ › Applications › Installer ce site en tant qu'application.";
+}
+window.addEventListener("beforeinstallprompt", (ev) => { ev.preventDefault(); installPrompt = ev; refreshInstall(); });
+window.addEventListener("appinstalled", () => { installPrompt = null; refreshInstall(); toast("application installée : icône dans le menu Démarrer / le Launchpad", "ok"); });
+$("#install-app").addEventListener("click", async () => {
+    if (!installPrompt) return;
+    installPrompt.prompt();
+    await installPrompt.userChoice.catch(() => null);
+    installPrompt = null;
+    refreshInstall();
+});
+refreshInstall();
 $("#share-mode").addEventListener("click", () => applyShare(!document.body.classList.contains("share-mode"), true));
 applyShare(loadPref("deck-share") === "1");
 $("#mission-switch").addEventListener("change", (ev) => send({ t: "mission-activate", id: ev.target.value }));

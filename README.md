@@ -12,6 +12,20 @@ start.command  lanceur macOS (double-clic dans le Finder)
 start.sh       lanceur macOS / Linux en ligne de commande
 ```
 
+## Documentation
+
+Le guide complet, page par page avec des captures d'écran, est dans **[docs/](docs/README.md)** (*Doc as Code* :
+mis à jour avec chaque évolution, liens et images vérifiés par `npm test`). Il s'ouvre aussi dans le deck avec le
+bouton **?** de l'en-tête.
+
+## Application installée (facultatif)
+
+Le deck peut aussi s'installer comme **application** (fenêtre à part, icône dans la barre des tâches, le menu Démarrer
+ou le Dock) : **Réglages › Serveur › Installer l'application**, ou dans Edge / Chrome **⋯ › Applications › Installer ce
+site en tant qu'application**. C'est le même deck, servi par le même service local ; le navigateur reste utilisable.
+Aucun droit admin ni `.exe` à signer. Manifeste, service worker (sans cache) et icônes sont les seuls fichiers lisibles
+sans jeton.
+
 ## Installation sous Windows sans droits admin
 
 1. **Node.js** (20 ou plus), au choix :

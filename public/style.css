@@ -1307,7 +1307,9 @@ main {
 #rec-list li { grid-template-columns: 90px minmax(0, 1fr) auto auto; }
 .rec-play { border: 1px solid var(--border); border-radius: 4px; background: var(--panel); color: var(--text); cursor: pointer; padding: 0 7px; font-size: 11px; }
 /* Panneau des certificats : lignes complètes (adresse, jours, date) */
-.picker.certs-panel { width: min(620px, 94vw); }
+.picker.certs-panel { width: min(680px, 94vw); max-height: calc(100vh - 150px); padding-bottom: 0; }
+/* Barre du bas (heure de vérification, proxy, boutons) toujours visible, même avec beaucoup de certificats */
+.picker.certs-panel > .picker-note:last-child { position: sticky; bottom: 0; margin: 6px -8px 0; padding: 8px 12px; background: var(--panel); border-top: 1px solid var(--border); }
 .picker.certs-panel .picker-item { white-space: normal; overflow: visible; text-overflow: clip; cursor: default; }
 .picker.certs-panel .picker-note .picker-action { margin-left: 6px; }
 
@@ -1509,3 +1511,5 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover, input[type="datetim
 .patch-table th[data-sort]:hover { color: var(--text); }
 .patch-table th.sorted { color: var(--accent); }
 .patch-table th[data-sort]::after { content: attr(data-arrow); margin-left: 4px; }
+.certs-hint { margin: -2px 10px 6px; font-size: 11.5px; color: var(--muted); }
+.key.status .lines.one-line .line { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; overflow-wrap: normal; }

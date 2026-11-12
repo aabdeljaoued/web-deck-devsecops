@@ -32,7 +32,8 @@ export function certLevel(env, days) {
 export function shortHost(target) {
     const host = String(target).split(":")[0].replace(/^www\d*\./i, "");
     const name = /^\d+(\.\d+){3}$/.test(host) ? host : host.split(".")[0];
-    return name.length > 10 ? `${name.slice(0, 9)}…` : name;
+    // 8 caractères au plus : une seule ligne sur la touche (sinon le pied de touche est poussé dehors)
+    return name.length > 8 ? `${name.slice(0, 7)}…` : name;
 }
 
 /**
@@ -122,8 +123,9 @@ export class StatusHub extends EventEmitter {
         const worst = prodOk[0] ?? ok[0];
         const color = { rouge: "#C62828", orange: "#EF6C00", ok: "#2E7D32" };
         const bg = worst ? color[worst.level] : "#455A64";
-        const otherIssues = ok.filter((r) => !isProd(r) && r.level !== "ok").length + failed.filter((r) => !isProd(r)).length;
-        const prodProblems = failed.filter(isProd).length + intercepted.filter(isProd).length;
+        const otherIssues = ok.filter((r) => !isProd(r) && r.level !== "ok").length;
+        // Injoignables ou masqués par le proxy (tous environnements) : comptés à part, ils ne disent rien de l'expiration
+        const unreachable = failed.length + intercepted.length;
         const day = (d) => d.toLocaleDateString("fr-FR");
         const envTag = (r) => (isProd(r) ? "[prod]" : `[${r.env}]`);
         const detail = [
@@ -134,13 +136,13 @@ export class StatusHub extends EventEmitter {
         this.checkCertAlerts(ok);
         this.publish("certs", {
             bg,
-            title: !worst ? "CERTS" : `${worst.level !== "ok" ? "⚠ " : ""}${isProd(worst) ? "CERTS PROD" : "CERTS"}`,
+            title: worst && worst.level !== "ok" ? "⚠ CERTS" : "CERTS",
             lines: worst ? [shortHost(worst.target), worst.days < 0 ? "expiré" : `${worst.days} j`] : ["hors", "d'atteinte"],
-            footer: prodProblems ? `${prodProblems}⚠ prod` : otherIssues ? `${otherIssues}⚠ hors prod` : `${ok.length} suivi(s)`,
+            footer: unreachable ? `${unreachable} à vérifier` : otherIssues ? `${otherIssues}⚠ hors prod` : `${ok.length} suivi(s)`,
             detail,
             // Liste complète pour le panneau (clic sur le voyant) : production d'abord, puis du plus urgent au moins urgent
             items: [
-                ...ok.map((r) => ({ target: r.target, env: r.env, level: r.level, days: r.days, until: r.validTo.toISOString(), trusted: r.trusted, reason: r.reason, issuer: r.issuer, via: r.via })),
+                ...ok.map((r) => ({ target: r.target, env: r.env, level: r.level, days: r.days, until: r.validTo.toISOString(), trusted: r.trusted, reason: r.reason, issuer: r.issuer, via: r.via, direct: r.direct === true })),
                 ...intercepted.map((r) => ({ target: r.target, env: r.env, intercepted: true, issuer: r.issuer, via: r.via })),
                 ...failed.map((r) => ({ target: r.target, env: r.env, error: r.error }))
             ],

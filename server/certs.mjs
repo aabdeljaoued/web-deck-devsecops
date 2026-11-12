@@ -101,13 +101,9 @@ function tunnel(proxy, host, port, deadline) {
 
 const field = (obj, key) => (Array.isArray(obj?.[key]) ? obj[key].join(", ") : obj?.[key]) ?? "";
 
-/**
- * Certificat du serveur host:port : { validTo, subject, issuer, san, trusted, reason, via, intercepted }.
- * La chaîne n'est pas exigée valide (auto-signé, autorité interne) : `trusted` / `reason` le disent.
- */
-export async function checkCert(host, port = 443, { env = process.env, timeout = TIMEOUT_MS } = {}) {
+/** Une tentative : poignée de main TLS directe, ou à travers le tunnel CONNECT du proxy. */
+async function attempt(host, port, proxy, timeout) {
     const deadline = Date.now() + timeout;
-    const proxy = proxyFor(host, port, env);
     const socket = proxy ? await tunnel(proxy, host, port, deadline) : null;
     return new Promise((resolve, reject) => {
         const options = { servername: isIP(host) ? undefined : host, rejectUnauthorized: false };
@@ -134,3 +130,35 @@ export async function checkCert(host, port = 443, { env = process.env, timeout =
         conn.once("error", (err) => reject(new Error(NET_ERRORS[err.code] ?? err.code ?? err.message)));
     });
 }
+
+/** Chemin qui a fonctionné pour chaque hôte:port ("direct" | "proxy") : essayé en premier la fois suivante. */
+const routes = new Map();
+
+/**
+ * Certificat du serveur host:port : { validTo, subject, issuer, san, trusted, reason, via, direct, intercepted }.
+ * La chaîne n'est pas exigée valide (auto-signé, autorité interne) : `trusted` / `reason` le disent.
+ * Avec un proxy : si le proxy n'atteint pas l'hôte (502/503/504, refus, proxy injoignable, délai), essai en direct
+ * (noms internes d'entreprise, joignables seulement depuis le réseau interne ou le VPN) ; le chemin qui a fonctionné
+ * est retenu pour la vérification suivante. Les deux échecs sont alors rapportés.
+ */
+export async function checkCert(host, port = 443, { env = process.env, timeout = TIMEOUT_MS } = {}) {
+    const proxy = proxyFor(host, port, env);
+    if (!proxy) return attempt(host, port, null, timeout);
+    const key = `${host}:${port}`;
+    const order = routes.get(key) === "direct" ? ["direct", "proxy"] : ["proxy", "direct"];
+    const errors = {};
+    for (const route of order) {
+        try {
+            const out = await attempt(host, port, route === "proxy" ? proxy : null, timeout);
+            routes.set(key, route);
+            return { ...out, direct: route === "direct" };
+        } catch (err) {
+            errors[route] = err.message;
+        }
+    }
+    routes.delete(key);
+    throw new Error(`par le proxy : ${errors.proxy} ; en direct : ${errors.direct}`);
+}
+
+/** Oublie les chemins retenus (tests, changement de réseau). */
+export function resetRoutes() { routes.clear(); }

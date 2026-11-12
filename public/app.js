@@ -706,7 +706,8 @@ function statusKey(id, statusId, key) {
             : s.detail ? `${s.detail}\nAppui : vérifier maintenant` : "Appui : rafraîchir";
 
     const title = Object.assign(document.createElement("span"), { className: "title", textContent: s.title });
-    const lines = Object.assign(document.createElement("span"), { className: "lines" });
+    // Certificats et patchs : nom d'hôte / de VM sur une seule ligne (tronqué), le pied de touche reste visible
+    const lines = Object.assign(document.createElement("span"), { className: `lines${["certs", "patches"].includes(statusId) ? " one-line" : ""}` });
     for (const text of s.lines) {
         const big = s.lines.length === 1 && text.length <= 4;
         lines.append(Object.assign(document.createElement("span"), { className: `line${big ? " big" : ""}`, textContent: text, title: text }));
@@ -1805,20 +1806,33 @@ function renderCertsPanel(checking = false) {
         const level = c.level ?? (c.days < 7 ? "rouge" : c.days < 30 ? "orange" : "ok");
         const dot = c.error ? "⚪" : c.intercepted ? "⚠️" : level === "rouge" ? "🔴" : level === "orange" ? "🟠" : "🟢";
         const env = c.env && c.env !== "production" ? `[${c.env}] ` : "";
-        const via = c.via ? ` · via proxy ${c.via}` : "";
-        const when = c.error ? `injoignable, ${c.error}`
-            : c.intercepted ? `certificat du proxy (${c.issuer}) : la date du site n'est pas visible d'ici${via}`
-            : `${c.days < 0 ? `expiré depuis ${-c.days} j` : `${c.days} j`} · ${new Date(c.until).toLocaleDateString("fr-FR")} · émis par ${c.issuer || "?"}${c.trusted ? "" : " · chaîne non reconnue"}${via}`;
-        return { label: `${dot} ${env}${c.target} : ${when}`, title: c.reason ? `${c.target} : ${c.reason}` : c.target, onClick: () => {}, prod: !c.error && !c.intercepted && level === "rouge" };
+        // Chemin : le proxy est indiqué une fois en bas du panneau ; ici seulement le repli en direct
+        const route = c.direct ? " · en direct" : "";
+        const when = c.error ? c.error
+            : c.intercepted ? `certificat du proxy (${c.issuer}) : la date du site n'est pas visible d'ici`
+            : `${c.days < 0 ? `expiré depuis ${-c.days} j` : `${c.days} j`} · ${new Date(c.until).toLocaleDateString("fr-FR")} · ${c.issuer || "émetteur inconnu"}${c.trusted ? "" : " · chaîne non reconnue"}${route}`;
+        const title = [c.target, c.reason, c.via && !c.direct ? `via le proxy ${c.via}` : "", c.direct ? "le proxy n'atteint pas cet hôte : certificat lu en direct" : ""].filter(Boolean).join("\n");
+        return { label: `${dot} ${env}${c.target} : ${when}`, title, onClick: () => {}, prod: !c.error && !c.intercepted && level === "rouge" };
     };
-    // Production d'abord (seuils 30 / 7 j), puis les autres environnements (14 / 3 j)
+    // Production d'abord (seuils 30 / 7 j), puis les autres environnements (14 / 3 j), puis ce qui n'a pas pu être lu
     const all = s.items ?? [];
-    const prod = all.filter((c) => (c.env ?? "production") === "production").map(row);
-    const others = all.filter((c) => (c.env ?? "production") !== "production").map(row);
-    const sections = [pickerSection(`Production · alerte à 30 et 7 jours`, prod, all.length ? "aucun certificat de production" : "aucun certificat : Réglages › Missions › Modifier › Certificats à surveiller")];
+    const readable = all.filter((c) => !c.error);
+    const failed = all.filter((c) => c.error);
+    const prod = readable.filter((c) => (c.env ?? "production") === "production").map(row);
+    const others = readable.filter((c) => (c.env ?? "production") !== "production").map(row);
+    const sections = [];
+    if (prod.length || !all.length) sections.push(pickerSection("Production · alerte à 30 et 7 jours", prod, "aucun certificat : Réglages › Missions › Modifier › Certificats à surveiller"));
     if (others.length) sections.push(pickerSection("Hors production · alerte à 14 et 3 jours", others, ""));
+    if (failed.length) {
+        sections.push(pickerSection(`Injoignables d'ici (${failed.length}) · expiration inconnue`, failed.map(row), ""));
+        sections.push(Object.assign(document.createElement("p"), { className: "picker-note certs-hint",
+            textContent: "Ni par le proxy ni en direct : hôte interne hors VPN, nom mal saisi, ou port différent (hôte:port). Vérifie l'adresse, ou lance la vérification depuis le réseau du client." }));
+    }
+    const proxies = [...new Set(all.map((c) => c.via).filter(Boolean))];
+    const direct = all.filter((c) => c.direct).length;
+    const route = proxies.length ? ` · proxy ${proxies.join(", ")}${direct ? ` (${direct} lu(s) en direct, hors d'atteinte du proxy)` : ""}` : "";
     const foot = Object.assign(document.createElement("p"), { className: "picker-note",
-        textContent: checking ? "vérification en cours…" : `vérifié à ${new Date(s.checked ?? Date.now()).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })} · ensuite toutes les 30 min` });
+        textContent: checking ? "vérification en cours…" : `vérifié à ${new Date(s.checked ?? Date.now()).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })} · ensuite toutes les 30 min${route}` });
     const again = Object.assign(document.createElement("button"), { type: "button", className: "picker-action", textContent: "Vérifier maintenant" });
     again.addEventListener("click", () => { renderCertsPanel(true); send({ t: "press", id: "certs" }); });
     const cal = Object.assign(document.createElement("button"), { type: "button", className: "picker-action", textContent: "Calendrier", title: "Échéances (certificats et patchs), export Outlook" });

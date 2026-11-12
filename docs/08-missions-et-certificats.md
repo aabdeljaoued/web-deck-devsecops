@@ -44,13 +44,15 @@ Les seuils dépendent de l'environnement :
 | Hors production | moins de 14 jours | moins de 3 jours, ou expiré | rouge seulement |
 
 Le voyant **certificats**, première touche de la rubrique **OpenSSL** (ou `cert-status` sur l'accueil via
-`config.jsonc`), affiche **le certificat de production le plus urgent** (titre **CERTS PROD**). Un problème hors
-production ne change pas sa couleur : il est signalé en bas de la touche (« 1⚠ hors prod »). Gris : aucun certificat
-suivi, ou serveurs injoignables.
+`config.jsonc`), affiche **le certificat de production le plus urgent** (nom court, jours restants). Un problème
+hors production ne change pas sa couleur : il est signalé en bas de la touche (« 1⚠ hors prod »). Les certificats
+**injoignables** (expiration inconnue) sont comptés à part : « 6 à vérifier ». Gris : aucun certificat suivi, ou
+aucun lisible.
 
-- **Clic** : la liste de tous les certificats en deux parties, **Production** puis **Hors production** (avec
-  l'environnement de chacun), avec les jours restants, la date, l'**émetteur**, une chaîne non reconnue ou un serveur
-  injoignable avec la raison en clair, et **Vérifier maintenant**. Sinon, vérification toutes les 30 min.
+- **Clic** : la liste de tous les certificats en trois parties, **Production**, **Hors production** (avec
+  l'environnement de chacun), puis **Injoignables d'ici** (avec la raison en clair). Pour chacun : jours restants,
+  date, émetteur, chaîne non reconnue, « en direct » s'il a été lu sans le proxy. En bas : heure de la vérification,
+  proxy utilisé, **Vérifier maintenant** et **Calendrier**. Sinon, vérification toutes les 30 min.
 - **Alerte** : message dans le deck et notification du système (si autorisée avec la cloche des terminaux), une seule
   fois par seuil ; hors production, seulement au rouge.
 - La date est lue par une simple poignée de main TLS (Node, sans openssl, 10 s au plus). Rien d'autre n'est envoyé.
@@ -61,6 +63,11 @@ Sur un réseau où toute sortie passe par un proxy (ex. Zscaler) et où le DNS i
 
 - définis `HTTPS_PROXY` pour ton utilisateur (`setx HTTPS_PROXY http://proxy:8080` sous Windows), puis redémarre le deck ;
 - la vérification passe alors par un tunnel `CONNECT` du proxy ; `NO_PROXY` est respecté ;
+- **repli en direct** : si le proxy n'atteint pas un hôte (502, 503, 504, refus, délai), cas des noms **internes**
+  de l'entreprise (`*.intra…`) joignables seulement depuis le réseau interne ou le VPN, le deck réessaie **sans le
+  proxy** ; le certificat lu ainsi est marqué « en direct », et ce chemin est essayé en premier la fois suivante.
+  Si les deux échouent, les deux raisons sont affichées (ex. « par le proxy : 502 ; en direct : nom inconnu du
+  DNS ») : hôte hors VPN, nom mal saisi, ou port différent (`hôte:port`) ;
 - si le proxy **déchiffre le TLS**, le certificat vu est celui du proxy : la ligne est marquée ⚠ et ne compte pas
   pour la couleur ;
 - erreurs distinguées : nom inconnu du DNS, proxy injoignable, refus du proxy (403, 407, 502…), délai dépassé.

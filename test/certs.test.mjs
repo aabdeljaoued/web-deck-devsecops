@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import net from "node:net";
 import { test } from "node:test";
 
-import { checkCert, isInterception, proxyFor } from "../server/certs.mjs";
+import { readFileSync } from "node:fs";
+import tls from "node:tls";
+
+import { checkCert, isInterception, proxyFor, resetRoutes } from "../server/certs.mjs";
 
 test("proxy : HTTPS_PROXY / https_proxy, port par défaut, identifiants", () => {
     assert.equal(proxyFor("a.test", 443, {}), null);
@@ -46,6 +49,31 @@ test("proxy qui refuse : raison claire (403, 407, 502), demande CONNECT avec aut
     }
 });
 
+test("proxy qui n'atteint pas un hôte interne : repli en direct, chemin retenu ensuite", async () => {
+    // Serveur TLS local (certificat de test auto-signé, fixtures) joignable seulement en direct
+    const fixture = (f) => readFileSync(new URL(`./fixtures/${f}`, import.meta.url));
+    const server = tls.createServer({ cert: fixture("tls-test-cert.pem"), key: fixture("tls-test-key.pem") }, (c) => c.end());
+    await new Promise((r) => server.listen(0, "127.0.0.1", r));
+    const p = await refusingProxy(502);
+    resetRoutes();
+    try {
+        const port = server.address().port;
+        const first = await checkCert("127.0.0.1", port, { env: p.env, timeout: 3000 });
+        assert.equal(first.direct, true);
+        assert.equal(first.subject, "deck-test.local");
+        assert.equal(first.trusted, false, "auto-signé : chaîne non reconnue, mais date lue");
+        assert.equal(p.seen.length, 1, "le proxy a été essayé d'abord");
+        await checkCert("127.0.0.1", port, { env: p.env, timeout: 3000 });
+        assert.equal(p.seen.length, 1, "2e vérification : directement en direct, sans repasser par le proxy");
+        // Ni le proxy ni le direct : les deux raisons
+        await assert.rejects(checkCert("127.0.0.1", 1, { env: p.env, timeout: 3000 }), /par le proxy : le proxy n'atteint pas l'hôte \(502\) ; en direct : /);
+    } finally {
+        server.close();
+        p.server.close();
+        resetRoutes();
+    }
+});
+
 test("proxy éteint : « proxy injoignable », pas confondu avec le site", async () => {
     await assert.rejects(checkCert("site.example.test", 443, { env: { HTTPS_PROXY: "http://127.0.0.1:1" }, timeout: 3000 }), /proxy injoignable/);
 });
@@ -56,7 +84,8 @@ test("nom court du voyant : www retiré, adresse IP gardée, nom long raccourci"
     assert.equal(shortHost("www2.exemple.fr:8443"), "exemple");
     assert.equal(shortHost("proxmox.aabdeljaoued.synology.me"), "proxmox");
     assert.equal(shortHost("10.0.0.5:443"), "10.0.0.5");
-    assert.equal(shortHost("devsecops-production.client.fr"), "devsecops…");
+    assert.equal(shortHost("devsecops-production.client.fr"), "devseco…");
+    assert.equal(shortHost("www.wikipedia.org"), "wikiped…", "8 caractères au plus : une ligne sur la touche");
 });
 
 test("niveau d'un certificat selon l'environnement : production 30 / 7 j, hors production 14 / 3 j", async () => {

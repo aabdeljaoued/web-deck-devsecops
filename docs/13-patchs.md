@@ -12,8 +12,9 @@ Active-la dans **Réglages › Rubriques** (case **Patchs**). Elle contient :
 
 - le **voyant patchs** (première touche) : le délai de la VM la plus urgente en gros (**J-3** = dans 3 jours, **J** =
   aujourd'hui, **J+2** = 2 jours de retard) et son nom en bas ; un clic ouvre l'inventaire ;
-- **ssh VM** : choisis la VM dans la liste de tes hôtes SSH ;
-- **ssh -i VM** : choisis d'abord la **clé** (tes clés privées de `~/.ssh`), puis l'hôte → `ssh -i <clé> <hôte>` ;
+- **ssh VM** : choisis la VM dans la liste ;
+- **ssh -i VM** : choisis la VM, sa **clé** est reprise de l'inventaire (sinon choisis-la parmi tes clés privées de
+  `~/.ssh`) → `ssh -i <clé> <hôte>` ;
 - des commandes à lancer **sur la VM** (après le ssh) : mises à jour en attente (**MAJ (apt)**, **MAJ (dnf)**),
   **sécurité seule**, **reboot requis ?**, **noyau et boot**, **historique** des derniers paquets, **redémarrer** (dans
   1 min, à valider) ; sous Windows, elles s'activent une fois le terminal connecté en ssh ;
@@ -28,6 +29,12 @@ Active-la dans **Réglages › Rubriques** (case **Patchs**). Elle contient :
 **Alertes** : comme pour les certificats, un message dans le deck et une notification du système (si autorisée avec la
 cloche des terminaux) quand une VM passe à l'orange puis au rouge, une seule fois par seuil.
 
+Dans ces listes (et dans toutes les touches qui demandent un hôte, rubrique SSH comprise), **les VMs de
+l'inventaire viennent en tête**, par ordre alphabétique, avec leur nom et leur environnement à droite ; ensuite les
+hôtes de `~/.ssh/config`. Tape quelques lettres (nom de VM, hôte ou environnement) pour filtrer.
+
+![Choisir une VM de l'inventaire](img/patchs-ssh-vm.jpg)
+
 ## L'inventaire
 
 ![Inventaire des VMs](img/patchs-inventaire.jpg)
@@ -35,16 +42,33 @@ cloche des terminaux) quand une VM passe à l'orange puis au rouge, une seule fo
 Les VMs sont triées de la plus urgente à la moins urgente, avec leur environnement (production en rouge), leurs
 **tags**, leur description, le dernier et le prochain patch.
 
-**Filtres** (sous l'en-tête) : un bouton par environnement et un par tag, avec le nombre de VMs. Un environnement à la
-fois ; les tags se **combinent** (ex. **production** + **#critique** : les VMs de production marquées critiques).
-Re-cliquer retire le filtre, **Toutes** les retire tous. Le champ **Filtrer** cherche en plus dans le nom, l'hôte, la
-description et les tags. Pour chaque VM :
+Lignes en **couleurs alternées**, ligne survolée surlignée en bleu, et un **liseré rouge ou orange** à gauche des VMs
+urgentes.
+
+**Filtres** (sous l'en-tête), avec le nombre de VMs sur chaque bouton :
+
+- **environnement** (un à la fois) et **tags** (ils se **combinent** : **production** + **#critique**) ;
+- **État** : 🔴 en retard ou J-1, 🟠 sous 7 j ou à planifier, 🟢 plus tard, ⚠ sécurité en attente, ↻ reboot requis,
+  jamais vérifiée, ✕ vérification en échec (un à la fois ; seuls les états présents sont proposés) ;
+- le champ **Filtrer** cherche en plus dans le nom, l'hôte, la description et les tags.
+
+Tous se combinent ; re-cliquer retire un filtre, **Toutes** les retire tous.
+
+**Tri** : menu **Trier par** (urgence, nom, environnement, dernier patch, prochain patch, MAJ en attente, dernière
+vérification) et bouton **↑ croissant / ↓ décroissant** ; ou clic sur les titres **VM**, **Dernier patch**,
+**Prochain patch** (re-clic : ordre inversé, flèche sur la colonne triée). Le tri choisi est retenu.
+
+Pour chaque VM :
 
 - **Patché** : le dernier patch devient aujourd'hui et le prochain est recalculé avec la fréquence (ex. tous les 30 j) ;
   l'action est notée dans le [journal](10-reglages-et-tracabilite.md#journal-des-actions) ;
 - **SSH** : tape `ssh <hôte>` dans le terminal (sans Entrée), ou `ssh -i <clé> <hôte>` si une clé est renseignée pour
   la VM (affichée sous son nom : « clé : … ») ;
 - **Vérifier** : voir ci-dessous ;
+- **Dupliquer** : une nouvelle VM pré-remplie à partir de celle-ci (hôte, clé, environnement, tags, dates, fréquence,
+  description), avec le **nom suivant libre** (`app-prod-01` → `app-prod-02`, ou `-03` si `-02` existe) ; le nom est
+  aussi remplacé dans l'hôte (`admin@app-prod-01.client.fr` → `admin@app-prod-02.client.fr`). Vérifie l'hôte et les
+  dates avant d'enregistrer ;
 - **Modifier**, **Supprimer** (deux clics).
 
 **Calendrier** (en-tête) : les échéances du mois et l'export vers Outlook, voir

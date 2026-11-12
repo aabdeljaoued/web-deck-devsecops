@@ -933,12 +933,14 @@ function rememberParam(name, value) {
 
 const isNs = (name) => /^(namespace|ns)$/i.test(name);
 const isSvc = (name) => /^(service|svc)$/i.test(name);
+const isHost = (name) => /^(host|hote|hôte|serveur|server)$/i.test(name);
 const NAMESPACED = /^(pod|deployment|deploy|service|svc)$/i;
 const PARAM_NOUN = { pod: "pod", deployment: "deployment", deploy: "deployment", service: "service", svc: "service" };
 
 function openParams(key, command) {
-    const names = namedParams(command);
-    paramsState = { key, command, names, req: crypto.randomUUID(), options: new Map() };
+    // Hôte avant la clé SSH : on choisit la VM, sa clé est reprise de l'inventaire
+    const names = namedParams(command).sort((a, b) => (/^identit/i.test(a) && isHost(b) ? 1 : /^identit/i.test(b) && isHost(a) ? -1 : 0));
+    paramsState = { key, command, names, req: crypto.randomUUID(), options: new Map(), labels: new Map(), identities: {} };
     const defaults = paramDefaults(command);
     // Sélection du terminal (ou d'une note) : proposée pour le premier paramètre
     const terms = [state.terms.get(state.active), ...state.terms.values()].filter(Boolean);
@@ -1017,12 +1019,16 @@ function applyParamOptions(msg) {
     for (const input of $("#params-fields").querySelectorAll("input")) {
         if (input.dataset.name !== msg.name) continue;
         // Liste réelle, valeurs récemment utilisées en tête (seulement celles qui existent encore)
-        const recent = paramHistory(msg.name).filter((v) => msg.options.includes(v));
+        // Hôtes : VMs de l'inventaire en tête, dans l'ordre de l'inventaire (pas de réordonnancement par l'historique)
+        const recent = msg.inventory ? [] : paramHistory(msg.name).filter((v) => msg.options.includes(v));
         const options = [...recent, ...msg.options.filter((o) => !recent.includes(o))];
+        if (msg.labels) for (const [v, l] of Object.entries(msg.labels)) paramsState.labels.set(v, l);
+        if (msg.identities) Object.assign(paramsState.identities, msg.identities);
         const noun = PARAM_NOUN[msg.name.toLowerCase()];
         const status = msg.error ? `liste indisponible : ${msg.error} (saisie libre possible)`
             : !options.length && noun && ns ? `aucun ${noun} dans le namespace « ${ns} » : choisis un autre namespace`
             : !options.length ? "liste vide (saisie libre possible)"
+            : msg.inventory ? `${msg.inventory} VM(s) de l'inventaire en tête, puis ~/.ssh/config : clique ou ↑ ↓ puis Entrée`
             : `${options.length} valeur(s) : clique ou ↑ ↓ puis Entrée`;
         setParamOptions(input, options, status, !options.length && !msg.error);
     }
@@ -1041,9 +1047,13 @@ function setParamOptions(input, options, status, warn = false) {
 function showParamOptions(input) {
     const list = input.parentElement.querySelector(".param-options");
     const filter = fold(input.dataset.filter ?? "");
-    const options = (paramsState?.options.get(input.id) ?? []).filter((o) => fold(o).includes(filter)).slice(0, 200);
+    const labels = paramsState?.labels ?? new Map();
+    const options = (paramsState?.options.get(input.id) ?? []).filter((o) => fold(`${o} ${labels.get(o) ?? ""}`).includes(filter)).slice(0, 200);
     list.replaceChildren(...options.map((o, i) => {
         const li = Object.assign(document.createElement("li"), { textContent: o, className: i === 0 && filter ? "sel" : "" });
+        li.dataset.value = o;
+        // VM de l'inventaire : nom et environnement à droite de l'hôte
+        if (labels.has(o)) li.append(Object.assign(document.createElement("span"), { className: "param-label", textContent: labels.get(o) }));
         li.setAttribute("role", "option");
         li.addEventListener("mousedown", (ev) => { ev.preventDefault(); pickParam(input, o); });
         return li;
@@ -1054,6 +1064,12 @@ function showParamOptions(input) {
 /** Valeur choisie : champ rempli, liste fermée, champ suivant (ou bouton) ; un namespace recharge les pods. */
 function pickParam(input, value) {
     input.value = value;
+    // VM de l'inventaire choisie : sa clé SSH remplit {identity} s'il est vide (guillemets si le chemin a des espaces)
+    const identity = isHost(input.dataset.name) && paramsState?.identities?.[value];
+    if (identity) {
+        const keyInput = [...$("#params-fields").querySelectorAll("input")].find((x) => /^identit/i.test(x.dataset.name));
+        if (keyInput && !keyInput.value.trim()) keyInput.value = /\s/.test(identity) ? `"${identity}"` : identity;
+    }
     input.dataset.filter = "";
     input.parentElement.querySelector(".param-options").hidden = true;
     renderParamsPreview();
@@ -1078,7 +1094,7 @@ function paramKey(ev, input) {
         items[next].scrollIntoView({ block: "nearest" });
     } else if (ev.key === "Enter" && !list.hidden && cur >= 0) {
         ev.preventDefault();
-        pickParam(input, items[cur].textContent);
+        pickParam(input, items[cur].dataset.value ?? items[cur].textContent);
     } else if (ev.key === "Escape" && !list.hidden) {
         ev.preventDefault();
         ev.stopPropagation();
@@ -3689,7 +3705,40 @@ async function showDoc(page) {
 // ---------- Patchs des VMs (rubrique Patchs) ----------
 
 let patchEditing = null;   // VM en cours de modification (null = nouvelle)
-const patchFilter = { env: null, tags: new Set() };   // filtres de l'inventaire (environnement, tags combinés)
+const patchFilter = { env: null, tags: new Set(), state: null };   // filtres : environnement, tags combinés, état
+
+/** États filtrables d'une VM (urgence du patch, résultat de la dernière vérification). */
+const PATCH_STATES = [
+    ["late", "🔴 en retard ou J-1", (v) => patchDays(v) !== null && patchDays(v) <= 1],
+    ["soon", "🟠 sous 7 j ou à planifier", (v) => patchDays(v) === null || (patchDays(v) > 1 && patchDays(v) <= 7)],
+    ["ok", "🟢 plus tard", (v) => patchDays(v) !== null && patchDays(v) > 7],
+    ["security", "⚠ sécurité en attente", (v) => (v.check?.security ?? 0) > 0],
+    ["reboot", "↻ reboot requis", (v) => v.check?.reboot === true],
+    ["unchecked", "jamais vérifiée", (v) => !v.check],
+    ["failed", "✕ vérification en échec", (v) => Boolean(v.check?.error)]
+];
+
+/** Tris de l'inventaire : clé -> [libellé, comparaison croissante]. Choix retenu (localStorage). */
+const ENV_ORDER = ["production", "qualification", "recette", "développement", "autre"];
+const PATCH_SORTS = {
+    urgency: ["Urgence (prochain patch)", (a, b) => (patchDays(a) ?? -1e6) - (patchDays(b) ?? -1e6)],
+    name: ["Nom", (a, b) => a.name.localeCompare(b.name, "fr", { numeric: true })],
+    env: ["Environnement", (a, b) => ENV_ORDER.indexOf(a.env) - ENV_ORDER.indexOf(b.env) || a.name.localeCompare(b.name, "fr", { numeric: true })],
+    last: ["Dernier patch", (a, b) => (a.lastPatch || "0").localeCompare(b.lastPatch || "0")],
+    next: ["Prochain patch", (a, b) => (a.nextPatch || "9").localeCompare(b.nextPatch || "9")],
+    updates: ["MAJ en attente", (a, b) => (a.check?.security ?? -1) - (b.check?.security ?? -1) || (a.check?.updates ?? -1) - (b.check?.updates ?? -1)],
+    checked: ["Dernière vérification", (a, b) => (a.check?.at ?? "").localeCompare(b.check?.at ?? "")]
+};
+const patchSort = (() => {
+    try { const s = JSON.parse(localStorage.getItem("deck-patch-sort")); if (PATCH_SORTS[s?.key]) return { key: s.key, desc: Boolean(s.desc) }; } catch { /* stockage indisponible */ }
+    return { key: "urgency", desc: false };
+})();
+function setPatchSort(key, desc) {
+    patchSort.key = key;
+    patchSort.desc = desc;
+    try { localStorage.setItem("deck-patch-sort", JSON.stringify(patchSort)); } catch { /* choix non retenu */ }
+    renderPatches();
+}
 let patchPending = false;  // formulaire envoyé, en attente du serveur
 const patchChecking = new Set();   // VMs en cours de vérification (ssh, lecture seule)
 
@@ -3750,7 +3799,14 @@ function renderPatches() {
     const shown = vms.filter((v) => !q || fold(`${v.name} ${v.host} ${v.env} ${v.description} ${(v.tags ?? []).join(" ")}`).includes(q))
         .filter((v) => !patchFilter.env || v.env === patchFilter.env)
         .filter((v) => [...patchFilter.tags].every((t) => (v.tags ?? []).includes(t)))
-        .sort((a, b) => (patchDays(a) ?? -1e6) - (patchDays(b) ?? -1e6));
+        .filter((v) => !patchFilter.state || PATCH_STATES.find(([k]) => k === patchFilter.state)?.[2](v))
+        .sort((a, b) => (patchSort.desc ? -1 : 1) * PATCH_SORTS[patchSort.key][1](a, b) || a.name.localeCompare(b.name, "fr", { numeric: true }));
+    // Titres de colonnes : flèche sur la colonne triée
+    for (const th of document.querySelectorAll(".patch-table th[data-sort]")) {
+        const on = th.dataset.sort === patchSort.key;
+        th.classList.toggle("sorted", on);
+        th.dataset.arrow = on ? (patchSort.desc ? "↓" : "↑") : "";
+    }
     const late = vms.filter((v) => (patchDays(v) ?? 0) < 0).length;
     $("#patch-summary").textContent = vms.length ? `${vms.length} VM(s)${late ? ` · ${late} en retard` : ""}` : "";
     $("#patch-list").replaceChildren(...shown.map((vm) => {
@@ -3782,6 +3838,7 @@ function renderPatches() {
                 }),
                 btn(patchChecking.has(vm.id) ? "…" : "Vérifier", "Se connecte en ssh (sans mot de passe) et lit, sans rien modifier : mises à jour en attente dont sécurité, reboot requis, OS, noyau", () => send({ t: "patch-check", id: vm.id })),
                 btn("Modifier", "", () => openPatchForm(vm)),
+                btn("Dupliquer", "Nouvelle VM à partir de celle-ci (nom suivant proposé : app-prod-01 → app-prod-02)", () => openPatchForm(vm, { duplicate: true })),
                 del
             ], "patch-actions")
         );
@@ -3794,11 +3851,27 @@ function renderPatches() {
     }
 }
 
-function openPatchForm(vm = null) {
-    patchEditing = vm;
-    $("#patch-form-title").textContent = vm ? `Modifier « ${vm.name} »` : "Nouvelle VM";
-    $("#patch-name").value = vm?.name ?? "";
-    $("#patch-host").value = vm?.host ?? "";
+/**
+ * Nom libre pour une copie : numéro final incrémenté (app-prod-01 → app-prod-02, en gardant les zéros),
+ * sinon « -2 », « -3 »… ; jamais un nom déjà pris (sans tenir compte de la casse).
+ */
+function nextVmName(name) {
+    const taken = new Set((state.patches ?? []).map((v) => v.name.toLowerCase()));
+    const m = /^(.*?)(\d+)$/.exec(name);
+    for (let i = 1; i < 1000; i++) {
+        const candidate = m ? `${m[1]}${String(Number(m[2]) + i).padStart(m[2].length, "0")}` : `${name}-${i + 1}`;
+        if (!taken.has(candidate.toLowerCase())) return candidate;
+    }
+    return `${name}-copie`;
+}
+
+function openPatchForm(vm = null, { duplicate = false } = {}) {
+    patchEditing = duplicate ? null : vm;
+    const name = duplicate ? nextVmName(vm.name) : vm?.name ?? "";
+    $("#patch-form-title").textContent = duplicate ? `Nouvelle VM, copie de « ${vm.name} »` : vm ? `Modifier « ${vm.name} »` : "Nouvelle VM";
+    $("#patch-name").value = name;
+    // Copie : le nom de la VM d'origine remplacé dans l'hôte (admin@app-prod-01.client.fr → admin@app-prod-02.client.fr)
+    $("#patch-host").value = duplicate && vm.host ? vm.host.split(vm.name).join(name) : vm?.host ?? "";
     $("#patch-identity").value = vm?.identity ?? "";
     // Clés privées de ~/.ssh proposées (mêmes que la touche connexion -i)
     send({ t: "param-options", req: "patch-identity", name: "identity" });
@@ -3813,7 +3886,9 @@ function openPatchForm(vm = null) {
     $("#patch-tag-list").replaceChildren(...known.map((t) => new Option(t)));
     $("#patch-error").hidden = true;
     $("#patch-form").hidden = false;
+    $("#patch-form").scrollIntoView({ block: "nearest" });
     $("#patch-name").focus();
+    if (duplicate) $("#patch-name").select();
 }
 
 function savePatch() {
@@ -3841,13 +3916,26 @@ function renderPatchFilters(vms) {
         b.addEventListener("click", click);
         return b;
     };
-    const all = chip("Toutes", vms.length, !patchFilter.env && !patchFilter.tags.size, "all", () => { patchFilter.env = null; patchFilter.tags.clear(); renderPatches(); });
+    const all = chip("Toutes", vms.length, !patchFilter.env && !patchFilter.tags.size && !patchFilter.state, "all", () => { patchFilter.env = null; patchFilter.tags.clear(); patchFilter.state = null; renderPatches(); });
     const envChips = envs.map((e) => chip(e, count((v) => v.env === e), patchFilter.env === e, `env env-${e}`, () => { patchFilter.env = patchFilter.env === e ? null : e; renderPatches(); }));
     const tagChips = tags.map((t) => chip(`#${t}`, count((v) => (v.tags ?? []).includes(t)), patchFilter.tags.has(t), "tag", () => { patchFilter.tags.has(t) ? patchFilter.tags.delete(t) : patchFilter.tags.add(t); renderPatches(); }));
     // Filtre devenu sans objet (tag supprimé) : oublié
     for (const t of patchFilter.tags) if (!tags.includes(t)) patchFilter.tags.delete(t);
     if (patchFilter.env && !envs.includes(patchFilter.env)) patchFilter.env = null;
-    $("#patch-filters").replaceChildren(all, ...envChips, ...(tagChips.length ? [Object.assign(document.createElement("span"), { className: "patch-sep" }), ...tagChips] : []));
+    const row1 = Object.assign(document.createElement("div"), { className: "patch-filter-row" });
+    row1.append(all, ...envChips, ...(tagChips.length ? [Object.assign(document.createElement("span"), { className: "patch-sep" }), ...tagChips] : []));
+    // États : un à la fois (re-cliquer le retire) ; seuls ceux qui concernent au moins une VM, ou celui choisi
+    const states = PATCH_STATES.filter(([k, , pred]) => count(pred) || patchFilter.state === k)
+        .map(([k, label, pred]) => chip(label, count(pred), patchFilter.state === k, `state state-${k}`, () => { patchFilter.state = patchFilter.state === k ? null : k; renderPatches(); }));
+    const sort = Object.assign(document.createElement("select"), { className: "patch-sort", title: "Trier l'inventaire" });
+    sort.append(...Object.entries(PATCH_SORTS).map(([k, [label]]) => new Option(`Trier par : ${label}`, k, false, k === patchSort.key)));
+    sort.addEventListener("change", () => setPatchSort(sort.value, false));
+    const dir = Object.assign(document.createElement("button"), { type: "button", className: "patch-chip patch-dir", textContent: patchSort.desc ? "↓ décroissant" : "↑ croissant", title: "Inverser l'ordre" });
+    dir.addEventListener("click", () => setPatchSort(patchSort.key, !patchSort.desc));
+    const row2 = Object.assign(document.createElement("div"), { className: "patch-filter-row" });
+    row2.append(Object.assign(document.createElement("span"), { className: "patch-filter-label", textContent: "État" }), ...states,
+        Object.assign(document.createElement("span"), { className: "grow" }), sort, dir);
+    $("#patch-filters").replaceChildren(row1, row2);
     $("#patch-filters").hidden = vms.length === 0;
 }
 
@@ -4095,6 +4183,10 @@ $("#patch-template").addEventListener("click", (ev) => { ev.preventDefault(); do
 $("#patch-cancel").addEventListener("click", () => { $("#patch-form").hidden = true; });
 $("#patch-form").addEventListener("submit", (ev) => { ev.preventDefault(); savePatch(); });
 $("#patch-search").addEventListener("input", renderPatches);
+// Clic sur un titre de colonne : tri par cette colonne ; re-clic : ordre inversé
+for (const th of document.querySelectorAll(".patch-table th[data-sort]")) {
+    th.addEventListener("click", () => setPatchSort(th.dataset.sort, th.dataset.sort === patchSort.key ? !patchSort.desc : false));
+}
 $("#patches-close").addEventListener("click", () => { $("#patches").hidden = true; });
 $("#patches").addEventListener("mousedown", (ev) => { if (ev.target.id === "patches") $("#patches").hidden = true; });
 $("#patches").addEventListener("keydown", (ev) => {

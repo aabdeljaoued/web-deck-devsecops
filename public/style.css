@@ -1378,8 +1378,6 @@ main {
 .patch-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .patch-table th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); padding: 6px 8px; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--panel); }
 .patch-table td { padding: 7px 8px; border-bottom: 1px solid var(--border); vertical-align: top; color: var(--text); }
-.patch-table tr.patch-rouge td { background: color-mix(in srgb, #c62828 12%, transparent); }
-.patch-table tr.patch-orange td { background: color-mix(in srgb, #ef6c00 10%, transparent); }
 .patch-desc { max-width: 340px; color: var(--muted); white-space: pre-wrap; }
 .patch-when { font-size: 11px; font-weight: 600; }
 .patch-rouge .patch-when { color: #ef5350; }
@@ -1481,3 +1479,33 @@ input[type="date"], input[type="datetime-local"] { color-scheme: dark; cursor: p
 [data-mode="light"] input[type="date"], [data-mode="light"] input[type="datetime-local"] { color-scheme: light; }
 input[type="date"]::-webkit-calendar-picker-indicator, input[type="datetime-local"]::-webkit-calendar-picker-indicator { opacity: .85; cursor: pointer; padding: 2px; border-radius: 4px; }
 input[type="date"]::-webkit-calendar-picker-indicator:hover, input[type="datetime-local"]::-webkit-calendar-picker-indicator:hover { opacity: 1; background: color-mix(in srgb, var(--accent) 25%, transparent); }
+/* Patchs : lignes plus faciles à distinguer (couleurs alternées, survol, liseré d'urgence) */
+.patch-table tbody tr:nth-child(even) td { background: color-mix(in srgb, var(--text) 7%, transparent); }
+.patch-table tbody tr.patch-rouge td { background: color-mix(in srgb, #c62828 12%, transparent); }
+.patch-table tbody tr.patch-rouge:nth-child(even) td { background: color-mix(in srgb, #c62828 17%, transparent); }
+.patch-table tbody tr.patch-orange td { background: color-mix(in srgb, #ef6c00 9%, transparent); }
+.patch-table tbody tr.patch-orange:nth-child(even) td { background: color-mix(in srgb, #ef6c00 14%, transparent); }
+.patch-table tbody tr td:first-child { box-shadow: inset 3px 0 0 transparent; }
+.patch-table tbody tr.patch-rouge td:first-child { box-shadow: inset 3px 0 0 #e53935; }
+.patch-table tbody tr.patch-orange td:first-child { box-shadow: inset 3px 0 0 #fb8c00; }
+.patch-table tbody tr { transition: background-color .12s; }
+.patch-table tbody tr:hover td { background: color-mix(in srgb, var(--accent) 16%, transparent); }
+.patch-table tbody tr:hover td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
+[data-mode="light"] .patch-table tbody tr:nth-child(even) td { background: color-mix(in srgb, #000 5%, transparent); }
+[data-mode="light"] .patch-table tbody tr:hover td { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.patch-actions button { padding: 3px 7px; }
+/* Fenêtre de paramètres : nom et environnement d'une VM de l'inventaire à côté de l'hôte */
+.param-options li .param-label { float: right; margin-left: 12px; font-size: 11px; color: var(--muted); }
+/* Patchs : filtres sur deux lignes (environnement et tags ; état et tri), titres de colonnes triables */
+.patch-filters { flex-direction: column; align-items: stretch; gap: 6px; }
+.patch-filter-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.patch-filter-row .grow { flex: 1; }
+.patch-filter-label { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin-right: 2px; }
+.patch-chip.state.on { background: var(--accent-strong); color: #fff; }
+.patch-chip.state-late.on { background: #c62828; }
+.patch-chip.state-soon.on { background: #e65100; }
+.patch-sort { padding: 3px 8px; border: 1px solid var(--border); border-radius: 14px; background: var(--panel); color: var(--text); font: inherit; font-size: 12px; cursor: pointer; }
+.patch-table th[data-sort] { cursor: pointer; user-select: none; }
+.patch-table th[data-sort]:hover { color: var(--text); }
+.patch-table th.sorted { color: var(--accent); }
+.patch-table th[data-sort]::after { content: attr(data-arrow); margin-left: 4px; }

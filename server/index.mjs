@@ -19,7 +19,7 @@ import { Backups } from "./backups.mjs";
 import { copyTemporarily, flushClipboard } from "./clipboard.mjs";
 import { ScreenLock } from "./screenlock.mjs";
 import { Updater } from "./update.mjs";
-import { paramOptions } from "./params.mjs";
+import { liveParam, paramOptions } from "./params.mjs";
 import figlet from "figlet";
 import { Journal } from "./journal.mjs";
 import { runDiagnostic } from "./diagnostic.mjs";
@@ -618,6 +618,17 @@ wss.on("connection", (ws) => {
                 // Paramètres nommés : valeurs réelles (kubectl / docker) proposées dans la fenêtre de saisie
                 case "param-options": {
                     try {
+                        // Hôtes : VMs de l'inventaire des patchs en tête (nom et environnement affichés, clé SSH
+                        // reprise pour « ssh -i »), puis les hôtes de ~/.ssh/config
+                        if (liveParam(msg.name) === "host") {
+                            const vms = patches.list().sort((a, b) => a.name.localeCompare(b.name)).map((v) => ({ value: v.host || v.name, label: `${v.name} · ${v.env}`, identity: v.identity }));
+                            const inventory = [...new Set(vms.map((v) => v.value))];
+                            const config = (await paramOptions(ctx, msg.name)).filter((h) => !inventory.includes(h));
+                            reply({ t: "param-options", req: msg.req, name: msg.name, options: [...inventory, ...config], inventory: inventory.length,
+                                labels: Object.fromEntries(vms.map((v) => [v.value, v.label])),
+                                identities: Object.fromEntries(vms.filter((v) => v.identity).map((v) => [v.value, v.identity])) });
+                            break;
+                        }
                         reply({ t: "param-options", req: msg.req, name: msg.name, options: await paramOptions(ctx, msg.name, { namespace: msg.namespace, service: msg.service }) });
                     } catch (err) {
                         reply({ t: "param-options", req: msg.req, name: msg.name, options: [], error: err.message.split("\n")[0] });

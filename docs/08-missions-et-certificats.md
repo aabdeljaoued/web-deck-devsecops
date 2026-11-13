@@ -53,6 +53,8 @@ aucun lisible.
   l'environnement de chacun), puis **Injoignables d'ici** (avec la raison en clair). Pour chacun : jours restants,
   date, émetteur, chaîne non reconnue, « en direct » s'il a été lu sans le proxy. En bas : heure de la vérification,
   proxy utilisé, **Vérifier maintenant** et **Calendrier**. Sinon, vérification toutes les 30 min.
+- **↗** au bout de chaque ligne (ou clic sur la ligne) : ouvre le site dans le navigateur (`https://hôte`, ou
+  `https://hôte:port`). Pas de lien pour les ports qui ne sont pas des sites web (LDAPS 636, IMAPS 993, SMTPS 465…).
 - **Alerte** : message dans le deck et notification du système (si autorisée avec la cloche des terminaux), une seule
   fois par seuil ; hors production, seulement au rouge.
 - La date est lue par une simple poignée de main TLS (Node, sans openssl, 10 s au plus). Rien d'autre n'est envoyé.

@@ -1749,7 +1749,7 @@ function pickerSection(title, items, empty) {
     if (!items.length) section.append(Object.assign(document.createElement("p"), { className: "picker-note", textContent: empty }));
     const list = Object.assign(document.createElement("div"), { className: "picker-list" });
     for (const item of items) {
-        const row = Object.assign(document.createElement("div"), { className: `picker-row${item.current ? " current" : ""}${item.prod ? " prod" : ""}` });
+        const row = Object.assign(document.createElement("div"), { className: `picker-row${item.current ? " current" : ""}${item.prod ? " prod" : ""}${item.alert ? " alert" : ""}` });
         const main = Object.assign(document.createElement("button"), { className: "picker-item", textContent: item.label, title: item.title ?? item.label });
         // Production : premier clic = avertissement, deuxième clic (dans les 5 s) = changement
         main.addEventListener("click", () => {
@@ -1798,6 +1798,9 @@ function openCertsPanel(anchor) {
     send({ t: "press", id: "certs" });
 }
 
+/** Ports TLS qui ne sont pas des sites web : pas de lien ↗ (LDAPS, IMAPS, POP3S, SMTPS, AMQPS, MQTTS…). */
+const NON_WEB_TLS_PORTS = new Set(["636", "993", "995", "465", "587", "5671", "8883", "6697", "989", "990", "3269", "5986"]);
+
 function renderCertsPanel(checking = false) {
     if ($("#picker").hidden || pickerAnchor?.dataset.status !== "certs") return;
     const s = state.status.certs ?? { items: [] };
@@ -1812,7 +1815,17 @@ function renderCertsPanel(checking = false) {
             : c.intercepted ? `certificat du proxy (${c.issuer}) : la date du site n'est pas visible d'ici`
             : `${c.days < 0 ? `expiré depuis ${-c.days} j` : `${c.days} j`} · ${new Date(c.until).toLocaleDateString("fr-FR")} · ${c.issuer || "émetteur inconnu"}${c.trusted ? "" : " · chaîne non reconnue"}${route}`;
         const title = [c.target, c.reason, c.via && !c.direct ? `via le proxy ${c.via}` : "", c.direct ? "le proxy n'atteint pas cet hôte : certificat lu en direct" : ""].filter(Boolean).join("\n");
-        return { label: `${dot} ${env}${c.target} : ${when}`, title, onClick: () => {}, prod: !c.error && !c.intercepted && level === "rouge" };
+        // Lien vers le site : https://hôte (port 443) ou https://hôte:port ; pas pour les ports non web (LDAP, mail…)
+        const [host, port = "443"] = c.target.split(":");
+        const url = NON_WEB_TLS_PORTS.has(port) ? null : `https://${host}${port === "443" ? "" : `:${port}`}/`;
+        const open = () => window.open(url, "_blank", "noopener,noreferrer");
+        return {
+            label: `${dot} ${env}${c.target} : ${when}`, title: url ? `${title}\nClic : ouvrir ${url}` : title,
+            onClick: url ? open : () => {},
+            // Rouge (urgent) : texte en rouge, sans la confirmation « production » des contextes kubectl
+            alert: !c.error && !c.intercepted && level === "rouge",
+            actions: url ? [{ label: "↗", title: `Ouvrir ${url} dans le navigateur`, onClick: open }] : []
+        };
     };
     // Production d'abord (seuils 30 / 7 j), puis les autres environnements (14 / 3 j), puis ce qui n'a pas pu être lu
     const all = s.items ?? [];

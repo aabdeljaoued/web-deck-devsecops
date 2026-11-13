@@ -504,7 +504,7 @@ wss.on("connection", (ws) => {
                 case "patch-save": {
                     patches.save(msg.vm);
                     patchesChanged();
-                    reply({ t: "patch-saved" });
+                    reply({ t: "patch-saved", demoted: patches.lastDemoted ?? [], name: String(msg.vm?.name ?? "").trim() });
                     break;
                 }
                 case "patch-done": {

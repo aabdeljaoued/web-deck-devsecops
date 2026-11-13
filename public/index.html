@@ -639,7 +639,7 @@
                 <strong id="patch-import-title"></strong>
                 <span id="patch-import-summary"></span>
                 <ul id="patch-import-errors" class="patch-import-errors"></ul>
-                <span class="hint">Colonnes reconnues : nom (obligatoire), hote, cle, environnement, dernier_patch, prochain_patch, frequence, tags, cluster, clusterset, profil (standard ou mysql), description ; séparateur « ; » ou « , » ; dates JJ/MM/AAAA. Les VMs existantes (même nom) sont mises à jour, aucune n'est supprimée. <a href="#" id="patch-template">Télécharger un modèle CSV</a></span>
+                <span class="hint">Colonnes reconnues : nom (obligatoire), hote, cle, environnement, dernier_patch, prochain_patch, frequence, tags, cluster, clusterset, profil (standard ou mysql), role (primary ou secondary), description ; séparateur « ; » ou « , » ; dates JJ/MM/AAAA. Les VMs existantes (même nom) sont mises à jour, aucune n'est supprimée. <a href="#" id="patch-template">Télécharger un modèle CSV</a></span>
                 <span class="settings-actions">
                     <button type="button" id="patch-import-ok" class="primary">Importer</button>
                     <button type="button" id="patch-import-cancel">Annuler</button>
@@ -670,6 +670,13 @@
                         <select id="patch-profile">
                             <option value="">standard</option>
                             <option value="mysql-innodb">MySQL InnoDB Cluster</option>
+                        </select>
+                    </label>
+                    <label>Rôle dans le cluster <span class="hint">un seul PRIMARY : l'ancien repasse SECONDARY</span>
+                        <select id="patch-role">
+                            <option value="">non renseigné</option>
+                            <option value="primary">PRIMARY</option>
+                            <option value="secondary">SECONDARY</option>
                         </select>
                     </label>
                 </div>

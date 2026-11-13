@@ -8,12 +8,17 @@ import { tmpDir } from "./helpers.mjs";
 
 test("VM : champs vérifiés, prochain patch déduit du dernier et de la fréquence", () => {
     const vm = cleanVm({ name: " app-prod-01 ", env: "production", lastPatch: "2026-10-01", everyDays: 30, description: "API\npaiement" });
-    assert.deepEqual(vm, { name: "app-prod-01", host: "", identity: "", env: "production", description: "API paiement", tags: [], cluster: "", clusterSet: "", profile: "", lastPatch: "2026-10-01", nextPatch: "2026-10-31", everyDays: 30, check: null });
+    assert.deepEqual(vm, { name: "app-prod-01", host: "", identity: "", env: "production", description: "API paiement", tags: [], cluster: "", clusterSet: "", profile: "", role: "", lastPatch: "2026-10-01", nextPatch: "2026-10-31", everyDays: 30, check: null });
     // Cluster, ClusterSet, profil (saisie libre normalisée)
     const node = cleanVm({ name: "wqyd5530", nextPatch: "2026-12-01", cluster: " CL-MYSQL-LT1-REC ", clusterSet: "CS_MYSQL_LT1", profile: "MySQL" });
     assert.deepEqual([node.cluster, node.clusterSet, node.profile], ["CL-MYSQL-LT1-REC", "CS_MYSQL_LT1", "mysql-innodb"]);
     assert.throws(() => cleanVm({ name: "a", nextPatch: "2026-12-01", cluster: "CL; rm -rf /" }), /cluster invalide/);
     assert.throws(() => cleanVm({ name: "a", nextPatch: "2026-12-01", profile: "oracle-rac" }), /profil inconnu/);
+    // Rôle : primary / secondary (alias), ignoré hors cluster
+    assert.equal(cleanVm({ name: "a", nextPatch: "2026-12-01", cluster: "CL-1", role: "Primaire" }).role, "primary");
+    assert.equal(cleanVm({ name: "a", nextPatch: "2026-12-01", cluster: "CL-1", role: "replica" }).role, "secondary");
+    assert.equal(cleanVm({ name: "a", nextPatch: "2026-12-01", role: "primary" }).role, "", "sans cluster : pas de rôle");
+    assert.throws(() => cleanVm({ name: "a", nextPatch: "2026-12-01", cluster: "CL-1", role: "arbitre" }), /rôle inconnu/);
     // Tags libres : séparés par virgule, espace ou |, en minuscules, sans doublon
     assert.deepEqual(cleanVm({ name: "a", nextPatch: "2026-12-01", tags: "Linux, DMZ  critique|#linux" }).tags, ["linux", "dmz", "critique"]);
     assert.throws(() => cleanVm({ name: "a", nextPatch: "2026-12-01", tags: "ok, pas<bon>" }), /tag invalide/);
@@ -113,4 +118,24 @@ test("import en masse : aperçu sans écriture, ajout ou mise à jour par nom, d
     const again = vmsFromCsv(vmsToCsv(after));
     assert.deepEqual(again.errors, []);
     assert.deepEqual([p.importMany(again.vms, { dryRun: true }).added, p.importMany(again.vms, { dryRun: true }).updated], [0, 2]);
+});
+
+test("cluster : un seul PRIMARY (bascule à l'enregistrement, et à l'import)", async () => {
+    const { vmsFromCsv } = await import("../server/patches.mjs");
+    const p = new Patches(path.join(tmpDir(), "patches.json"));
+    const node = (name, role) => ({ name, nextPatch: "2026-12-01", cluster: "CL-REC", role });
+    p.save(node("n1", "primary"));
+    p.save(node("n2", "secondary"));
+    const id3 = p.save(node("n3", "secondary"));
+    assert.deepEqual(p.lastDemoted, []);
+    p.save({ id: id3, ...node("n3", "primary") });   // bascule : n3 devient PRIMARY
+    assert.deepEqual(p.lastDemoted, ["n1"]);
+    assert.deepEqual(p.list().map((v) => `${v.name}:${v.role}`).sort(), ["n1:secondary", "n2:secondary", "n3:primary"]);
+    p.save({ name: "autre", nextPatch: "2026-12-01", cluster: "CL-TST", role: "primary" });
+    assert.equal(p.list().find((v) => v.name === "n3").role, "primary", "autre cluster : pas touché");
+    // Import : deux PRIMARY dans le même cluster -> le dernier du fichier gagne, signalé
+    const { vms } = vmsFromCsv("nom;prochain_patch;cluster;role\nn1;01/12/2026;CL-REC;primary\nn2;01/12/2026;CL-REC;primary");
+    const res = p.importMany(vms);
+    assert.match(res.errors.join(), /CL-REC : un seul PRIMARY possible, gardé n2/);
+    assert.deepEqual(p.list().filter((v) => v.cluster === "CL-REC").map((v) => `${v.name}:${v.role}`).sort(), ["n1:secondary", "n2:primary", "n3:secondary"]);
 });

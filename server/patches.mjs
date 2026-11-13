@@ -80,6 +80,8 @@ export function cleanVm(def) {
         cluster: cleanClusterName(def?.cluster, "cluster"),
         clusterSet: cleanClusterName(def?.clusterSet, "ClusterSet"),
         profile: cleanProfile(def?.profile),
+        // Rôle dans le cluster (renseigné à la main : PRIMARY / SECONDARY) ; sans cluster, pas de rôle
+        role: String(def?.cluster ?? "").trim() ? cleanRole(def?.role) : "",
         lastPatch,
         // Prochain patch déduit du dernier et de la fréquence s'il n'est pas donné
         nextPatch: nextPatch || (lastPatch && every ? addDays(lastPatch, every) : ""),
@@ -97,6 +99,15 @@ export function cleanProfile(v) {
     if (!s || s === "standard" || s === "aucun") return "";
     if (/^(mysql|innodb|mysql-innodb|mysql-innodb-cluster|mysql-cluster|group-replication)$/.test(s)) return "mysql-innodb";
     throw new Error(`profil inconnu : ${v} (standard ou mysql-innodb)`);
+}
+
+/** Rôle d'un nœud de cluster : "primary", "secondary" ou "" (non renseigné, ou VM hors cluster). */
+export function cleanRole(v) {
+    const s = String(v ?? "").trim().toLowerCase();
+    if (!s) return "";
+    if (/^(primary|primaire|p|rw|source|master|maitre|maître)$/.test(s)) return "primary";
+    if (/^(secondary|secondaire|s|ro|replica|réplica|replique|réplique|slave|esclave)$/.test(s)) return "secondary";
+    throw new Error(`rôle inconnu : ${v} (primary ou secondary)`);
 }
 
 /** Nom de cluster ou de ClusterSet : lettres, chiffres, . _ - (60 caractères au plus). */
@@ -151,6 +162,12 @@ export class Patches {
         if (!vm.nextPatch) throw new Error("indique la date du prochain patch (ou le dernier patch et la fréquence)");
         const id = def?.id ? String(def.id) : null;
         if (this.vms.some((v) => v.id !== id && v.name.toLowerCase() === vm.name.toLowerCase())) throw new Error(`une VM s'appelle déjà « ${vm.name} »`);
+        // Un seul PRIMARY par cluster : l'ancien repasse SECONDARY (bascule)
+        const demoted = vm.role === "primary" && vm.cluster
+            ? this.vms.filter((v) => v.id !== id && v.cluster === vm.cluster && v.role === "primary")
+            : [];
+        for (const v of demoted) v.role = "secondary";
+        this.lastDemoted = demoted.map((v) => v.name);
         if (id) {
             const i = this.vms.findIndex((v) => v.id === id);
             if (i < 0) throw new Error("VM introuvable");
@@ -218,6 +235,16 @@ export class Patches {
             else { next.push({ id: newId(), ...vm }); added++; }
         }
         if (next.length > MAX_VMS) throw new Error(`l'inventaire dépasserait ${MAX_VMS} VMs`);
+        // Un seul PRIMARY par cluster : celui du fichier gagne (le dernier s'il y en a plusieurs)
+        const imported = new Set(vms.map(({ vm }) => vm.name.toLowerCase()));
+        const primaries = new Map();
+        for (const v of next) if (v.cluster && v.role === "primary") primaries.set(v.cluster, [...(primaries.get(v.cluster) ?? []), v]);
+        for (const [cluster, list] of primaries) {
+            if (list.length < 2) continue;
+            const keep = [...list].reverse().find((v) => imported.has(v.name.toLowerCase())) ?? list.at(-1);
+            for (const v of list) if (v !== keep) v.role = "secondary";
+            errors.push(`cluster ${cluster} : un seul PRIMARY possible, gardé ${keep.name} (${list.filter((v) => v !== keep).map((v) => v.name).join(", ")} → SECONDARY)`);
+        }
         if (!dryRun && (added || updated)) {
             this.backups?.before(this.file, { force: true });
             this.vms = next;
@@ -258,9 +285,10 @@ const COLUMNS = {
     tags: "tags", tag: "tags", etiquettes: "tags", labels: "tags",
     cluster: "cluster", grappe: "cluster",
     clusterset: "clusterSet",
-    profil: "profile", profile: "profile", type: "profile"
+    profil: "profile", profile: "profile", type: "profile",
+    role: "role", roles: "role"
 };
-const EXPORT_HEADER = ["nom", "hote", "cle", "environnement", "dernier_patch", "prochain_patch", "frequence", "tags", "cluster", "clusterset", "profil", "description"];
+const EXPORT_HEADER = ["nom", "hote", "cle", "environnement", "dernier_patch", "prochain_patch", "frequence", "tags", "cluster", "clusterset", "profil", "role", "description"];
 const colKey = (h) => String(h).normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().replace(/[^a-z]/g, "");
 
 /** Découpe un CSV (guillemets, séparateur doublé dans les guillemets, retours à la ligne entre guillemets). */
@@ -329,6 +357,6 @@ export function vmsFromCsv(text) {
 export function vmsToCsv(vms) {
     const q = (v) => (/[;,"\n\r]/.test(String(v ?? "")) ? `"${String(v).replace(/"/g, '""')}"` : String(v ?? ""));
     const fr = (d) => (d ? d.split("-").reverse().join("/") : "");
-    const lines = vms.map((v) => [v.name, v.host, v.identity, v.env, fr(v.lastPatch), fr(v.nextPatch), v.everyDays ?? "", (v.tags ?? []).join(", "), v.cluster ?? "", v.clusterSet ?? "", v.profile ?? "", v.description].map(q).join(";"));
+    const lines = vms.map((v) => [v.name, v.host, v.identity, v.env, fr(v.lastPatch), fr(v.nextPatch), v.everyDays ?? "", (v.tags ?? []).join(", "), v.cluster ?? "", v.clusterSet ?? "", v.profile ?? "", v.role ?? "", v.description].map(q).join(";"));
     return `\uFEFF${[EXPORT_HEADER.join(";"), ...lines].join("\r\n")}\r\n`;
 }

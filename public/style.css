@@ -1611,3 +1611,10 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover, input[type="datetim
 .patch-node-pill.lvl-rouge .patch-node-dot { color: #ff5252; }
 .patch-node-pill.lvl-orange .patch-node-dot { color: #ffa040; }
 .patch-node-flags { color: #ffb74d; font-weight: 800; }
+/* Rôle dans le cluster : PRIMARY mis en avant (doré), SECONDARY discret */
+.patch-role { display: inline-block; padding: 0 6px; border-radius: 8px; font-size: 10px; font-weight: 800; letter-spacing: .03em; }
+.patch-role.role-primary { color: #1a1300; background: #ffc107; }
+.patch-role.role-secondary { color: var(--muted); border: 1px solid color-mix(in srgb, var(--text) 25%, transparent); }
+.patch-group-primary { padding: 1px 8px; border-radius: 10px; font-size: 12px; font-weight: 800; color: #1a1300; background: #ffc107; }
+.patch-group-primary.none { color: var(--muted); background: transparent; border: 1px dashed color-mix(in srgb, var(--text) 30%, transparent); font-weight: 600; }
+.patch-node-pill.primary { border-width: 2px; box-shadow: 0 0 0 1px #ffc107 inset; font-weight: 800; }

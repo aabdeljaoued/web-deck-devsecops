@@ -454,7 +454,7 @@ function handle(msg) {
         case "patch-saved":
             patchPending = false;
             $("#patch-form").hidden = true;
-            toast("VM enregistrée", "ok");
+            toast(msg.demoted?.length ? `${msg.name} devient PRIMARY · ${msg.demoted.join(", ")} repasse SECONDARY` : "VM enregistrée", "ok");
             break;
         case "patch-alert":
             patchAlert(msg.alerts);
@@ -3907,17 +3907,24 @@ function patchClusterHeader(cluster, nodes, all, folded = false) {
         ...[...new Set(total.map((v) => v.env))].map((e) => el(`patch-env env-${e}`, e)),
         ...(sets.length ? [el("patch-group-meta", `ClusterSet ${sets.join(", ")}`)] : []),
         ...(total.some((v) => v.profile === "mysql-innodb") ? [el("patch-profile", "MySQL InnoDB")] : []),
+        (() => {
+            const primary = total.find((v) => v.role === "primary");
+            return primary ? el("patch-group-primary", `★ PRIMARY : ${primary.name}`, "Nœud PRIMARY renseigné dans l'inventaire (à mettre à jour après une bascule)")
+                : el("patch-group-primary none", "PRIMARY non renseigné", "Modifier un nœud › Rôle dans le cluster : PRIMARY");
+        })(),
         el("grow", ""),
         el(`patch-group-state lvl-${worst}`, worst === "rouge" ? "patch en retard ou imminent" : worst === "orange" ? "patch sous 7 j" : "à jour")
     );
     // Carte des nœuds : un coup d'œil sur tout le cluster, même replié
     const map = Object.assign(document.createElement("div"), { className: "patch-group-nodes" });
-    for (const v of [...total].sort((a, b) => a.name.localeCompare(b.name, "fr", { numeric: true }))) {
+    for (const v of [...total].sort((a, b) => (b.role === "primary") - (a.role === "primary") || a.name.localeCompare(b.name, "fr", { numeric: true }))) {
         const d = patchDays(v);
         const flags = `${v.check?.reboot ? " ↻" : ""}${v.check?.security ? " ⚠" : ""}${v.check?.error ? " ✕" : ""}`;
         const pill = el(`patch-node-pill lvl-${vmLevel(v)}${nodes.includes(v) ? "" : " hidden-by-filter"}`, "",
             `${v.name} · ${v.env} · prochain patch ${frDate(v.nextPatch)} (${patchLabel(d)})${v.check?.reboot ? " · reboot requis" : ""}${v.check?.security ? ` · ${v.check.security} MAJ de sécurité` : ""}${v.check?.error ? ` · vérification : ${v.check.error}` : ""}`);
-        pill.append(el("patch-node-dot", "●"), ` ${v.name}`, ...(flags ? [el("patch-node-flags", flags)] : []));
+        pill.append(el("patch-node-dot", "●"), ` ${v.role === "primary" ? "★ " : ""}${v.name}`, ...(flags ? [el("patch-node-flags", flags)] : []));
+        if (v.role === "primary") { pill.classList.add("primary"); pill.title = `PRIMARY · ${pill.title}`; }
+        else if (v.role === "secondary") pill.title = `SECONDARY · ${pill.title}`;
         map.append(pill);
     }
     map.append(el("patch-group-meta", `${total.length} nœud(s)${nodes.length < total.length ? ` · ${nodes.length} affiché(s)` : ""}${checks ? ` · ${checks} vérifié(s)` : ""}${reboot ? ` · ${reboot} reboot requis` : ""}`));
@@ -4006,6 +4013,7 @@ function renderPatches() {
         const tr = Object.assign(document.createElement("tr"), { className: `patch-${level}` });
         const cell = (content, cls = "") => { const td = Object.assign(document.createElement("td"), { className: cls }); td.append(...[content].flat()); return td; };
         const name = Object.assign(document.createElement("strong"), { textContent: vm.name });
+        const role = vm.role ? Object.assign(document.createElement("span"), { className: `patch-role role-${vm.role}`, textContent: vm.role === "primary" ? "★ PRIMARY" : "SECONDARY", title: vm.role === "primary" ? "Nœud PRIMARY du cluster (lecture / écriture) : à patcher en dernier" : "Nœud SECONDARY du cluster" }) : "";
         const env = Object.assign(document.createElement("span"), { className: `patch-env env-${vm.env}`, textContent: vm.env });
         const tags = (vm.tags ?? []).map((t) => Object.assign(document.createElement("span"), { className: "patch-tag", textContent: t }));
         const where = [vm.host && vm.host !== vm.name ? vm.host : "", vm.identity ? `clé : ${vm.identity.split(/[\\/]/).pop()}` : ""].filter(Boolean).join(" · ");
@@ -4017,7 +4025,7 @@ function renderPatches() {
         tr.append(
             cell(Object.assign(document.createElement("span"), { className: "patch-dot", textContent: level === "rouge" ? "🔴" : level === "orange" ? "🟠" : "🟢" })),
             // Mode regroupé : cluster et profil déjà dans l'en-tête du groupe
-            cell([name, " ", env, ...tags.flatMap((t) => [" ", t]), grouped ? "" : patchClusterLine(vm), host, patchCheckLine(vm)]),
+            cell([name, " ", ...(role ? [role, " "] : []), env, ...tags.flatMap((t) => [" ", t]), grouped ? "" : patchClusterLine(vm), host, patchCheckLine(vm)]),
             cell(vm.description || "—", "patch-desc"),
             cell(`${frDate(vm.lastPatch)}${vm.everyDays ? ` · tous les ${vm.everyDays} j` : ""}`),
             cell([next, when]),
@@ -4045,6 +4053,8 @@ function renderPatches() {
             if (!groups.has(key)) groups.set(key, []);
             groups.get(key).push(vm);
         }
+        // Dans un cluster : le PRIMARY en tête, les autres dans l'ordre du tri
+        for (const list of groups.values()) list.sort((a, b) => (b.role === "primary") - (a.role === "primary"));
         const ordered = [...groups].sort(([a], [b]) => (a === "") - (b === ""));
         // Un bloc par cluster : espace, en-tête, nœuds (sauf replié) encadrés aux couleurs de l'environnement
         $("#patch-list").replaceChildren(...ordered.flatMap(([cluster, nodes], gi) => {
@@ -4103,6 +4113,8 @@ function openPatchForm(vm = null, { duplicate = false } = {}) {
     $("#patch-cluster").value = vm?.cluster ?? "";
     $("#patch-clusterset").value = vm?.clusterSet ?? "";
     $("#patch-profile").value = vm?.profile ?? "";
+    // Copie d'un nœud : jamais un second PRIMARY
+    $("#patch-role").value = duplicate && vm?.role ? "secondary" : vm?.role ?? "";
     // Clusters et ClusterSets déjà utilisés proposés à la saisie
     const usedValues = (k) => [...new Set((state.patches ?? []).map((v) => v[k]).filter(Boolean))].sort();
     $("#patch-cluster-list").replaceChildren(...usedValues("cluster").map((c) => new Option(c)));
@@ -4125,7 +4137,7 @@ function savePatch() {
         name: $("#patch-name").value, host: $("#patch-host").value, identity: $("#patch-identity").value, env: $("#patch-env").value,
         lastPatch: $("#patch-last").value, nextPatch: $("#patch-next").value,
         everyDays: $("#patch-every").value, description: $("#patch-desc").value, tags: $("#patch-tags").value,
-        cluster: $("#patch-cluster").value, clusterSet: $("#patch-clusterset").value, profile: $("#patch-profile").value
+        cluster: $("#patch-cluster").value, clusterSet: $("#patch-clusterset").value, profile: $("#patch-profile").value, role: $("#patch-role").value
     } });
 }
 
@@ -4212,10 +4224,10 @@ function showPatchImport(msg) {
     $("#patch-import-confirm").hidden = false;
 }
 
-const PATCH_TEMPLATE = "\uFEFFnom;hote;cle;environnement;dernier_patch;prochain_patch;frequence;tags;cluster;clusterset;profil;description\r\n"
-    + "app-prod-01;app-prod-01;~/.ssh/id_ed25519;production;10/10/2026;;30;linux, critique;;;standard;API paiement (RHEL 9), maintenance le mardi 22h\r\n"
-    + "mysql-rec-01;admin@10.0.0.21;;recette;;15/12/2026;30;linux, mysql;CL-MYSQL-REC;CS_MYSQL;mysql;Nœud 1 du cluster MySQL de recette\r\n"
-    + "mysql-rec-02;admin@10.0.0.22;;recette;;16/12/2026;30;linux, mysql;CL-MYSQL-REC;CS_MYSQL;mysql;Nœud 2 (un nœud à la fois)\r\n";
+const PATCH_TEMPLATE = "\uFEFFnom;hote;cle;environnement;dernier_patch;prochain_patch;frequence;tags;cluster;clusterset;profil;role;description\r\n"
+    + "app-prod-01;app-prod-01;~/.ssh/id_ed25519;production;10/10/2026;;30;linux, critique;;;standard;;API paiement (RHEL 9), maintenance le mardi 22h\r\n"
+    + "mysql-rec-01;admin@10.0.0.21;;recette;;15/12/2026;30;linux, mysql;CL-MYSQL-REC;CS_MYSQL;mysql;primary;Nœud 1 du cluster MySQL de recette\r\n"
+    + "mysql-rec-02;admin@10.0.0.22;;recette;;16/12/2026;30;linux, mysql;CL-MYSQL-REC;CS_MYSQL;mysql;secondary;Nœud 2 (un nœud à la fois)\r\n";
 
 /** VM passée à l'orange / au rouge : message et notification du système (si autorisée), une fois par seuil. */
 function patchAlert(alerts) {

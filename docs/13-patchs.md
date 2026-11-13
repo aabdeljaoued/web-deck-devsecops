@@ -90,7 +90,13 @@ environnements en même temps. Pour chaque VM, trois champs facultatifs :
 - **Cluster** : le nom du cluster (ex. `CL-MYSQL-APP-REC`) ; les clusters déjà saisis sont proposés ;
 - **ClusterSet** : l'ensemble qui contient le cluster (MySQL InnoDB ClusterSet) ;
 - **Profil** : *standard* ou **MySQL InnoDB Cluster** (étiquette « MySQL InnoDB » ; base des futurs contrôles propres
-  à MySQL).
+  à MySQL) ;
+- **Rôle dans le cluster** : **PRIMARY** ou **SECONDARY** (renseigné à la main). **Un seul PRIMARY par cluster** :
+  désigner un nouveau PRIMARY (après une bascule, un `forceQuorum`…) repasse l'ancien en SECONDARY, avec un message.
+
+Le PRIMARY est mis en avant : badge doré **★ PRIMARY** sur sa ligne, **en tête** de son cluster, étoile et cercle doré
+sur la carte des nœuds, et rappelé dans l'en-tête (« ★ PRIMARY : mysql-rec-02 ») ; « PRIMARY non renseigné » sinon.
+C'est le nœud à patcher **en dernier**.
 
 **⬡ par cluster** (à côté du tri) regroupe l'inventaire en **blocs**, un par cluster, encadrés aux couleurs de
 l'environnement (production rouge, recette bleu, qualification ambre, développement vert) :
@@ -103,7 +109,7 @@ l'environnement (production rouge, recette bleu, qualification ambre, développe
 - les nœuds dessous, triés selon le tri choisi ; les VMs sans cluster à la fin. Hors regroupement, le cluster et le profil s'affichent sous le
 nom de la VM. Le champ **Filtrer** cherche aussi dans le cluster et le ClusterSet.
 
-**Dupliquer** un nœud garde son cluster, son ClusterSet et son profil : pratique pour ajouter le nœud suivant
+**Dupliquer** un nœud garde son cluster, son ClusterSet et son profil (la copie est SECONDARY) : pratique pour ajouter le nœud suivant
 (`mysql-rec-03` → `mysql-rec-04`).
 
 ## Vérifier une VM en un clic
@@ -151,7 +157,8 @@ patch et la fréquence, le prochain est calculé. Une erreur s'affiche dans le f
 
 - une ligne d'en-tête, puis une VM par ligne ; colonnes reconnues, dans n'importe quel ordre, en français ou en
   anglais : `nom` (obligatoire), `hote`, `cle`, `environnement`, `dernier_patch`, `prochain_patch`, `frequence`,
-  `tags` (séparés par des virgules), `cluster`, `clusterset`, `profil` (`standard` ou `mysql`), `description` ;
+  `tags` (séparés par des virgules), `cluster`, `clusterset`, `profil` (`standard` ou `mysql`), `role` (`primary` ou `secondary` ; un seul PRIMARY
+  par cluster, le dernier du fichier est gardé et c'est signalé), `description` ;
 - séparateur `;` (Excel en français), `,` ou tabulation, détecté automatiquement ; valeurs entre guillemets acceptées ;
 - dates `JJ/MM/AAAA` ou `AAAA-MM-JJ` ; environnements `prod`, `dev`, `qualif` reconnus.
 

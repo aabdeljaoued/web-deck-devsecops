@@ -1516,3 +1516,15 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover, input[type="datetim
 .picker-row.alert .picker-item { color: #ff8a80; }
 .picker.certs-panel .picker-row .picker-action { align-self: flex-start; min-width: 30px; font-size: 15px; font-weight: 700; color: var(--accent); }
 .picker.certs-panel .picker-item { cursor: pointer; }
+/* Proxy : bouton de l'en-tête et section des Réglages */
+.proxy-toggle { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border: 1px solid var(--border); border-radius: 14px; background: var(--panel); color: var(--muted); font: inherit; font-size: 12px; cursor: pointer; white-space: nowrap; }
+.proxy-toggle[hidden] { display: none; }
+.proxy-toggle:hover { color: var(--text); border-color: var(--accent); }
+.proxy-toggle .proxy-dot { width: 8px; height: 8px; border-radius: 50%; background: #78909c; }
+.proxy-toggle.on { color: var(--text); }
+.proxy-toggle.on .proxy-dot { background: #43a047; box-shadow: 0 0 6px #43a047; }
+.proxy-state { padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; color: var(--muted); }
+.proxy-state.on { color: var(--text); border-color: color-mix(in srgb, #43a047 60%, transparent); }
+.proxy-modes { display: flex; flex-direction: column; gap: 6px; }
+.favform .proxy-mode { flex-direction: row; align-items: flex-start; gap: 8px; font-size: 13px; color: var(--text); }
+.favform .proxy-mode input { margin-top: 2px; }

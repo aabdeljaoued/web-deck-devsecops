@@ -61,7 +61,9 @@ aucun lisible.
 
 ## Poste d'entreprise et proxy
 
-Sur un réseau où toute sortie passe par un proxy (ex. Zscaler) et où le DNS interne ne résout pas les noms publics :
+Sur un réseau où toute sortie passe par un proxy (ex. Zscaler) et où le DNS interne ne résout pas les noms publics.
+Au bureau avec proxy, à la maison sans : mode **Automatique** de
+[Réglages › Proxy](10-reglages-et-tracabilite.md#proxy--bureau-ou-maison).
 
 - définis `HTTPS_PROXY` pour ton utilisateur (`setx HTTPS_PROXY http://proxy:8080` sous Windows), puis redémarre le deck ;
 - la vérification passe alors par un tunnel `CONNECT` du proxy ; `NO_PROXY` est respecté ;

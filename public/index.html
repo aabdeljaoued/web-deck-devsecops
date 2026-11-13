@@ -21,6 +21,7 @@
         </p>
         <select id="mission-switch" class="mission-switch" title="Mission active : thème, rubriques, motif de production, dossier de travail, groupe de favoris" hidden></select>
         <span id="share-badge" class="share-badge" hidden>PARTAGE</span>
+        <button id="proxy-toggle" class="proxy-toggle" title="Proxy : clic pour changer (automatique, activé, désactivé)" hidden><span class="proxy-dot"></span><span id="proxy-toggle-text">Proxy</span></button>
         <button id="docs-open" class="palette-open docs-open" title="Documentation : toutes les fonctionnalités du deck, avec captures">?</button>
         <button id="share-mode" class="palette-open share-open" title="Mode partage d'écran : floute contextes, missions, notes, secrets, hôtes (survol = afficher)" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/><path d="m4 3 16 16"/></g></svg></button>
         <button id="settings-open" class="palette-open settings-open" title="Réglages"><svg viewBox="0 0 24 24" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></g></svg></button>
@@ -372,6 +373,24 @@
                 <div class="settings-actions">
                     <button type="button" id="rec-open">Ouvrir le dossier</button>
                 </div>
+            </fieldset>
+            <fieldset class="settings-group">
+                <legend>Proxy</legend>
+                <span class="hint">Proxy de sortie du deck : vérification des certificats, « Mettre à jour » (git), diagnostic, kubectl et <strong>nouveaux</strong> terminaux. Les terminaux déjà ouverts gardent leurs variables : ouvre-en un nouveau après un changement.</span>
+                <div id="proxy-state" class="proxy-state"></div>
+                <div class="proxy-modes" role="radiogroup" aria-label="Mode du proxy">
+                    <label class="settings-check proxy-mode"><input type="radio" name="proxy-mode" value="auto"> <span><strong>Automatique</strong> : activé quand le proxy répond (au bureau), désactivé sinon (à la maison) ; testé toutes les 2 min</span></label>
+                    <label class="settings-check proxy-mode"><input type="radio" name="proxy-mode" value="on"> <span><strong>Activé</strong> : toujours par le proxy</span></label>
+                    <label class="settings-check proxy-mode"><input type="radio" name="proxy-mode" value="off"> <span><strong>Désactivé</strong> : connexion directe, même si HTTPS_PROXY est défini</span></label>
+                    <label class="settings-check proxy-mode"><input type="radio" name="proxy-mode" value="system"> <span><strong>Système</strong> : variables HTTPS_PROXY / NO_PROXY de la session, telles quelles</span></label>
+                </div>
+                <label>Adresse du proxy <span class="hint">vide = celle de HTTPS_PROXY ; sans identifiants (ils seraient enregistrés en clair)</span>
+                    <input id="set-proxy-url" type="text" spellcheck="false" autocomplete="off" placeholder="http://proxy.client.fr:8080">
+                </label>
+                <label>Sans proxy (NO_PROXY) <span class="hint">noms ou domaines joints en direct, séparés par des virgules (ex. .intra.client.fr, gitlab.client.fr) ; vide = celui de la session</span>
+                    <input id="set-proxy-noproxy" type="text" spellcheck="false" autocomplete="off" placeholder="localhost,.intra.client.fr">
+                </label>
+                <div class="settings-actions"><button type="button" id="proxy-test">Tester maintenant</button><span class="hint">Enregistrer applique le choix tout de suite.</span></div>
             </fieldset>
             <fieldset class="settings-group">
                 <legend>Serveur</legend>

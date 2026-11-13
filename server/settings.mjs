@@ -3,6 +3,7 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 
 import { normalizeEnv } from "./patches.mjs";
+import { cleanNoProxy, cleanProxyUrl } from "./proxy.mjs";
 
 /** Définition des réglages : défaut et validation (renvoie la valeur propre, ou lève une erreur lisible). */
 const oneOf = (name, allowed) => (v) => {
@@ -97,6 +98,18 @@ const SCHEMA = {
         clean(v) {
             if (typeof v !== "boolean") throw new Error("journal : activé (true) ou non (false)");
             return v;
+        }
+    },
+    /**
+     * Proxy de sortie (Réglages › Proxy) : mode system (variables d'environnement), auto (actif s'il répond),
+     * on, off ; adresse et NO_PROXY (vides = ceux des variables d'environnement).
+     */
+    proxy: {
+        default: { mode: "system", url: "", noProxy: "" },
+        clean(v) {
+            if (!v || typeof v !== "object" || Array.isArray(v)) throw new Error("proxy : objet { mode, url, noProxy } attendu");
+            if (!["system", "auto", "on", "off"].includes(v.mode)) throw new Error("proxy : mode system, auto, on ou off");
+            return { mode: v.mode, url: cleanProxyUrl(v.url), noProxy: cleanNoProxy(v.noProxy) };
         }
     },
     /** Mode d'affichage : sombre, clair, ou celui du système. */

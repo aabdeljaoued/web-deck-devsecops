@@ -13,7 +13,7 @@ Une section à la fois : le **menu de gauche** les regroupe en quatre parties, e
 | Personnaliser | Apparence, Navigation, Rubriques, Mes actions, Missions |
 | Traçabilité | Journal des actions (et rapport d'intervention), Enregistrements de sessions |
 | Données | Favoris, Coffre, Sauvegardes, Configuration complète |
-| Système | Serveur (mise à jour, diagnostic, application) |
+| Système | Proxy (bureau / maison), Serveur (mise à jour, diagnostic, application) |
 
 Le panneau se rouvre sur la dernière section consultée. **Annuler** et **Enregistrer** restent visibles en bas, quelle
 que soit la section ; **Enregistrer** enregistre toutes les sections d'un coup. Un champ invalide dans une autre section
@@ -65,6 +65,29 @@ Avant chaque modification des favoris, de Mes actions, des réglages ou du coffr
   [patchs des VMs](13-patchs.md) et signature (le coffre s'exporte à part, chiffré). Idéal pour passer de ton Mac à ton PC.
 - **Mettre à jour** (Réglages › Serveur) : compare avec GitHub, fait `git pull`, installe les dépendances si besoin et
   redémarre. Refusé si des fichiers suivis ont été modifiés sur la machine, pour ne rien écraser.
+
+## Proxy : bureau ou maison
+
+![Réglages › Proxy](img/proxy-reglages.jpg)
+
+Pour un poste qui passe par le proxy de l'entreprise au bureau, mais pas à la maison : **Réglages › Proxy**.
+
+| Mode | Comportement |
+|---|---|
+| **Automatique** (conseillé) | Proxy utilisé **s'il répond** (au bureau), connexion directe sinon (à la maison). Testé au démarrage, toutes les 2 minutes et avec **Tester maintenant** ; un message s'affiche au changement. |
+| **Activé** | Toujours par le proxy. |
+| **Désactivé** | Connexion directe, même si `HTTPS_PROXY` est défini dans la session. |
+| **Système** | Variables `HTTPS_PROXY` / `NO_PROXY` de la session, telles quelles (comportement par défaut). |
+
+- **Adresse du proxy** et **sans proxy (NO_PROXY)** : vides = celles des variables de la session (affichées en gris).
+  Pas d'identifiants dans l'adresse : ils seraient enregistrés en clair ; garde-les dans la variable `HTTPS_PROXY`.
+- Le choix s'applique à tout ce qui part du deck : vérification des certificats, **Mettre à jour** (git, en
+  neutralisant un `http.proxy` de la configuration git), diagnostic, kubectl et les **nouveaux terminaux**. Les
+  terminaux déjà ouverts gardent leurs variables : ouvre-en un nouveau après un changement.
+- **En-tête** : le bouton **Proxy** montre l'état (pastille verte = proxy actif ; « Proxy auto · bureau » ou
+  « · direct ») ; un clic change de mode immédiatement.
+
+![Bouton Proxy de l'en-tête](img/proxy-entete.jpg)
 
 ## Diagnostic
 

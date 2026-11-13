@@ -32,6 +32,8 @@ import { launch, openBrowser, openFolder, platform, windowsPty } from "./platfor
 import { Recorder } from "./recorder.mjs";
 import { Patches, vmsFromCsv, vmsToCsv } from "./patches.mjs";
 import { buildReport } from "./report.mjs";
+import { resetRoutes } from "./certs.mjs";
+import { envProxy, ProxyManager } from "./proxy.mjs";
 import { agendaEvents, buildSummary, toIcs } from "./summary.mjs";
 import { checkVm } from "./vmcheck.mjs";
 import { RemoteWatch } from "./remote.mjs";
@@ -51,6 +53,24 @@ const ctx = loadConfig();
 const backups = new Backups(path.join(ROOT, ".deck-backups"));
 const favorites = new Favorites(path.join(ROOT, "favoris.json"), backups);
 const settings = new Settings(path.join(ROOT, "settings.json"), backups);
+// Proxy de sortie choisi dans le deck (Réglages › Proxy) : appliqué aux variables d'environnement avant tout appel
+// réseau (certificats, git, kubectl, terminaux) ; en mode auto, test toutes les 2 min (bureau / maison)
+const proxy = new ProxyManager(() => settings.get().proxy);
+await proxy.start();
+/** Texte du mode de proxy (diagnostic, page). */
+function proxyLabel() {
+    const s = proxy.state;
+    return s.mode === "system" ? "variables d'environnement"
+        : s.mode === "on" ? "activé dans le deck"
+        : s.mode === "off" ? "désactivé dans le deck"
+        : s.active ? "automatique : proxy joignable (bureau)" : s.configured ? "automatique : proxy injoignable (hors bureau)" : "automatique : aucune adresse de proxy";
+}
+/** État envoyé à la page (identifiants éventuels des variables masqués). */
+function proxyView() {
+    const mask = (u) => String(u ?? "").replace(/\/\/[^/@]*@/, "//***@");
+    const sys = envProxy(proxy.original);
+    return { ...proxy.state, url: mask(proxy.state.url), configured: mask(proxy.state.configured), label: proxyLabel(), system: { url: mask(sys.url), noProxy: sys.noProxy } };
+}
 const actions = new Actions(path.join(ROOT, "actions.json"), backups);
 // Patchs des VMs (rubrique Patchs) : patches.json, hors Git, sauvegardé comme les favoris
 const patches = new Patches(path.join(ROOT, "patches.json"), backups);
@@ -358,7 +378,7 @@ function logAction(entry, sid) {
 }
 
 // Mise à jour en un clic : vérification 30 s après le démarrage, puis toutes les 6 h (Réglages › Serveur)
-const updater = new Updater(ROOT);
+const updater = new Updater(ROOT, () => proxy.gitArgs());
 async function checkUpdate() {
     broadcast({ t: "update", ...(await updater.check()) });
 }
@@ -370,6 +390,14 @@ const screenLock = new ScreenLock(remote);
 screenLock.on("change", (locked) => { if (locked) vault.lock("écran verrouillé"); });
 screenLock.start();
 status.on("update", (id, state) => broadcast({ t: "status", id, state }));
+// Proxy effectif changé (choix dans le deck, ou bureau / maison en mode auto) : chemins des certificats oubliés,
+// certificats revérifiés, pages prévenues
+proxy.on("change", () => {
+    resetRoutes();
+    broadcast({ t: "proxy", proxy: proxyView(), changed: true });
+    status.refreshCerts().catch(() => {});
+    console.log(`Proxy : ${proxy.state.active ? proxy.state.url : "aucun"} (${proxyLabel()})`);
+});
 // Certificat passé à l'orange / au rouge : notification dans les pages ouvertes (une fois par seuil)
 status.alertFile = path.join(ROOT, ".deck-cert-alerts.json");
 // Aucune page ouverte (vérification au démarrage) : l'alerte attend la prochaine page, elle n'est pas perdue
@@ -409,6 +437,7 @@ wss.on("connection", (ws) => {
         actions: actions.list(),
         localUnix: LOCAL_UNIX,
         update: updater.view(),
+        proxy: proxyView(),
         workspace: ctx.workspace,
         prodPattern: ctx.cfg.prodPattern || "prod",
         signature: signatureVersion(),
@@ -545,14 +574,29 @@ wss.on("connection", (ws) => {
                 case "git-list": reply({ t: "git-list", ...status.listRepos() }); break;
                 case "git-select": await status.selectRepo(String(msg.repo)); break;
                 // Réglages (espace admin) : enregistrés, puis renvoyés à toutes les pages
+                // Proxy : changement rapide du mode (bouton de l'en-tête) ; nouveau test (mode auto)
+                case "proxy-set": {
+                    const mode = String(msg.mode);
+                    const cur = settings.get().proxy;
+                    const next = settings.check({ proxy: { ...cur, mode } }).proxy;
+                    if (mode === "on" && !(next.url || envProxy(proxy.original).url)) throw new Error("indique d'abord l'adresse du proxy (Réglages › Proxy)");
+                    broadcast({ t: "settings", settings: settings.update({ proxy: next }) });
+                    await proxy.refresh();
+                    broadcast({ t: "proxy", proxy: proxyView() });
+                    reply({ t: "vault-ok", text: `proxy : ${proxy.state.active ? `actif (${proxyView().url})` : "désactivé, connexion directe"} · ${proxyLabel()}` });
+                    break;
+                }
+                case "proxy-test": await proxy.refresh(); reply({ t: "proxy", proxy: proxyView() }); break;
                 case "settings-save": {
                     // Vérifiés d'abord (rubriques : le deck doit tenir sur l'accueil), enregistrés ensuite
                     const next = withActiveMission(settings.check(msg.settings));
                     const current = settings.get();
                     const worldsChanged = JSON.stringify([next.worlds, next.worldOrder]) !== JSON.stringify([current.worlds, current.worldOrder]);
                     const nextDeck = worldsChanged ? makeDeck(next.worlds, next.worldOrder) : deck;
+                    const proxyChanged = JSON.stringify(next.proxy) !== JSON.stringify(current.proxy);
                     broadcast({ t: "settings", settings: settings.save(next) });
                     if (worldsChanged) { deck = nextDeck; broadcast(deckMessage()); }
+                    if (proxyChanged) { await proxy.refresh(); broadcast({ t: "proxy", proxy: proxyView() }); }
                     reply({ t: "vault-ok", text: "réglages enregistrés", close: false });
                     break;
                 }
@@ -749,7 +793,7 @@ wss.on("connection", (ws) => {
                     break;
                 }
                 case "diagnostic":
-                    reply({ t: "diagnostic", checks: await runDiagnostic({ ctx, remote, tools, backups, supervisor: SUPERVISOR, localUnix: LOCAL_UNIX, deckTools, root: ROOT }) });
+                    reply({ t: "diagnostic", checks: await runDiagnostic({ ctx, remote, tools, backups, supervisor: SUPERVISOR, localUnix: LOCAL_UNIX, deckTools, root: ROOT, proxy: { label: proxyLabel(), gitArgs: proxy.gitArgs() } }) });
                     break;
                 // Signature en image : PNG uniquement (vérifié à ses premiers octets), 600 Ko au plus
                 case "signature-upload": {

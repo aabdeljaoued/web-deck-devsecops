@@ -18,13 +18,15 @@ function exec(cmd, args, cwd, timeout = 60000) {
 }
 
 export class Updater {
-    constructor(root) {
+    /** @param gitArgs () => options git ajoutées devant chaque commande (proxy choisi dans le deck) */
+    constructor(root, gitArgs = () => []) {
         this.root = root;
+        this.gitArgs = gitArgs;
         this.state = { version: null, date: null, behind: 0, dirty: [], checked: null, error: null };
     }
 
     git(args, timeout) {
-        return exec("git", args, this.root, timeout);
+        return exec("git", [...this.gitArgs(), ...args], this.root, timeout);
     }
 
     /** Version installée (commit court et date), sans accès réseau. */

@@ -29,7 +29,6 @@ export class Terminals extends EventEmitter {
         this.ctx = ctx;
         this.sessions = new Map();
         this.counter = 0;
-        this.env = terminalEnv(ctx);
         this.stateFile = stateFile;
         this.closing = false;
     }
@@ -49,7 +48,8 @@ export class Terminals extends EventEmitter {
             cols: clamp(cols, 20, 500),
             rows: clamp(rows, 5, 200),
             cwd: dir,
-            env: this.env,
+            // Recalculé à chaque terminal : suit le proxy choisi dans le deck (variables du serveur modifiées)
+            env: terminalEnv(this.ctx),
             useConpty: isWindows ? true : undefined
         });
         const sid = String(++this.counter);

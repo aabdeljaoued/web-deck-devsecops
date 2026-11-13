@@ -32,12 +32,16 @@ const maskProxy = (raw) => String(raw ?? "").replace(/\/\/[^/@]*@/, "//•••
  * Réseau : proxy, DNS, accès HTTPS (et interception TLS) et accès Git pour « Mettre à jour ».
  * Utile sur un poste d'entreprise (proxy obligatoire, DNS interne).
  */
-export async function networkChecks(root, env = process.env) {
+/**
+ * @param proxy { label, gitArgs } : mode choisi dans Réglages › Proxy (texte affiché) et options git correspondantes
+ */
+export async function networkChecks(root, env = process.env, proxy = {}) {
     const checks = [];
     const proxyUrl = env.HTTPS_PROXY || env.https_proxy || "";
     const noProxy = env.NO_PROXY || env.no_proxy || "";
+    const source = proxy.label ?? "variable HTTPS_PROXY";
     checks.push(await check("Proxy", () => ({
-        detail: proxyUrl ? `${maskProxy(proxyUrl)}${noProxy ? ` · NO_PROXY : ${noProxy}` : ""} (variable HTTPS_PROXY)` : "aucun (HTTPS_PROXY non défini) : connexion directe"
+        detail: proxyUrl ? `${maskProxy(proxyUrl)}${noProxy ? ` · NO_PROXY : ${noProxy}` : ""} (${source})` : `aucun : connexion directe (${proxy.label ?? "HTTPS_PROXY non défini"})`
     })));
     const dns = await check("DNS (nom public)", async () => {
         const { address } = await lookup("github.com");
@@ -55,16 +59,16 @@ export async function networkChecks(root, env = process.env) {
     }));
     checks.push(await check("Accès Git (Mettre à jour)", () => new Promise((resolve) => {
         if (!existsSync(path.join(root, ".git"))) return resolve({ warn: true, detail: "dossier hors Git : mise à jour à la main" });
-        execFile("git", ["ls-remote", "--heads", "origin"], { cwd: root, timeout: 15000, windowsHide: true, env }, (err, _out, stderr) => {
+        execFile("git", [...(proxy.gitArgs ?? []), "ls-remote", "--heads", "origin"], { cwd: root, timeout: 15000, windowsHide: true, env }, (err, _out, stderr) => {
             if (!err) return resolve({ detail: "dépôt GitHub joignable" });
             const why = String(stderr || err.message || "").trim().split("\n").pop();
-            resolve({ ok: false, detail: `${why || "échec"}${proxyUrl ? " · git suit HTTPS_PROXY ; sinon : git config --global http.proxy <url du proxy>" : ""}` });
+            resolve({ ok: false, detail: `${why || "échec"} · ${proxyUrl ? "proxy utilisé : essaie Réglages › Proxy › Désactivé (hors du bureau) ou Automatique" : "connexion directe : au bureau, essaie Réglages › Proxy › Activé ou Automatique"}` });
         });
     })));
     return checks;
 }
 
-export async function runDiagnostic({ ctx, remote, tools, backups, supervisor, localUnix, deckTools, root }) {
+export async function runDiagnostic({ ctx, remote, tools, backups, supervisor, localUnix, deckTools, root, proxy }) {
     const checks = [];
 
     checks.push(await check("Système", () => ({
@@ -135,6 +139,6 @@ export async function runDiagnostic({ ctx, remote, tools, backups, supervisor, l
 
     checks.push(await check("Workspace", () => ({ ok: existsSync(ctx.workspace), detail: ctx.workspace })));
 
-    if (root) checks.push(...(await networkChecks(root)));
+    if (root) checks.push(...(await networkChecks(root, process.env, proxy)));
     return checks;
 }

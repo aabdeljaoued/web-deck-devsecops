@@ -212,6 +212,7 @@ function handle(msg) {
             state.server = msg.server ?? null;
             state.localUnix = msg.localUnix ?? true;
             if (msg.update) applyUpdate(msg.update);
+            if (msg.proxy) applyProxy(msg.proxy);
             state.workspace = msg.workspace ?? "";
             state.actions = msg.actions ?? [];
             state.prodPatternDefault = msg.prodPattern ?? "prod";
@@ -419,6 +420,11 @@ function handle(msg) {
             state.patches = msg.vms;
             renderPatches();
             if (!$("#agenda").hidden) send({ t: "agenda" });
+            break;
+        case "proxy":
+            applyProxy(msg.proxy);
+            // Changement détecté en mode automatique (arrivée au bureau, retour à la maison)
+            if (msg.changed && msg.proxy.mode === "auto") toast(msg.proxy.active ? `proxy du bureau détecté : connexions par ${msg.proxy.url}` : "proxy injoignable : connexion directe (hors du bureau)", "ok");
             break;
         case "patch-checking":
             for (const id of msg.ids) patchChecking.add(id);
@@ -3282,6 +3288,53 @@ function worldChoices() {
         .map((box) => [box.dataset.id, box.checked]));
 }
 
+// ---------- Proxy : mode choisi dans le deck (Réglages › Proxy, bouton de l'en-tête) ----------
+
+const PROXY_MODES = { auto: "Automatique (bureau / maison)", on: "Activé", off: "Désactivé", system: "Système (variables de la session)" };
+
+function applyProxy(p) {
+    state.proxy = p;
+    const btn = $("#proxy-toggle");
+    // Bouton visible dès qu'un proxy est connu (adresse saisie ou variable de la session), ou un mode choisi
+    btn.hidden = !(p.configured || p.system?.url || p.mode !== "system");
+    btn.classList.toggle("on", p.active);
+    $("#proxy-toggle-text").textContent = p.mode === "auto" ? `Proxy auto · ${p.active ? "bureau" : "direct"}` : p.active ? "Proxy actif" : "Sans proxy";
+    btn.title = `${p.active ? `Connexions par ${p.url}` : "Connexion directe"} · ${p.label}\nClic : changer de mode`;
+    renderProxyState();
+}
+
+function renderProxyState() {
+    const p = state.proxy;
+    const el = $("#proxy-state");
+    if (!p || !el) return;
+    el.classList.toggle("on", p.active);
+    el.textContent = `${p.active ? `● Actif : ${p.url}${p.noProxy ? ` · sans proxy : ${p.noProxy}` : ""}` : "○ Inactif : connexion directe"} · ${p.label}${p.checked ? ` · ${new Date(p.checked).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}` : ""}`;
+}
+
+function fillProxySettings() {
+    const s = state.settings?.proxy ?? { mode: "system", url: "", noProxy: "" };
+    const radio = document.querySelector(`input[name="proxy-mode"][value="${s.mode}"]`);
+    if (radio) radio.checked = true;
+    $("#set-proxy-url").value = s.url ?? "";
+    $("#set-proxy-noproxy").value = s.noProxy ?? "";
+    // Valeurs de la session proposées en gris quand rien n'est saisi
+    $("#set-proxy-url").placeholder = state.proxy?.system?.url || "http://proxy.client.fr:8080";
+    $("#set-proxy-noproxy").placeholder = state.proxy?.system?.noProxy || "localhost,.intra.client.fr";
+    renderProxyState();
+}
+
+/** Menu du bouton de l'en-tête : changement de mode immédiat (enregistré). */
+function openProxyMenu(btn) {
+    const p = state.proxy ?? {};
+    const items = Object.entries(PROXY_MODES).map(([mode, label]) => ({ label, current: p.mode === mode, title: label, onClick: () => { closePicker(); send({ t: "proxy-set", mode }); } }));
+    pickerAnchor = btn;
+    $("#picker").classList.remove("certs-panel");
+    $("#picker").hidden = false;
+    const note = Object.assign(document.createElement("p"), { className: "picker-note", textContent: `${p.active ? `Actif : ${p.url}` : "Connexion directe"} · ${p.label ?? ""}. Adresse et NO_PROXY : Réglages › Proxy.` });
+    $("#picker").replaceChildren(pickerSection("Proxy", items, ""), note);
+    placePicker();
+}
+
 // ---------- Réglages : une section à la fois, menu à gauche ----------
 
 /** Sections regroupées dans le menu (titre de la section = sa légende dans index.html). */
@@ -3289,7 +3342,7 @@ const SETTINGS_GROUPS = [
     ["Personnaliser", ["Apparence", "Navigation", "Rubriques", "Mes actions", "Missions"]],
     ["Traçabilité", ["Journal des actions", "Enregistrements de sessions"]],
     ["Données", ["Favoris", "Coffre", "Sauvegardes", "Configuration complète"]],
-    ["Système", ["Serveur"]]
+    ["Système", ["Proxy", "Serveur"]]
 ];
 let settingsTab = (() => { try { return localStorage.getItem("deck-settings-tab") || "Apparence"; } catch { return "Apparence"; } })();
 const settingsSections = () => [...document.querySelectorAll("#settings-pane > fieldset.settings-group")];
@@ -3356,6 +3409,7 @@ function openSettings() {
     send({ t: "rec-list" });
     $("#act-form").hidden = true;
     renderServer();
+    fillProxySettings();
     send({ t: "backup-list" });
     $("#settings").hidden = false;
     refreshVaultIo();
@@ -4317,6 +4371,8 @@ $("#params-form").addEventListener("keydown", (ev) => {
 });
 $("#note-to-terminal").addEventListener("click", noteToTerminal);
 $("#settings-open").addEventListener("click", openSettings);
+$("#proxy-toggle").addEventListener("click", (ev) => { ev.stopPropagation(); openProxyMenu(ev.currentTarget); });
+$("#proxy-test").addEventListener("click", () => { $("#proxy-state").textContent = "test en cours…"; send({ t: "proxy-test" }); });
 // Application installable (Edge / Chrome : « Installer ce site en tant qu'application ») ; le navigateur reste utilisable
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
 // Le navigateur signale que le deck est installable : bouton « Installer l'application » (Réglages › Serveur)
@@ -4437,6 +4493,7 @@ $("#settings-form").addEventListener("submit", (ev) => {
         appearance: $("#set-appearance").value,
         missionTheme: $("#set-theme").value,
         journalEnabled: $("#set-journal-on").checked,
+        proxy: { mode: $('input[name="proxy-mode"]:checked')?.value ?? "system", url: $("#set-proxy-url").value, noProxy: $("#set-proxy-noproxy").value },
         watermark: $("#set-watermark").value,
         watermarkStyle: $("#set-watermark-style").value,
         watermarkFont: $("#set-watermark-font").value,

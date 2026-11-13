@@ -404,6 +404,9 @@ function buildCatalog(ctx) {
             { ...textIcon("noyau et boot", "ℹ", "uname -r; uptime; who -b 2>/dev/null", true, C.patch, "lucide-server-cog"), unix: true },
             { ...textIcon("historique", "🕘", "(grep -h ' upgrade ' /var/log/dpkg.log* 2>/dev/null | tail -20) || sudo dnf history list | head -15", true, C.patch, "lucide-history"), unix: true },
             textIcon("correctifs Windows", "KB", sh(null, "Get-HotFix | Sort-Object InstalledOn -Descending | Select-Object -First 10 HotFixID, Description, InstalledOn", null), true, C.patch, "lucide-shield-check"),
+            // MySQL InnoDB Cluster : depuis un terminal connecté à un nœud (mot de passe root demandé par mysqlsh)
+            { ...textIcon("cluster status", "⬡", "mysqlsh root@$(hostname) -- cluster status", true, C.patch, "lucide-database"), unix: true },
+            { ...textIcon("clusterset status", "⬡⬡", "mysqlsh root@$(hostname) -- clusterset status --extended=1", true, C.patch, "lucide-network"), unix: true },
             { ...textIcon("redémarrer", "⏻", "sudo shutdown -r +1 'redemarrage apres patch'", false, C.danger, "lucide-power"), unix: true }
         ]},
         linux: { label: "Linux / Unix", sym: "🐧", icon: "linux", color: C.linux, terminal: true, keys: [

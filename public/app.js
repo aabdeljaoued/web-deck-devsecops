@@ -3854,6 +3854,84 @@ function setPatchSort(key, desc) {
 let patchPending = false;  // formulaire envoyé, en attente du serveur
 const patchChecking = new Set();   // VMs en cours de vérification (ssh, lecture seule)
 
+/** Regroupement de l'inventaire par cluster (retenu dans le navigateur). */
+let patchGroupByCluster = (() => { try { return localStorage.getItem("deck-patch-group") === "cluster"; } catch { return false; } })();
+
+/** Cluster et profil d'une VM, sous son nom. */
+function patchClusterLine(vm) {
+    if (!vm.cluster && !vm.profile) return "";
+    const div = Object.assign(document.createElement("div"), { className: "patch-cluster-line" });
+    if (vm.cluster) div.append(Object.assign(document.createElement("span"), { className: "patch-cluster", textContent: `⬡ ${vm.cluster}`, title: `Cluster ${vm.cluster}${vm.clusterSet ? ` · ClusterSet ${vm.clusterSet}` : ""}` }));
+    if (vm.profile === "mysql-innodb") div.append(Object.assign(document.createElement("span"), { className: "patch-profile", textContent: "MySQL InnoDB", title: "Profil MySQL InnoDB Cluster" }));
+    return div;
+}
+
+/** Clusters repliés (en-tête seul), retenus dans le navigateur. */
+const patchFolded = (() => { try { return new Set(JSON.parse(localStorage.getItem("deck-patch-folded") ?? "[]")); } catch { return new Set(); } })();
+
+/** Environnement d'un cluster (celui de la majorité de ses nœuds) : couleur du bloc. */
+function clusterEnv(cluster, all) {
+    const counts = {};
+    for (const v of all) if (v.cluster === cluster) counts[v.env] = (counts[v.env] ?? 0) + 1;
+    return Object.entries(counts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? "";
+}
+
+/** Niveau d'urgence du patch d'une VM (comme sur sa ligne). */
+const vmLevel = (v) => { const d = patchDays(v); return d === null ? "orange" : d <= 1 ? "rouge" : d <= 7 ? "orange" : "ok"; };
+
+/**
+ * En-tête d'un cluster (mode regroupé) : nom, environnement, ClusterSet, profil ; carte des nœuds (pastille par nœud
+ * selon son état, ↻ reboot requis, ⚠ sécurité en attente) ; état le plus urgent ; clic = replier / déplier.
+ */
+function patchClusterHeader(cluster, nodes, all, folded = false) {
+    const env = cluster ? clusterEnv(cluster, all) : "";
+    const tr = Object.assign(document.createElement("tr"), { className: `patch-group grp-${cluster ? env || "autre" : "none"}${folded ? " folded" : ""}` });
+    const td = Object.assign(document.createElement("td"), { colSpan: 6 });
+    const el = (cls, text, title) => Object.assign(document.createElement("span"), { className: cls, textContent: text, ...(title ? { title } : {}) });
+    if (!cluster) {
+        td.append(el("patch-group-name none", "Sans cluster"), el("patch-group-meta", `${nodes.length} VM(s)`));
+        tr.append(td);
+        return tr;
+    }
+    const total = all.filter((v) => v.cluster === cluster);
+    const sets = [...new Set(total.map((v) => v.clusterSet).filter(Boolean))];
+    const levels = total.map(vmLevel);
+    const worst = levels.includes("rouge") ? "rouge" : levels.includes("orange") ? "orange" : "ok";
+    const checks = total.filter((v) => v.check && !v.check.error).length;
+    const reboot = total.filter((v) => v.check?.reboot).length;
+    const top = Object.assign(document.createElement("div"), { className: "patch-group-top" });
+    top.append(
+        el("patch-group-fold", folded ? "▸" : "▾"),
+        el("patch-group-icon", "⬡"),
+        el("patch-group-name", cluster),
+        ...[...new Set(total.map((v) => v.env))].map((e) => el(`patch-env env-${e}`, e)),
+        ...(sets.length ? [el("patch-group-meta", `ClusterSet ${sets.join(", ")}`)] : []),
+        ...(total.some((v) => v.profile === "mysql-innodb") ? [el("patch-profile", "MySQL InnoDB")] : []),
+        el("grow", ""),
+        el(`patch-group-state lvl-${worst}`, worst === "rouge" ? "patch en retard ou imminent" : worst === "orange" ? "patch sous 7 j" : "à jour")
+    );
+    // Carte des nœuds : un coup d'œil sur tout le cluster, même replié
+    const map = Object.assign(document.createElement("div"), { className: "patch-group-nodes" });
+    for (const v of [...total].sort((a, b) => a.name.localeCompare(b.name, "fr", { numeric: true }))) {
+        const d = patchDays(v);
+        const flags = `${v.check?.reboot ? " ↻" : ""}${v.check?.security ? " ⚠" : ""}${v.check?.error ? " ✕" : ""}`;
+        const pill = el(`patch-node-pill lvl-${vmLevel(v)}${nodes.includes(v) ? "" : " hidden-by-filter"}`, "",
+            `${v.name} · ${v.env} · prochain patch ${frDate(v.nextPatch)} (${patchLabel(d)})${v.check?.reboot ? " · reboot requis" : ""}${v.check?.security ? ` · ${v.check.security} MAJ de sécurité` : ""}${v.check?.error ? ` · vérification : ${v.check.error}` : ""}`);
+        pill.append(el("patch-node-dot", "●"), ` ${v.name}`, ...(flags ? [el("patch-node-flags", flags)] : []));
+        map.append(pill);
+    }
+    map.append(el("patch-group-meta", `${total.length} nœud(s)${nodes.length < total.length ? ` · ${nodes.length} affiché(s)` : ""}${checks ? ` · ${checks} vérifié(s)` : ""}${reboot ? ` · ${reboot} reboot requis` : ""}`));
+    td.append(top, map);
+    td.title = folded ? "Clic : déplier le cluster" : "Clic : replier le cluster (en-tête seul)";
+    tr.addEventListener("click", () => {
+        if (patchFolded.has(cluster)) patchFolded.delete(cluster); else patchFolded.add(cluster);
+        try { localStorage.setItem("deck-patch-folded", JSON.stringify([...patchFolded])); } catch { /* choix non retenu */ }
+        renderPatches();
+    });
+    tr.append(td);
+    return tr;
+}
+
 /** « il y a 2 h » / « hier » à partir d'une date ISO. */
 function ago(iso) {
     const min = Math.round((Date.now() - Date.parse(iso)) / 60000);
@@ -3908,7 +3986,7 @@ function renderPatches() {
     const vms = state.patches ?? [];
     const q = fold($("#patch-search").value.trim());
     renderPatchFilters(vms);
-    const shown = vms.filter((v) => !q || fold(`${v.name} ${v.host} ${v.env} ${v.description} ${(v.tags ?? []).join(" ")}`).includes(q))
+    const shown = vms.filter((v) => !q || fold(`${v.name} ${v.host} ${v.env} ${v.description} ${(v.tags ?? []).join(" ")} ${v.cluster ?? ""} ${v.clusterSet ?? ""}`).includes(q))
         .filter((v) => !patchFilter.env || v.env === patchFilter.env)
         .filter((v) => [...patchFilter.tags].every((t) => (v.tags ?? []).includes(t)))
         .filter((v) => !patchFilter.state || PATCH_STATES.find(([k]) => k === patchFilter.state)?.[2](v))
@@ -3921,7 +3999,8 @@ function renderPatches() {
     }
     const late = vms.filter((v) => (patchDays(v) ?? 0) < 0).length;
     $("#patch-summary").textContent = vms.length ? `${vms.length} VM(s)${late ? ` · ${late} en retard` : ""}` : "";
-    $("#patch-list").replaceChildren(...shown.map((vm) => {
+    const grouped = patchGroupByCluster && shown.some((v) => v.cluster);
+    const rowFor = (vm) => {
         const d = patchDays(vm);
         const level = d === null || d <= 7 ? (d === null || d > 1 ? "orange" : "rouge") : "ok";
         const tr = Object.assign(document.createElement("tr"), { className: `patch-${level}` });
@@ -3937,7 +4016,8 @@ function renderPatches() {
         const del = btn("Supprimer", "Retirer cette VM de l'inventaire", (ev) => armOrRun(ev.target, "Confirmer ?", () => send({ t: "patch-delete", id: vm.id })), "danger");
         tr.append(
             cell(Object.assign(document.createElement("span"), { className: "patch-dot", textContent: level === "rouge" ? "🔴" : level === "orange" ? "🟠" : "🟢" })),
-            cell([name, " ", env, ...tags.flatMap((t) => [" ", t]), host, patchCheckLine(vm)]),
+            // Mode regroupé : cluster et profil déjà dans l'en-tête du groupe
+            cell([name, " ", env, ...tags.flatMap((t) => [" ", t]), grouped ? "" : patchClusterLine(vm), host, patchCheckLine(vm)]),
             cell(vm.description || "—", "patch-desc"),
             cell(`${frDate(vm.lastPatch)}${vm.everyDays ? ` · tous les ${vm.everyDays} j` : ""}`),
             cell([next, when]),
@@ -3955,7 +4035,34 @@ function renderPatches() {
             ], "patch-actions")
         );
         return tr;
-    }));
+    };
+    // Regroupement par cluster : en-tête par cluster (environnement, ClusterSet, profil, nœuds, état), nœuds dessous ;
+    // ordre des groupes = celui du nœud le plus haut dans le tri ; VMs sans cluster à la fin
+    if (grouped) {
+        const groups = new Map();
+        for (const vm of shown) {
+            const key = vm.cluster || "";
+            if (!groups.has(key)) groups.set(key, []);
+            groups.get(key).push(vm);
+        }
+        const ordered = [...groups].sort(([a], [b]) => (a === "") - (b === ""));
+        // Un bloc par cluster : espace, en-tête, nœuds (sauf replié) encadrés aux couleurs de l'environnement
+        $("#patch-list").replaceChildren(...ordered.flatMap(([cluster, nodes], gi) => {
+            const env = cluster ? clusterEnv(cluster, vms) : "";
+            const folded = cluster && patchFolded.has(cluster);
+            const rows = folded ? [] : nodes.map((vm, i) => {
+                const tr = rowFor(vm);
+                tr.classList.add("patch-node", `grp-${cluster ? env || "autre" : "none"}`);
+                if (i === nodes.length - 1) tr.classList.add("last");
+                return tr;
+            });
+            const spacer = Object.assign(document.createElement("tr"), { className: "patch-spacer" });
+            spacer.append(Object.assign(document.createElement("td"), { colSpan: 6 }));
+            return [...(gi ? [spacer] : []), patchClusterHeader(cluster, nodes, vms, folded), ...rows];
+        }));
+    } else {
+        $("#patch-list").replaceChildren(...shown.map(rowFor));
+    }
     if (!shown.length) {
         const tr = document.createElement("tr");
         tr.append(Object.assign(document.createElement("td"), { colSpan: 6, className: "hint", textContent: vms.length ? "aucune VM ne correspond" : "aucune VM : « + VM » pour commencer" }));
@@ -3993,6 +4100,13 @@ function openPatchForm(vm = null, { duplicate = false } = {}) {
     $("#patch-every").value = vm?.everyDays ?? "";
     $("#patch-desc").value = vm?.description ?? "";
     $("#patch-tags").value = (vm?.tags ?? []).join(", ");
+    $("#patch-cluster").value = vm?.cluster ?? "";
+    $("#patch-clusterset").value = vm?.clusterSet ?? "";
+    $("#patch-profile").value = vm?.profile ?? "";
+    // Clusters et ClusterSets déjà utilisés proposés à la saisie
+    const usedValues = (k) => [...new Set((state.patches ?? []).map((v) => v[k]).filter(Boolean))].sort();
+    $("#patch-cluster-list").replaceChildren(...usedValues("cluster").map((c) => new Option(c)));
+    $("#patch-clusterset-list").replaceChildren(...usedValues("clusterSet").map((c) => new Option(c)));
     // Tags déjà utilisés proposés à la saisie
     const known = [...new Set((state.patches ?? []).flatMap((v) => v.tags ?? []))].sort();
     $("#patch-tag-list").replaceChildren(...known.map((t) => new Option(t)));
@@ -4010,7 +4124,8 @@ function savePatch() {
         ...(patchEditing ? { id: patchEditing.id } : {}),
         name: $("#patch-name").value, host: $("#patch-host").value, identity: $("#patch-identity").value, env: $("#patch-env").value,
         lastPatch: $("#patch-last").value, nextPatch: $("#patch-next").value,
-        everyDays: $("#patch-every").value, description: $("#patch-desc").value, tags: $("#patch-tags").value
+        everyDays: $("#patch-every").value, description: $("#patch-desc").value, tags: $("#patch-tags").value,
+        cluster: $("#patch-cluster").value, clusterSet: $("#patch-clusterset").value, profile: $("#patch-profile").value
     } });
 }
 
@@ -4044,9 +4159,16 @@ function renderPatchFilters(vms) {
     sort.addEventListener("change", () => setPatchSort(sort.value, false));
     const dir = Object.assign(document.createElement("button"), { type: "button", className: "patch-chip patch-dir", textContent: patchSort.desc ? "↓ décroissant" : "↑ croissant", title: "Inverser l'ordre" });
     dir.addEventListener("click", () => setPatchSort(patchSort.key, !patchSort.desc));
+    const group = Object.assign(document.createElement("button"), { type: "button", className: `patch-chip patch-group-toggle${patchGroupByCluster ? " on" : ""}`, textContent: "⬡ par cluster", title: "Regrouper les nœuds d'un même cluster (en-tête avec environnement, ClusterSet, état)" });
+    group.setAttribute("aria-pressed", String(patchGroupByCluster));
+    group.addEventListener("click", () => {
+        patchGroupByCluster = !patchGroupByCluster;
+        try { localStorage.setItem("deck-patch-group", patchGroupByCluster ? "cluster" : ""); } catch { /* choix non retenu */ }
+        renderPatches();
+    });
     const row2 = Object.assign(document.createElement("div"), { className: "patch-filter-row" });
     row2.append(Object.assign(document.createElement("span"), { className: "patch-filter-label", textContent: "État" }), ...states,
-        Object.assign(document.createElement("span"), { className: "grow" }), sort, dir);
+        Object.assign(document.createElement("span"), { className: "grow" }), ...(vms.some((v) => v.cluster) ? [group] : []), sort, dir);
     $("#patch-filters").replaceChildren(row1, row2);
     $("#patch-filters").hidden = vms.length === 0;
 }
@@ -4090,9 +4212,10 @@ function showPatchImport(msg) {
     $("#patch-import-confirm").hidden = false;
 }
 
-const PATCH_TEMPLATE = "\uFEFFnom;hote;cle;environnement;dernier_patch;prochain_patch;frequence;tags;description\r\n"
-    + "app-prod-01;app-prod-01;~/.ssh/id_ed25519;production;10/10/2026;;30;linux, critique;API paiement (RHEL 9), maintenance le mardi 22h\r\n"
-    + "db-recette-01;admin@10.0.0.12;;recette;;15/12/2026;;linux, postgres;PostgreSQL 16\r\n";
+const PATCH_TEMPLATE = "\uFEFFnom;hote;cle;environnement;dernier_patch;prochain_patch;frequence;tags;cluster;clusterset;profil;description\r\n"
+    + "app-prod-01;app-prod-01;~/.ssh/id_ed25519;production;10/10/2026;;30;linux, critique;;;standard;API paiement (RHEL 9), maintenance le mardi 22h\r\n"
+    + "mysql-rec-01;admin@10.0.0.21;;recette;;15/12/2026;30;linux, mysql;CL-MYSQL-REC;CS_MYSQL;mysql;Nœud 1 du cluster MySQL de recette\r\n"
+    + "mysql-rec-02;admin@10.0.0.22;;recette;;16/12/2026;30;linux, mysql;CL-MYSQL-REC;CS_MYSQL;mysql;Nœud 2 (un nœud à la fois)\r\n";
 
 /** VM passée à l'orange / au rouge : message et notification du système (si autorisée), une fois par seuil. */
 function patchAlert(alerts) {

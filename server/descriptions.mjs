@@ -129,6 +129,8 @@ export const DESCRIPTIONS = {
     "patchs/historique": "Derniers paquets mis à jour",
     "patchs/correctifs Windows": "10 derniers correctifs Windows (KB)",
     "patchs/redémarrer": "Redémarre la VM dans 1 min (à valider)",
+    "patchs/cluster status": "État du cluster MySQL InnoDB (sur un nœud, mot de passe root demandé)",
+    "patchs/clusterset status": "État du ClusterSet MySQL (utile si cluster status échoue)",
     "k8s/port-forward": "Rend un service accessible en local",
     "ssh/connexion -i": "Se connecter avec une clé choisie (ssh -i)",
     "ssh/mes clés": "Clés du dossier ~/.ssh",

@@ -8,7 +8,12 @@ import { tmpDir } from "./helpers.mjs";
 
 test("VM : champs vérifiés, prochain patch déduit du dernier et de la fréquence", () => {
     const vm = cleanVm({ name: " app-prod-01 ", env: "production", lastPatch: "2026-10-01", everyDays: 30, description: "API\npaiement" });
-    assert.deepEqual(vm, { name: "app-prod-01", host: "", identity: "", env: "production", description: "API paiement", tags: [], lastPatch: "2026-10-01", nextPatch: "2026-10-31", everyDays: 30, check: null });
+    assert.deepEqual(vm, { name: "app-prod-01", host: "", identity: "", env: "production", description: "API paiement", tags: [], cluster: "", clusterSet: "", profile: "", lastPatch: "2026-10-01", nextPatch: "2026-10-31", everyDays: 30, check: null });
+    // Cluster, ClusterSet, profil (saisie libre normalisée)
+    const node = cleanVm({ name: "wqyd5530", nextPatch: "2026-12-01", cluster: " CL-MYSQL-LT1-REC ", clusterSet: "CS_MYSQL_LT1", profile: "MySQL" });
+    assert.deepEqual([node.cluster, node.clusterSet, node.profile], ["CL-MYSQL-LT1-REC", "CS_MYSQL_LT1", "mysql-innodb"]);
+    assert.throws(() => cleanVm({ name: "a", nextPatch: "2026-12-01", cluster: "CL; rm -rf /" }), /cluster invalide/);
+    assert.throws(() => cleanVm({ name: "a", nextPatch: "2026-12-01", profile: "oracle-rac" }), /profil inconnu/);
     // Tags libres : séparés par virgule, espace ou |, en minuscules, sans doublon
     assert.deepEqual(cleanVm({ name: "a", nextPatch: "2026-12-01", tags: "Linux, DMZ  critique|#linux" }).tags, ["linux", "dmz", "critique"]);
     assert.throws(() => cleanVm({ name: "a", nextPatch: "2026-12-01", tags: "ok, pas<bon>" }), /tag invalide/);
@@ -83,6 +88,12 @@ test("import CSV : séparateur « ; » ou « , », guillemets, en-têtes FR / EN
     assert.throws(() => vmsFromCsv("hote,env\nx,prod"), /colonne « nom » introuvable/);
     const en = vmsFromCsv("name,host,next,every\nsrv-1,srv-1.lan,2026-12-01,15").vms[0].vm;
     assert.deepEqual([en.name, en.host, en.nextPatch, en.everyDays], ["srv-1", "srv-1.lan", "2026-12-01", 15]);
+    // Colonnes cluster, ClusterSet, profil ; aller-retour par l'export
+    const { vmsToCsv } = await import("../server/patches.mjs");
+    const mysql = vmsFromCsv("nom;prochain_patch;cluster;clusterset;profil\nwqyd5529;01/12/2026;CL-MYSQL-LT1-REC;CS_LT1;MySQL").vms[0].vm;
+    assert.deepEqual([mysql.cluster, mysql.clusterSet, mysql.profile], ["CL-MYSQL-LT1-REC", "CS_LT1", "mysql-innodb"]);
+    const back = vmsFromCsv(vmsToCsv([mysql])).vms[0].vm;
+    assert.deepEqual([back.cluster, back.clusterSet, back.profile], ["CL-MYSQL-LT1-REC", "CS_LT1", "mysql-innodb"]);
 });
 
 test("import en masse : aperçu sans écriture, ajout ou mise à jour par nom, doublons du fichier, export réimportable", async () => {

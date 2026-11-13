@@ -18,7 +18,13 @@ Active-la dans **Réglages › Rubriques** (case **Patchs**). Elle contient :
 - des commandes à lancer **sur la VM** (après le ssh) : mises à jour en attente (**MAJ (apt)**, **MAJ (dnf)**),
   **sécurité seule**, **reboot requis ?**, **noyau et boot**, **historique** des derniers paquets, **redémarrer** (dans
   1 min, à valider) ; sous Windows, elles s'activent une fois le terminal connecté en ssh ;
-- **correctifs Windows** : les 10 derniers KB installés (PowerShell).
+- **correctifs Windows** : les 10 derniers KB installés (PowerShell) ;
+- **MySQL InnoDB Cluster**, depuis un terminal connecté à un nœud du cluster (lecture seule, mysqlsh demande le mot
+  de passe root dans le terminal ; le deck ne le voit pas) :
+  - **cluster status** : `mysqlsh root@$(hostname) -- cluster status` (état des nœuds, PRIMARY / SECONDARY,
+    quorum) ;
+  - **clusterset status** : `mysqlsh root@$(hostname) -- clusterset status --extended=1`, à utiliser quand
+    `cluster status` échoue parce que le ClusterSet n'est pas ONLINE.
 
 | Couleur du voyant | Signification |
 |---|---|
@@ -74,6 +80,32 @@ Pour chaque VM :
 **Calendrier** (en-tête) : les échéances du mois et l'export vers Outlook, voir
 [Échéances et synthèse](14-echeances-et-synthese.md).
 
+## Clusters (MySQL InnoDB Cluster…)
+
+![Inventaire regroupé par cluster](img/patchs-clusters.jpg)
+
+Les nœuds d'un même cluster se patchent ensemble, et pas n'importe comment : un nœud à la fois, jamais deux
+environnements en même temps. Pour chaque VM, trois champs facultatifs :
+
+- **Cluster** : le nom du cluster (ex. `CL-MYSQL-APP-REC`) ; les clusters déjà saisis sont proposés ;
+- **ClusterSet** : l'ensemble qui contient le cluster (MySQL InnoDB ClusterSet) ;
+- **Profil** : *standard* ou **MySQL InnoDB Cluster** (étiquette « MySQL InnoDB » ; base des futurs contrôles propres
+  à MySQL).
+
+**⬡ par cluster** (à côté du tri) regroupe l'inventaire en **blocs**, un par cluster, encadrés aux couleurs de
+l'environnement (production rouge, recette bleu, qualification ambre, développement vert) :
+
+- **en-tête** : nom du cluster, environnement, ClusterSet, profil, et l'état le plus urgent du cluster ;
+- **carte des nœuds** : une pastille par nœud, colorée selon son patch (🔴 en retard ou J-1, 🟠 sous 7 j, 🟢 plus
+  tard), avec **↻** reboot requis, **⚠** mises à jour de sécurité en attente, **✕** vérification en échec (détail au
+  survol) ; le nombre de nœuds, de nœuds vérifiés et de reboots requis ;
+- **clic sur l'en-tête** : replier le cluster (en-tête et carte seuls) ou le déplier ; retenu ;
+- les nœuds dessous, triés selon le tri choisi ; les VMs sans cluster à la fin. Hors regroupement, le cluster et le profil s'affichent sous le
+nom de la VM. Le champ **Filtrer** cherche aussi dans le cluster et le ClusterSet.
+
+**Dupliquer** un nœud garde son cluster, son ClusterSet et son profil : pratique pour ajouter le nœud suivant
+(`mysql-rec-03` → `mysql-rec-04`).
+
 ## Vérifier une VM en un clic
 
 **Vérifier** (sur une VM) ou **Vérifier tout** (en-tête, 4 VMs à la fois) : le deck se connecte en ssh avec la clé de
@@ -119,7 +151,7 @@ patch et la fréquence, le prochain est calculé. Une erreur s'affiche dans le f
 
 - une ligne d'en-tête, puis une VM par ligne ; colonnes reconnues, dans n'importe quel ordre, en français ou en
   anglais : `nom` (obligatoire), `hote`, `cle`, `environnement`, `dernier_patch`, `prochain_patch`, `frequence`,
-  `tags` (séparés par des virgules), `description` ;
+  `tags` (séparés par des virgules), `cluster`, `clusterset`, `profil` (`standard` ou `mysql`), `description` ;
 - séparateur `;` (Excel en français), `,` ou tabulation, détecté automatiquement ; valeurs entre guillemets acceptées ;
 - dates `JJ/MM/AAAA` ou `AAAA-MM-JJ` ; environnements `prod`, `dev`, `qualif` reconnus.
 

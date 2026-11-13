@@ -76,12 +76,34 @@ export function cleanVm(def) {
         env,
         description: text(def?.description, 500),
         tags: cleanTags(def?.tags),
+        // Cluster (ex. CL-MYSQL-LT1-REC), ClusterSet qui le contient (facultatif) et profil de la VM
+        cluster: cleanClusterName(def?.cluster, "cluster"),
+        clusterSet: cleanClusterName(def?.clusterSet, "ClusterSet"),
+        profile: cleanProfile(def?.profile),
         lastPatch,
         // Prochain patch déduit du dernier et de la fréquence s'il n'est pas donné
         nextPatch: nextPatch || (lastPatch && every ? addDays(lastPatch, every) : ""),
         everyDays: every,
         check: cleanCheck(def?.check)
     };
+}
+
+/** Profils de VM : comportement propre (vérifications, garde-fous) ; "" = standard. */
+export const PROFILES = { "": "standard", "mysql-innodb": "MySQL InnoDB Cluster" };
+
+/** Profil saisi librement (« mysql », « InnoDB », « standard »…) -> clé de PROFILES. */
+export function cleanProfile(v) {
+    const s = String(v ?? "").trim().toLowerCase().replace(/[\s_]+/g, "-");
+    if (!s || s === "standard" || s === "aucun") return "";
+    if (/^(mysql|innodb|mysql-innodb|mysql-innodb-cluster|mysql-cluster|group-replication)$/.test(s)) return "mysql-innodb";
+    throw new Error(`profil inconnu : ${v} (standard ou mysql-innodb)`);
+}
+
+/** Nom de cluster ou de ClusterSet : lettres, chiffres, . _ - (60 caractères au plus). */
+function cleanClusterName(v, what) {
+    const s = String(v ?? "").trim();
+    if (s && !/^[A-Za-z0-9][A-Za-z0-9_.-]{0,59}$/.test(s)) throw new Error(`${what} invalide : ${s} (lettres, chiffres, . _ -)`);
+    return s;
 }
 
 /**
@@ -233,9 +255,12 @@ const COLUMNS = {
     prochainpatch: "nextPatch", nextpatch: "nextPatch", prochain: "nextPatch", next: "nextPatch",
     frequence: "everyDays", frequencejours: "everyDays", every: "everyDays", everydays: "everyDays", interval: "everyDays",
     description: "description", desc: "description", commentaire: "description", notes: "description",
-    tags: "tags", tag: "tags", etiquettes: "tags", labels: "tags"
+    tags: "tags", tag: "tags", etiquettes: "tags", labels: "tags",
+    cluster: "cluster", grappe: "cluster",
+    clusterset: "clusterSet",
+    profil: "profile", profile: "profile", type: "profile"
 };
-const EXPORT_HEADER = ["nom", "hote", "cle", "environnement", "dernier_patch", "prochain_patch", "frequence", "tags", "description"];
+const EXPORT_HEADER = ["nom", "hote", "cle", "environnement", "dernier_patch", "prochain_patch", "frequence", "tags", "cluster", "clusterset", "profil", "description"];
 const colKey = (h) => String(h).normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().replace(/[^a-z]/g, "");
 
 /** Découpe un CSV (guillemets, séparateur doublé dans les guillemets, retours à la ligne entre guillemets). */
@@ -304,6 +329,6 @@ export function vmsFromCsv(text) {
 export function vmsToCsv(vms) {
     const q = (v) => (/[;,"\n\r]/.test(String(v ?? "")) ? `"${String(v).replace(/"/g, '""')}"` : String(v ?? ""));
     const fr = (d) => (d ? d.split("-").reverse().join("/") : "");
-    const lines = vms.map((v) => [v.name, v.host, v.identity, v.env, fr(v.lastPatch), fr(v.nextPatch), v.everyDays ?? "", (v.tags ?? []).join(", "), v.description].map(q).join(";"));
+    const lines = vms.map((v) => [v.name, v.host, v.identity, v.env, fr(v.lastPatch), fr(v.nextPatch), v.everyDays ?? "", (v.tags ?? []).join(", "), v.cluster ?? "", v.clusterSet ?? "", v.profile ?? "", v.description].map(q).join(";"));
     return `\uFEFF${[EXPORT_HEADER.join(";"), ...lines].join("\r\n")}\r\n`;
 }

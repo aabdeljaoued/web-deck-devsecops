@@ -76,7 +76,7 @@ export function cleanVm(def) {
         env,
         description: text(def?.description, 500),
         tags: cleanTags(def?.tags),
-        // Cluster (ex. CL-MYSQL-LT1-REC), ClusterSet qui le contient (facultatif) et profil de la VM
+        // Cluster (ex. CL-MYSQL-APP-REC), ClusterSet qui le contient (facultatif) et profil de la VM
         cluster: cleanClusterName(def?.cluster, "cluster"),
         clusterSet: cleanClusterName(def?.clusterSet, "ClusterSet"),
         profile: cleanProfile(def?.profile),

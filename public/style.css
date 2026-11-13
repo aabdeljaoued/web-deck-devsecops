@@ -1538,3 +1538,17 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover, input[type="datetim
 #screens.grid .screen.remote-host::after { color: #fff; background: #1565c0; }
 #screens.grid .screen.remote-prod::after { color: #fff; background: #c62828; }
 #screens.grid .screen.remote-prod { border-color: color-mix(in srgb, #c62828 70%, transparent); }
+/* Terminal connecté à une machine : cadre de couleur (bleu, rouge en production) et étiquette accrochée en haut */
+.screen.remote-host { --remote-c: #1e88e5; outline: 3px solid var(--remote-c); outline-offset: 2px; border-radius: 4px; }
+.screen.remote-prod { --remote-c: #e53935; }
+#screens.grid .screen.remote-host { outline-offset: 1px; border-color: var(--remote-c); }
+#screens:not(.grid) .screen.remote-host::after {
+    content: attr(data-remote-label);
+    position: absolute; top: 0; right: 14px; z-index: 6;
+    padding: 2px 12px 3px; border-radius: 0 0 7px 7px;
+    font-size: 12px; font-weight: 700; letter-spacing: .03em; color: #fff;
+    background: var(--remote-c); box-shadow: 0 2px 6px rgba(0, 0, 0, .35);
+    pointer-events: none;
+}
+#screens.grid .screen.remote-host::after { color: #fff; background: var(--remote-c); font-weight: 700; }
+.share-mode #screens:not(.grid) .screen.remote-host::after { filter: blur(4px); }

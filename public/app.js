@@ -1561,17 +1561,7 @@ function updateScreensBanner() {
     screens.classList.toggle("prod", Boolean(prod));
     const parts = [];
     if (prod) parts.push(Object.assign(document.createElement("span"), { className: "banner-prod", textContent: `PRODUCTION · ${prod}` }));
-    // Terminal actif connecté à une machine : son nom (VM de l'inventaire, sinon l'hôte), rouge en production
-    // (vue partagée : chaque écran affiche déjà sa machine dans son coin, le bandeau la masquerait)
-    const host = layout().size === 1 ? remoteName(state.active) : null;
-    if (host && state.remoteTargets[state.active]?.dest) {
-        const t = state.remoteTargets[state.active];
-        parts.push(Object.assign(document.createElement("span"), {
-            className: `banner-host${t.env === "production" ? " prod" : ""}`,
-            textContent: `${state.remote[state.active] === "wsl" ? "WSL" : "SSH"} · ${host}${t.env ? ` · ${t.env}` : ""}`,
-            title: t.dest
-        }));
-    }
+    // Machine connectée : cadre et étiquette sur le terminal lui-même (markRemoteTabs), pas dans ce bandeau
     const recorded = visibleTerms().filter((id) => state.rec?.has(id)).length;
     if (recorded) parts.push(Object.assign(document.createElement("span"), { className: "banner-rec", textContent: recorded > 1 ? `● REC · ${recorded} terminaux` : "● REC" }));
     if (state.broadcast) {
@@ -2733,8 +2723,11 @@ function markRemoteTabs() {
         t.tab.classList.toggle("remote-host", Boolean(target?.dest));
         // Vue partagée : l'étiquette du coin de l'écran donne aussi la machine (« zsh 2 · app-prod-01 »)
         t.screen.dataset.title = name ? `${t.title ?? t.defaultTitle} · ${name}` : t.title ?? t.defaultTitle;
-        t.screen.classList.toggle("remote-host", Boolean(target?.dest));
+        t.screen.classList.toggle("remote-host", Boolean(name));
         t.screen.classList.toggle("remote-prod", target?.env === "production");
+        // Étiquette accrochée au cadre (vue simple) : « SSH · app-prod-01 · production »
+        if (name) t.screen.dataset.remoteLabel = `${state.remote[sid] === "wsl" ? "WSL" : "SSH"} · ${name}${target?.env ? ` · ${target.env}` : ""}`;
+        else delete t.screen.dataset.remoteLabel;
         if (name) {
             t.tab.dataset.remote = name.length > 22 ? `${name.slice(0, 21)}…` : name;
             t.tab.title = `${state.remote[sid] === "wsl" ? "WSL" : "Connecté en ssh"} : ${target?.dest ?? "?"}${target?.vm ? ` · VM ${target.vm}${target.env ? ` (${target.env})` : ""}` : ""}`;

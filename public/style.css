@@ -1528,3 +1528,13 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover, input[type="datetim
 .proxy-modes { display: flex; flex-direction: column; gap: 6px; }
 .favform .proxy-mode { flex-direction: row; align-items: flex-start; gap: 8px; font-size: 13px; color: var(--text); }
 .favform .proxy-mode input { margin-top: 2px; }
+/* Terminal connecté : nom de la VM / de l'hôte sur l'onglet et dans le bandeau */
+.tab.remote.remote-host::after { text-transform: none; font-weight: 700; background: #1565c0; }
+.tab.remote.remote-prod::after { background: #c62828; }
+.banner-host { background: #1565c0; }
+.banner-host.prod { background: #c62828; box-shadow: 0 0 0 1px #ff8a80 inset; }
+.share-mode .screens-banner .banner-host, .share-mode .tab.remote.remote-host::after { filter: blur(4px); }
+.share-mode .screens-banner:hover .banner-host { filter: none; }
+#screens.grid .screen.remote-host::after { color: #fff; background: #1565c0; }
+#screens.grid .screen.remote-prod::after { color: #fff; background: #c62828; }
+#screens.grid .screen.remote-prod { border-color: color-mix(in srgb, #c62828 70%, transparent); }

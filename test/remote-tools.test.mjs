@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { RemoteWatch } from "../server/remote.mjs";
+import { RemoteWatch, sshTarget, wslTarget } from "../server/remote.mjs";
 import { neededTool } from "../server/tools.mjs";
 
 /** Terminal factice (shell pid 100) et liste de processus : seul un ssh lancé depuis un shell compte. */
@@ -21,6 +21,32 @@ test("ssh lancé par git push ou scp : ignoré", () => {
     assert.equal(detect([{ pid: 101, ppid: 100, name: "git" }, { pid: 102, ppid: 101, name: "ssh" }]), null);
     assert.equal(detect([{ pid: 101, ppid: 100, name: "scp" }, { pid: 102, ppid: 101, name: "ssh" }]), null);
     assert.equal(detect([{ pid: 101, ppid: 999, name: "ssh" }]), null, "ssh d'un autre terminal");
+});
+
+test("destination d'une commande ssh : options à valeur sautées, utilisateur gardé, rien d'autre", () => {
+    assert.equal(sshTarget("ssh admin@app-prod-01.client.test"), "admin@app-prod-01.client.test");
+    assert.equal(sshTarget("/usr/bin/ssh -i ~/.ssh/cle-prod -p 2222 -o StrictHostKeyChecking=yes admin@10.0.0.5 uptime"), "admin@10.0.0.5");
+    assert.equal(sshTarget('C:\\Windows\\System32\\OpenSSH\\ssh.exe -i "C:\\Users\\jean dupont\\.ssh\\cle" bastion-client'), "bastion-client");
+    assert.equal(sshTarget("ssh -l root -tt db-prod-01"), "root@db-prod-01");
+    assert.equal(sshTarget("ssh -p2222 -J saut@bastion web-01"), "web-01");
+    assert.equal(sshTarget("ssh -v -- srv-ad-01"), "srv-ad-01");
+    assert.equal(sshTarget("ssh ssh://ops@host.test:2200"), "ops@host.test");
+    assert.equal(sshTarget("ssh -i cle"), null);
+    assert.equal(wslTarget("wsl.exe -d Ubuntu-24.04"), "Ubuntu-24.04");
+    assert.equal(wslTarget("wsl.exe"), null);
+});
+
+test("terminal connecté : destination lue dans la ligne de commande (Windows) puis oubliée à la déconnexion", () => {
+    const w = new RemoteWatch({ sessions: new Map([["1", { proc: { pid: 100 } }]]) });
+    const events = [];
+    w.on("change", () => events.push(JSON.stringify(w.targets())));
+    w.cmds.set(101, "ssh.exe -i C:\\cle admin@app-prod-01");
+    w.update([{ pid: 101, ppid: 100, name: "ssh" }]);
+    assert.deepEqual(w.targets(), { 1: "admin@app-prod-01" });
+    w.update([]);
+    assert.deepEqual(w.targets(), {});
+    assert.equal(w.cmds.size, 0, "ligne de commande oubliée");
+    assert.deepEqual(events, ['{"1":"admin@app-prod-01"}', "{}"]);
 });
 
 test("outils vérifiés : ceux qui ont une commande d'installation sur ce système", () => {

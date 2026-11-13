@@ -310,7 +310,23 @@ terminals.on("exit", (sid, code) => {
 // DECK_LOCAL_UNIX=0 : se comporter comme sous Windows (pour tester sur un Mac).
 const LOCAL_UNIX = platform !== "windows" && process.env.DECK_LOCAL_UNIX !== "0";
 const remote = new RemoteWatch(terminals);
-remote.on("change", (state) => broadcast({ t: "remote", remote: state }));
+/**
+ * Destinations des terminaux connectés, reconnues dans l'inventaire des patchs : { sid: { dest, vm, env } }.
+ * Reconnue si l'hôte de la VM, son nom ou le nom court de l'hôte correspond (avec ou sans « utilisateur@ »).
+ */
+function remoteTargets() {
+    const hostOf = (s) => String(s ?? "").toLowerCase().replace(/^[^@]*@/, "");
+    const vms = patches.list();
+    return Object.fromEntries(Object.entries(remote.targets()).map(([sid, dest]) => {
+        const h = hostOf(dest);
+        const vm = remote.state.get(sid) === "ssh"
+            ? vms.find((v) => v.host && v.host.toLowerCase() === dest.toLowerCase())
+              ?? vms.find((v) => (v.host && hostOf(v.host) === h) || v.name.toLowerCase() === h || v.name.toLowerCase() === h.split(".")[0])
+            : null;
+        return [sid, { dest, vm: vm?.name ?? null, env: vm?.env ?? null }];
+    }));
+}
+remote.on("change", (state) => broadcast({ t: "remote", remote: state, targets: remoteTargets() }));
 remote.start();
 
 // ---------- Missions : thème, rubriques, motif de production, dossier de travail, groupe de favoris ----------
@@ -415,6 +431,8 @@ status.patchAlertFile = path.join(ROOT, ".deck-patch-alerts.json");
 function patchesChanged() {
     broadcast({ t: "patches", vms: patches.list() });
     status.refreshPatches();
+    // VM renommée ou ajoutée : noms affichés sur les terminaux connectés recalculés
+    if (remote.targets && Object.keys(remote.targets()).length) broadcast({ t: "remote", remote: remote.view(), targets: remoteTargets() });
 }
 // Coffre : état et contenu (secrets sans leur valeur) renvoyés à toutes les pages à chaque changement
 vault.on("change", (reason) => broadcast({ t: "vault", ...vault.view(), ...(reason ? { reason } : {}) }));
@@ -442,6 +460,7 @@ wss.on("connection", (ws) => {
         prodPattern: ctx.cfg.prodPattern || "prod",
         signature: signatureVersion(),
         remote: remote.view(),
+        remoteTargets: remoteTargets(),
         rec: recorder.sids(),
         build: pageBuild(),
         server: { supervisor: SUPERVISOR, log: SUPERVISOR ? null : LOG_FILE },

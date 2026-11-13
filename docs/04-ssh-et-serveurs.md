@@ -18,6 +18,24 @@
 Si tu utilises toujours la même clé pour un hôte, écris-la une fois dans `~/.ssh/config` (`IdentityFile`) :
 **connexion** suffit alors.
 
+## Savoir sur quelle machine on tape
+
+![Terminal connecté à une VM de production](img/ssh-vm-connectee.jpg)
+
+Dès qu'un terminal est connecté en **ssh** (ou **wsl**), le deck affiche la machine :
+
+- **sur l'onglet** : le nom de la **VM de l'inventaire** ([Patchs](13-patchs.md)) si l'hôte y figure, sinon le nom
+  de l'hôte ; en **rouge** si la VM est en **production**, en bleu sinon ; au survol, la destination complète ;
+- **dans le bandeau** au-dessus du terminal : « SSH · app-prod-01 · production » ;
+- **en vue partagée** (2 ou 4 terminaux) : dans l'étiquette du coin de chaque écran (« zsh 2 · web-recette-01 »),
+  avec un cadre rouge pour la production.
+
+![Deux terminaux connectés, vue partagée](img/ssh-vm-partage.jpg)
+
+La VM est reconnue par son hôte (`admin@app-prod-01.client.fr`), son nom d'hôte sans utilisateur, ou son nom
+d'inventaire (alias de `~/.ssh/config` du même nom). Seule la destination est lue dans la commande ssh : ni la
+clé, ni les options, ni la commande distante. À la déconnexion (`exit`), l'onglet redevient local.
+
 ## Les autres touches
 
 Clés (`ssh-keygen`, copier la clé publique, empreinte), agent (`ssh-add`), `ssh -T git@github.com`, `ssh-keyscan`,

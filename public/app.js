@@ -19,6 +19,7 @@ const state = {
     tools: { missing: new Set(), install: {} },   // outils installables absents (server/tools.mjs)
     localUnix: true,                              // poste Linux / macOS (sinon : rubriques "unix" via ssh / wsl)
     remote: {},                                   // sid -> "ssh" | "wsl" : terminaux connectés (server/remote.mjs)
+    remoteTargets: {},                            // sid -> { dest, vm, env } : destination (VM de l'inventaire reconnue)
     server: null,                                 // mode de lancement (service ou à la main)
     pages: {},
     titles: {},
@@ -219,6 +220,7 @@ function handle(msg) {
             state.signature = msg.signature ?? null;
             applyWatermark();
             state.remote = msg.remote ?? {};
+            state.remoteTargets = msg.remoteTargets ?? {};
             if (msg.tools) applyTools(msg.tools);
             state.status = msg.status ?? {};
             if (msg.vault) applyVault(msg.vault);
@@ -335,7 +337,9 @@ function handle(msg) {
             break;
         case "remote":
             state.remote = msg.remote ?? {};
+            state.remoteTargets = msg.targets ?? {};
             markRemoteTabs();
+            updateScreensBanner();
             refreshUnixKeys();
             break;
         case "token-renewed":
@@ -1390,6 +1394,7 @@ function setTitle(t, title) {
     const text = t.title ?? t.defaultTitle;
     t.label.textContent = text;
     t.screen.dataset.title = text;
+    markRemoteTabs();   // garde le nom de la machine connectée dans l'étiquette de l'écran
 }
 
 /** Remplace le nom de l'onglet par un champ : Entrée valide, Échap annule, vide = nom par défaut. */
@@ -1556,6 +1561,17 @@ function updateScreensBanner() {
     screens.classList.toggle("prod", Boolean(prod));
     const parts = [];
     if (prod) parts.push(Object.assign(document.createElement("span"), { className: "banner-prod", textContent: `PRODUCTION · ${prod}` }));
+    // Terminal actif connecté à une machine : son nom (VM de l'inventaire, sinon l'hôte), rouge en production
+    // (vue partagée : chaque écran affiche déjà sa machine dans son coin, le bandeau la masquerait)
+    const host = layout().size === 1 ? remoteName(state.active) : null;
+    if (host && state.remoteTargets[state.active]?.dest) {
+        const t = state.remoteTargets[state.active];
+        parts.push(Object.assign(document.createElement("span"), {
+            className: `banner-host${t.env === "production" ? " prod" : ""}`,
+            textContent: `${state.remote[state.active] === "wsl" ? "WSL" : "SSH"} · ${host}${t.env ? ` · ${t.env}` : ""}`,
+            title: t.dest
+        }));
+    }
     const recorded = visibleTerms().filter((id) => state.rec?.has(id)).length;
     if (recorded) parts.push(Object.assign(document.createElement("span"), { className: "banner-rec", textContent: recorded > 1 ? `● REC · ${recorded} terminaux` : "● REC" }));
     if (state.broadcast) {
@@ -2697,13 +2713,35 @@ function refreshUnixKeys() {
     if (!state.localUnix && (state.pages[state.page] ?? []).some((k) => k?.unix)) render();
 }
 
-/** Badge « ssh » / « wsl » sur l'onglet des terminaux connectés. */
+/** Nom à afficher pour un terminal connecté : VM de l'inventaire, sinon l'hôte (sans utilisateur), sinon « ssh ». */
+function remoteName(sid) {
+    const kind = state.remote[sid];
+    if (!kind) return null;
+    const t = state.remoteTargets[sid];
+    if (t?.vm) return t.vm;
+    if (t?.dest) return kind === "wsl" ? `wsl ${t.dest}` : t.dest.replace(/^[^@]*@/, "");
+    return kind;
+}
+
+/** Badge sur l'onglet des terminaux connectés : nom de la VM (ou de l'hôte), en rouge si c'est de la production. */
 function markRemoteTabs() {
     for (const [sid, t] of state.terms) {
-        const kind = state.remote[sid];
-        t.tab.classList.toggle("remote", Boolean(kind));
-        if (kind) t.tab.dataset.remote = kind;
-        else delete t.tab.dataset.remote;
+        const name = remoteName(sid);
+        const target = state.remoteTargets[sid];
+        t.tab.classList.toggle("remote", Boolean(name));
+        t.tab.classList.toggle("remote-prod", target?.env === "production");
+        t.tab.classList.toggle("remote-host", Boolean(target?.dest));
+        // Vue partagée : l'étiquette du coin de l'écran donne aussi la machine (« zsh 2 · app-prod-01 »)
+        t.screen.dataset.title = name ? `${t.title ?? t.defaultTitle} · ${name}` : t.title ?? t.defaultTitle;
+        t.screen.classList.toggle("remote-host", Boolean(target?.dest));
+        t.screen.classList.toggle("remote-prod", target?.env === "production");
+        if (name) {
+            t.tab.dataset.remote = name.length > 22 ? `${name.slice(0, 21)}…` : name;
+            t.tab.title = `${state.remote[sid] === "wsl" ? "WSL" : "Connecté en ssh"} : ${target?.dest ?? "?"}${target?.vm ? ` · VM ${target.vm}${target.env ? ` (${target.env})` : ""}` : ""}`;
+        } else {
+            delete t.tab.dataset.remote;
+            t.tab.removeAttribute("title");
+        }
     }
 }
 

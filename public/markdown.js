@@ -59,7 +59,12 @@ const RESET = SGR(0);
  */
 function protectCode(text, render, format) {
     const codes = [];
-    const body = format(text.replace(/`([^`]+)`/g, (_, c) => `\u0000${codes.push(c) - 1}\u0000`));
+    // Code en ligne comme CommonMark : ouvert par N backquotes, fermé par N backquotes (`` a `b` c `` garde ses
+    // backquotes intérieurs) ; une espace de chaque côté est retirée quand le code en est entouré
+    const body = format(text.replace(/(?<!`)(`+)(?!`)([\s\S]*?[^`])\1(?!`)/g, (_, _ticks, c) => {
+        const code = /^ .*[^ ].* $/s.test(c) ? c.slice(1, -1) : c;
+        return `\u0000${codes.push(code) - 1}\u0000`;
+    }));
     return body.replace(/\u0000(\d+)\u0000/g, (_, n) => render(codes[Number(n)]));
 }
 

@@ -919,7 +919,7 @@ function hideKeyTip() {
 // {nom} ou {nom=valeur par défaut} (ex. {durée=15m}, {local=8080})
 const PARAM_RE = /\{([\p{L}_][\p{L}\p{N}_-]{0,30})(?:=([^{}\r\n]{0,80}))?\}/gu;
 const SENSITIVE_PARAM = /pass|secret|token|mdp|pwd|key|cle|clé/i;   // jamais gardés dans l'historique
-const LIVE = ["namespace", "ns", "pod", "deployment", "deploy", "service", "svc", "node", "context", "ctx", "contexte", "container", "conteneur", "image", "host", "hote", "hôte", "serveur", "server", "identity", "identite", "identité", "port"];
+const LIVE = ["namespace", "ns", "pod", "deployment", "deploy", "service", "svc", "node", "context", "ctx", "contexte", "container", "conteneur", "image", "host", "hote", "hôte", "serveur", "server", "identity", "identite", "identité", "port", "instance", "noeud", "nœud"];
 let paramsState = null;   // { key, command, names, req }
 
 /** Paramètres nommés d'une commande, dans l'ordre, sans doublon. */
@@ -1015,7 +1015,8 @@ function loadLiveParams(after = null) {
         if (after === "svc" && !isPort) continue;
         if (isPort && !service) { setParamOptions(input, [], "choisis d'abord le service"); continue; }
         setParamOptions(input, null, "chargement de la liste…");
-        send({ t: "param-options", req: paramsState.req, name, namespace: ns, service });
+        // sid : terminal actif (nœuds MySQL du cluster de la VM sur laquelle il est connecté)
+        send({ t: "param-options", req: paramsState.req, name, namespace: ns, service, sid: state.active });
     }
 }
 
@@ -1039,6 +1040,8 @@ function applyParamOptions(msg) {
         const status = msg.error ? `liste indisponible : ${msg.error} (saisie libre possible)`
             : !options.length && noun && ns ? `aucun ${noun} dans le namespace « ${ns} » : choisis un autre namespace`
             : !options.length ? "liste vide (saisie libre possible)"
+            : msg.inventory && /^(instance|noeud|nœud)$/i.test(msg.name) ? (msg.cluster ? `nœuds du cluster ${msg.cluster} (VM connectée) : clique ou ↑ ↓ puis Entrée` : `${msg.inventory} nœud(s) MySQL de l'inventaire (terminal non connecté à un nœud connu)`)
+            : !options.length && /^(instance|noeud|nœud)$/i.test(msg.name) ? "aucun nœud dans l'inventaire : renseigne le cluster de tes VMs (Patchs), ou tape hôte:3306"
             : msg.inventory ? `${msg.inventory} VM(s) de l'inventaire en tête, puis ~/.ssh/config : clique ou ↑ ↓ puis Entrée`
             : `${options.length} valeur(s) : clique ou ↑ ↓ puis Entrée`;
         setParamOptions(input, options, status, !options.length && !msg.error);

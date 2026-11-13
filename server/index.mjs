@@ -692,6 +692,20 @@ wss.on("connection", (ws) => {
                                 identities: Object.fromEntries(vms.filter((v) => v.identity).map((v) => [v.value, v.identity])) });
                             break;
                         }
+                        // Nœud MySQL : ceux du cluster de la VM connectée dans le terminal actif (sinon tous les nœuds
+                        // MySQL de l'inventaire), « hôte:3306 », PRIMARY en tête, rôle et cluster affichés
+                        if (liveParam(msg.name) === "instance") {
+                            const all = patches.list().filter((v) => v.cluster || v.profile === "mysql-innodb");
+                            const here = remoteTargets()[String(msg.sid ?? "")]?.vm;
+                            const cluster = all.find((v) => v.name === here)?.cluster;
+                            const nodes = (cluster ? all.filter((v) => v.cluster === cluster) : all)
+                                .sort((a, b) => (b.role === "primary") - (a.role === "primary") || a.name.localeCompare(b.name, "fr", { numeric: true }));
+                            const value = (v) => `${String(v.host || v.name).replace(/^[^@]*@/, "")}:3306`;
+                            reply({ t: "param-options", req: msg.req, name: msg.name, options: [...new Set(nodes.map(value))], inventory: nodes.length,
+                                cluster: cluster ?? null,
+                                labels: Object.fromEntries(nodes.map((v) => [value(v), `${v.name}${v.role ? ` · ${v.role.toUpperCase()}` : ""}${!cluster && v.cluster ? ` · ${v.cluster}` : ""}`])) });
+                            break;
+                        }
                         reply({ t: "param-options", req: msg.req, name: msg.name, options: await paramOptions(ctx, msg.name, { namespace: msg.namespace, service: msg.service }) });
                     } catch (err) {
                         reply({ t: "param-options", req: msg.req, name: msg.name, options: [], error: err.message.split("\n")[0] });

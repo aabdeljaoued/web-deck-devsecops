@@ -32,9 +32,11 @@ const SOURCES = {
     host: { ssh: true },
     identity: { keys: true },
     // ports d'un service (suit le namespace et le service saisis)
-    port: { servicePorts: true }
+    port: { servicePorts: true },
+    // nœud MySQL (hôte:3306) du cluster de la VM connectée : liste fournie par le serveur (inventaire des patchs)
+    instance: { inventory: true }
 };
-const ALIASES = { ns: "namespace", deploy: "deployment", svc: "service", ctx: "context", contexte: "context", conteneur: "container", hote: "host", "hôte": "host", serveur: "host", server: "host", identite: "identity", "identité": "identity" };
+const ALIASES = { ns: "namespace", deploy: "deployment", svc: "service", ctx: "context", contexte: "context", conteneur: "container", hote: "host", "hôte": "host", serveur: "host", server: "host", identite: "identity", "identité": "identity", noeud: "instance", "nœud": "instance" };
 
 /** Fichiers de ~/.ssh qui ne sont jamais des clés privées. */
 const NOT_KEYS = /^(config|known_hosts(\.old)?|authorized_keys2?|environment|rc)$|\.(pub|old|bak|txt|ppk|md)$/i;
@@ -119,6 +121,7 @@ export async function paramOptions(ctx, name, hint = {}) {
     const src = SOURCES[key];
     if (src.ssh) return sshHosts().slice(0, MAX_ITEMS);
     if (src.keys) return sshKeys().slice(0, MAX_ITEMS);
+    if (src.inventory) return [];   // complétée par server/index.mjs (inventaire des patchs)
     if (src.servicePorts) {
         const ns = String(hint.namespace ?? "").trim();
         const svc = String(hint.service ?? "").trim();

@@ -21,10 +21,14 @@ Active-la dans **Réglages › Rubriques** (case **Patchs**). Elle contient :
 - **correctifs Windows** : les 10 derniers KB installés (PowerShell) ;
 - **MySQL InnoDB Cluster**, depuis un terminal connecté à un nœud du cluster (lecture seule, mysqlsh demande le mot
   de passe root dans le terminal ; le deck ne le voit pas) :
-  - **cluster status** : `mysqlsh root@$(hostname) -- cluster status` (état des nœuds, PRIMARY / SECONDARY,
+  - **cluster status** : `` mysqlsh root@`hostname` -- cluster status `` (état des nœuds, PRIMARY / SECONDARY,
     quorum) ;
-  - **clusterset status** : `mysqlsh root@$(hostname) -- clusterset status --extended=1`, à utiliser quand
-    `cluster status` échoue parce que le ClusterSet n'est pas ONLINE.
+  - **clusterset status** : `` mysqlsh root@`hostname` -- clusterset status --extended=1 ``, à utiliser quand
+    `cluster status` échoue parce que le ClusterSet n'est pas ONLINE ;
+  - **mysqlsh (JS)** : `` mysqlsh root@`hostname` --js ``, le shell interactif en **mode JavaScript**, celui qu'il faut
+    pour `dba.getCluster()`, `forceQuorumUsingPartitionOf()`, `rejoinInstance()`, `rebootClusterFromCompleteOutage()`
+    (en mode SQL, erreur de syntaxe) ;
+  - **MySQL Cluster** : la sous-page des commandes à lancer **dans** cette session JS, voir ci-dessous.
 
 | Couleur du voyant | Signification |
 |---|---|
@@ -111,6 +115,42 @@ nom de la VM. Le champ **Filtrer** cherche aussi dans le cluster et le ClusterSe
 
 **Dupliquer** un nœud garde son cluster, son ClusterSet et son profil (la copie est SECONDARY) : pratique pour ajouter le nœud suivant
 (`mysql-rec-03` → `mysql-rec-04`).
+
+## MySQL Cluster : les commandes de la session JS
+
+![Patchs › MySQL Cluster](img/patchs-mysql.jpg)
+
+**Patchs › MySQL Cluster** regroupe les commandes à taper **dans une session `mysqlsh --js`** (ouverte avec la touche
+**mysqlsh (JS)** sur un nœud). Le deck ne voit pas que le terminal est dans mysqlsh (il tourne sur la VM) : ouvre
+d'abord la session, puis utilise ces touches.
+
+| Touche | Commande | |
+|---|---|---|
+| **status** | `dba.getCluster().status()` | lecture |
+| **status étendu** | `dba.getCluster().status({extended: 1})` | lecture |
+| **clusterset** | `dba.getClusterSet().status({extended: 1})` (si status échoue : ClusterSet non ONLINE) | lecture |
+| **describe** | `dba.getCluster().describe()` | lecture |
+| **membres GR** | `session.runSql("SELECT MEMBER_HOST, MEMBER_STATE, MEMBER_ROLE FROM performance_schema.replication_group_members")` | lecture |
+| **GTID** | `session.runSql("SELECT @@hostname, @@gtid_executed")` (avant de forcer le quorum) | lecture |
+| **start_on_boot** | `session.runSql("SELECT @@group_replication_start_on_boot")` | lecture |
+| **rejoin** | `dba.getCluster().rejoinInstance('<nœud>')` | ⚠ action |
+| **forcer quorum** | `dba.getCluster().forceQuorumUsingPartitionOf('<nœud>')` (perte de quorum) | ⚠ action |
+| **reboot outage** | `dba.rebootClusterFromCompleteOutage()` (panne totale) | ⚠ action |
+| **changer PRIMARY** | `dba.getCluster().setPrimaryInstance('<nœud>')` (ex. avant de patcher le PRIMARY) | ⚠ action |
+| **retirer nœud** | `dba.getCluster().removeInstance('<nœud>', {force: true})` (rejoin refusé, GTID errants) | ⚠ action |
+| **ajouter (clone)** | `dba.getCluster().addInstance('<nœud>', {recoveryMethod: 'clone'})` | ⚠ action |
+| **quitter** | `\q` | |
+
+- **Lecture** (pastille verte) : lancées tout de suite ; `session.runSql(…)` évite de passer en `\sql`.
+- **Actions** (rouge, pastille orange) : **tapées sans Entrée** : tu relis, tu complètes, tu valides.
+- **Le nœud** (`<nœud>`) se choisit dans une liste : les nœuds **du cluster de la VM connectée** dans le terminal actif
+  (inventaire), au format `hôte:3306`, PRIMARY en tête, rôle affiché ; sinon tous les nœuds MySQL de l'inventaire,
+  ou saisie libre.
+
+![Choix du nœud](img/patchs-mysql-noeud.jpg)
+
+Après un **changer PRIMARY** ou un **forcer quorum**, mets à jour le rôle dans l'inventaire (**Modifier › Rôle**) :
+le deck ne le détecte pas seul.
 
 ## Vérifier une VM en un clic
 

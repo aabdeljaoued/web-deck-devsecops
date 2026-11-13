@@ -61,3 +61,9 @@ test("documentation : lignes d'un paragraphe et d'un élément de liste réunies
     assert.match(docs, /élément sur deux lignes/);
     assert.equal((toHtml(md).match(/<p>/g) ?? []).length, 3, "notes : une ligne par paragraphe, comme avant");
 });
+
+test("code en ligne : doubles backquotes pour un code qui contient un backquote", async () => {
+    const { toHtml } = await import("../public/markdown.js");
+    assert.match(toHtml("lance `` mysqlsh root@`hostname` --js `` ici"), /<code>mysqlsh root@`hostname` --js<\/code> ici/);
+    assert.match(toHtml("simple `ls -l` et `pwd`"), /<code>ls -l<\/code> et <code>pwd<\/code>/);
+});

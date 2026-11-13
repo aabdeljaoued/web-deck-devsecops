@@ -14,7 +14,7 @@ export const COLORS = {
     git: "#F05032", k8s: "#326CE5", sec: "#C62828", terraform: "#7B42BC", vault: "#FFC107",
     ssh: "#2E7D32", openssl: "#AD1457", docker: "#0898C8", helm: "#1E88E5", vscode: "#007ACC",
     tool: "#37474F", web: "#00897B", danger: "#B71C1C", brew: "#FBB040", ansible: "#5BBDBF", fav: "#9CCC65",
-    linux: "#FCC624", patch: "#00838F"
+    linux: "#FCC624", patch: "#00838F", mysql: "#00758F"
 };
 const C = COLORS;
 
@@ -393,7 +393,28 @@ function buildCatalog(ctx) {
         // Linux / Unix : commandes d'administration d'un serveur (souvent après un ssh) ; tapées telles quelles,
         // quel que soit le shell local. Lecture seule = exécutée (vert) ; le reste est à compléter (orange).
         // Patchs des VMs : voyant (inventaire au clic) et commandes de vérification sur la VM (après un ssh)
-        patchs: { label: "Patchs", sym: "🩹", icon: "lucide-calendar-check", color: C.patch, terminal: true, keys: [
+        patchs: { label: "Patchs", sym: "🩹", icon: "lucide-calendar-check", color: C.patch, terminal: true,
+        // Sous-page : commandes à lancer DANS une session « mysqlsh --js » (touche mysqlsh (JS)) ; {instance} = nœud du
+        // cluster de la VM connectée, choisi dans l'inventaire ; remédiation tapée sans Entrée
+        pages: {
+            "patchs-mysql": { label: "MySQL Cluster", keys: [
+                { ...textIcon("status", "⬡", "dba.getCluster().status()", true, C.mysql, "lucide-list-checks"), unix: true },
+                { ...textIcon("status étendu", "⬡+", "dba.getCluster().status({extended: 1})", true, C.mysql, "lucide-file-search"), unix: true },
+                { ...textIcon("clusterset", "⬡⬡", "dba.getClusterSet().status({extended: 1})", true, C.mysql, "lucide-network"), unix: true },
+                { ...textIcon("describe", "ℹ", "dba.getCluster().describe()", true, C.mysql, "lucide-info"), unix: true },
+                { ...textIcon("membres GR", "GR", "session.runSql(\"SELECT MEMBER_HOST, MEMBER_STATE, MEMBER_ROLE FROM performance_schema.replication_group_members\")", true, C.mysql, "lucide-users"), unix: true },
+                { ...textIcon("GTID", "#", "session.runSql(\"SELECT @@hostname, @@gtid_executed\")", true, C.mysql, "lucide-fingerprint"), unix: true },
+                { ...textIcon("start_on_boot", "⏻", "session.runSql(\"SELECT @@group_replication_start_on_boot\")", true, C.mysql, "lucide-power"), unix: true },
+                { ...textIcon("rejoin", "↩", "dba.getCluster().rejoinInstance('{instance}')", false, C.danger, "lucide-link"), unix: true },
+                { ...textIcon("forcer quorum", "⚖", "dba.getCluster().forceQuorumUsingPartitionOf('{instance}')", false, C.danger, "lucide-scale"), unix: true },
+                { ...textIcon("reboot outage", "↻", "dba.rebootClusterFromCompleteOutage()", false, C.danger, "lucide-rotate-ccw"), unix: true },
+                { ...textIcon("changer PRIMARY", "★", "dba.getCluster().setPrimaryInstance('{instance}')", false, C.danger, "lucide-crown"), unix: true },
+                { ...textIcon("retirer nœud", "−", "dba.getCluster().removeInstance('{instance}', {force: true})", false, C.danger, "lucide-user-minus"), unix: true },
+                { ...textIcon("ajouter (clone)", "+", "dba.getCluster().addInstance('{instance}', {recoveryMethod: 'clone'})", false, C.danger, "lucide-user-plus"), unix: true },
+                { ...textIcon("quitter", "\\q", "\\q", true, C.mysql, "lucide-log-out"), unix: true }
+            ]}
+        },
+        keys: [
             status("patches", "patchs", "🩹", C.patch),
             withPick(textIcon("ssh VM", "ssh", "ssh ", false, C.patch, "lucide-log-in"), "ssh {host}"),
             withPick(textIcon("ssh -i VM", "-i", "ssh -i ", false, C.patch, "lucide-key-square"), "ssh -i {identity} {host}"),
@@ -405,8 +426,11 @@ function buildCatalog(ctx) {
             { ...textIcon("historique", "🕘", "(grep -h ' upgrade ' /var/log/dpkg.log* 2>/dev/null | tail -20) || sudo dnf history list | head -15", true, C.patch, "lucide-history"), unix: true },
             textIcon("correctifs Windows", "KB", sh(null, "Get-HotFix | Sort-Object InstalledOn -Descending | Select-Object -First 10 HotFixID, Description, InstalledOn", null), true, C.patch, "lucide-shield-check"),
             // MySQL InnoDB Cluster : depuis un terminal connecté à un nœud (mot de passe root demandé par mysqlsh)
-            { ...textIcon("cluster status", "⬡", "mysqlsh root@$(hostname) -- cluster status", true, C.patch, "lucide-database"), unix: true },
-            { ...textIcon("clusterset status", "⬡⬡", "mysqlsh root@$(hostname) -- clusterset status --extended=1", true, C.patch, "lucide-network"), unix: true },
+            { ...textIcon("cluster status", "⬡", "mysqlsh root@`hostname` -- cluster status", true, C.patch, "lucide-database"), unix: true },
+            { ...textIcon("clusterset status", "⬡⬡", "mysqlsh root@`hostname` -- clusterset status --extended=1", true, C.patch, "lucide-network"), unix: true },
+            // mysqlsh interactif en JavaScript : dba.getCluster(), forceQuorumUsingPartitionOf()… (erreur de syntaxe en mode SQL)
+            { ...textIcon("mysqlsh (JS)", "JS", "mysqlsh root@`hostname` --js", true, C.patch, "lucide-braces"), unix: true },
+            folder("MySQL Cluster", "⬡", "patchs-mysql", C.mysql, "lucide-database-zap"),
             { ...textIcon("redémarrer", "⏻", "sudo shutdown -r +1 'redemarrage apres patch'", false, C.danger, "lucide-power"), unix: true }
         ]},
         linux: { label: "Linux / Unix", sym: "🐧", icon: "linux", color: C.linux, terminal: true, keys: [
@@ -652,6 +676,15 @@ export function buildDeck(ctx, favorites = [], worlds = {}, worldOrder = [], use
         if (keys.length > SECTION_MAX) throw new Error(`la rubrique "${s}" a ${keys.length} touches (max ${SECTION_MAX}).`);
         layouts[s] = layout(keys, { "0,0": back() });
         parents[s] = "root";
+        // Sous-pages d'une rubrique (ex. Patchs › MySQL Cluster) : Retour vers la rubrique
+        for (const [sub, sd] of Object.entries(def.pages ?? {})) {
+            const subKeys = sd.keys.filter(allowed).map((k) => (def.unix ? { ...k, unix: true } : k));
+            if (cfg.clearKey && def.terminal) subKeys.push(clear);
+            if (subKeys.length > SECTION_MAX) throw new Error(`la page "${sub}" a ${subKeys.length} touches (max ${SECTION_MAX}).`);
+            layouts[sub] = layout(subKeys, { "0,0": back(s) });
+            titles[sub] = pick(sd.label);
+            parents[sub] = s;
+        }
         // Favoris : une page par groupe et sous-groupe
         if (s === "favoris") {
             for (const p of favoriteGroupPages(favorites, "favoris", 0)) {

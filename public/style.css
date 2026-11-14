@@ -1411,17 +1411,6 @@ main {
 .patch-tag { display: inline-block; padding: 0 6px; border-radius: 8px; font-size: 10px; font-weight: 600; color: #80cbc4; border: 1px solid color-mix(in srgb, #00838f 70%, transparent); }
 .patch-tags-field { grid-column: span 2; }
 [data-mode="light"] .patch-tag, [data-mode="light"] .patch-chip.tag { color: #00695c; }
-/* Patchs : dernière vérification d'une VM (ssh, lecture seule) */
-.patch-check { margin-top: 3px; font-size: 11.5px; color: var(--muted); }
-.patch-check.ok { color: #66bb6a; }
-.patch-check.info { color: #4fc3f7; }
-.patch-check.warn { color: #ffa040; font-weight: 600; }
-.patch-check.err { color: #ef9a9a; }
-.patch-check.checking { color: var(--accent); font-style: italic; }
-[data-mode="light"] .patch-check.ok { color: #2e7d32; }
-[data-mode="light"] .patch-check.info { color: #0277bd; }
-[data-mode="light"] .patch-check.warn { color: #e65100; }
-[data-mode="light"] .patch-check.err { color: #c62828; }
 #patch-search { width: 220px; }
 /* Échéances : calendrier du mois et liste des 60 prochains jours */
 .agenda-box { width: min(1180px, 95vw); max-height: 88vh; display: flex; flex-direction: column; gap: 10px; padding: 14px; }
@@ -1610,7 +1599,6 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover, input[type="datetim
 .patch-node-pill .patch-node-dot { color: #43a047; }
 .patch-node-pill.lvl-rouge .patch-node-dot { color: #ff5252; }
 .patch-node-pill.lvl-orange .patch-node-dot { color: #ffa040; }
-.patch-node-flags { color: #ffb74d; font-weight: 800; }
 /* Rôle dans le cluster : PRIMARY mis en avant (doré), SECONDARY discret */
 .patch-role { display: inline-block; padding: 0 6px; border-radius: 8px; font-size: 10px; font-weight: 800; letter-spacing: .03em; }
 .patch-role.role-primary { color: #1a1300; background: #ffc107; }
@@ -1618,3 +1606,16 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover, input[type="datetim
 .patch-group-primary { padding: 1px 8px; border-radius: 10px; font-size: 12px; font-weight: 800; color: #1a1300; background: #ffc107; }
 .patch-group-primary.none { color: var(--muted); background: transparent; border: 1px dashed color-mix(in srgb, var(--text) 30%, transparent); font-weight: 600; }
 .patch-node-pill.primary { border-width: 2px; box-shadow: 0 0 0 1px #ffc107 inset; font-weight: 800; }
+/* VM décommissionnée : gardée dans la liste, grisée et hors suivi ; cluster entièrement décommissionné : gris */
+.patch-table tbody tr.patch-decom td { opacity: .5; filter: grayscale(1); background: transparent !important; }
+.patch-table tbody tr.patch-decom:hover td { opacity: .8; }
+.patch-table tbody tr.patch-decom strong { text-decoration: line-through; text-decoration-thickness: 1px; }
+.patch-table tbody tr.patch-decom td.patch-actions { opacity: 1; filter: none; }
+.patch-decom-badge { display: inline-block; padding: 0 6px; border-radius: 8px; font-size: 10px; font-weight: 800; color: #eceff1; background: #546e7a; }
+.patch-table tbody tr.grp-decom { --grp: #78909c; }
+.patch-table tbody tr.patch-group.grp-decom td { filter: grayscale(1); opacity: .75; }
+.patch-group-state.lvl-decom { background: #546e7a; }
+.patch-node-pill.lvl-decom { opacity: .55; text-decoration: line-through; border-color: #78909c; background: transparent; }
+.patch-node-pill.lvl-decom .patch-node-dot { color: #90a4ae; }
+.patch-chip.state-decom.on { background: #546e7a; color: #fff; }
+.patch-decom-field { grid-column: span 2; flex-direction: row !important; align-items: flex-start; gap: 8px; color: var(--text) !important; }

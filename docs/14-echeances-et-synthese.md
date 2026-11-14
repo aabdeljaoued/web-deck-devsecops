@@ -40,12 +40,12 @@ point hebdomadaire ou un comité :
 
 - **contexte** : mission, contexte kubectl actuel (signalé s'il est en production), nombre de certificats et de VMs ;
 - **état du parc** par environnement : certificats (urgents, à renouveler, injoignables) et VMs (en retard, sous
-  7 jours, redémarrage requis), puis la liste de **ce qui est à traiter** ;
+  7 jours), puis la liste de **ce qui est à traiter** ;
 - **échéances** : en retard et dans les 30 prochains jours ;
 - **dernières actions en production** (7 jours, d'après le journal).
 
 **Copier (Markdown)** pour la coller dans un mail, Teams ou Confluence, **Télécharger (.md)** pour la garder, et
-**Actualiser** après une vérification. À relire avant diffusion.
+**Actualiser** après une mise à jour de l'inventaire ou des certificats. À relire avant diffusion.
 
 ## Rapport d'intervention enrichi
 

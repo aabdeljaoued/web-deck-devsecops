@@ -430,14 +430,6 @@ function handle(msg) {
             // Changement détecté en mode automatique (arrivée au bureau, retour à la maison)
             if (msg.changed && msg.proxy.mode === "auto") toast(msg.proxy.active ? `proxy du bureau détecté : connexions par ${msg.proxy.url}` : "proxy injoignable : connexion directe (hors du bureau)", "ok");
             break;
-        case "patch-checking":
-            for (const id of msg.ids) patchChecking.add(id);
-            renderPatches();
-            break;
-        case "patch-checked":
-            for (const id of msg.ids) patchChecking.delete(id);
-            renderPatches();
-            break;
         case "agenda":
             agendaEvents = msg.events;
             renderAgenda();
@@ -3823,14 +3815,12 @@ let patchEditing = null;   // VM en cours de modification (null = nouvelle)
 const patchFilter = { env: null, tags: new Set(), state: null };   // filtres : environnement, tags combinés, état
 
 /** États filtrables d'une VM (urgence du patch, résultat de la dernière vérification). */
+const live = (pred) => (v) => !v.decommissioned && pred(v);   // VM suivie (hors décommissionnées)
 const PATCH_STATES = [
-    ["late", "🔴 en retard ou J-1", (v) => patchDays(v) !== null && patchDays(v) <= 1],
-    ["soon", "🟠 sous 7 j ou à planifier", (v) => patchDays(v) === null || (patchDays(v) > 1 && patchDays(v) <= 7)],
-    ["ok", "🟢 plus tard", (v) => patchDays(v) !== null && patchDays(v) > 7],
-    ["security", "⚠ sécurité en attente", (v) => (v.check?.security ?? 0) > 0],
-    ["reboot", "↻ reboot requis", (v) => v.check?.reboot === true],
-    ["unchecked", "jamais vérifiée", (v) => !v.check],
-    ["failed", "✕ vérification en échec", (v) => Boolean(v.check?.error)]
+    ["late", "🔴 en retard ou J-1", live((v) => patchDays(v) !== null && patchDays(v) <= 1)],
+    ["soon", "🟠 sous 7 j ou à planifier", live((v) => patchDays(v) === null || (patchDays(v) > 1 && patchDays(v) <= 7))],
+    ["ok", "🟢 plus tard", live((v) => patchDays(v) !== null && patchDays(v) > 7)],
+    ["decom", "⚫ décommissionnée", (v) => v.decommissioned === true]
 ];
 
 /** Tris de l'inventaire : clé -> [libellé, comparaison croissante]. Choix retenu (localStorage). */
@@ -3840,9 +3830,7 @@ const PATCH_SORTS = {
     name: ["Nom", (a, b) => a.name.localeCompare(b.name, "fr", { numeric: true })],
     env: ["Environnement", (a, b) => ENV_ORDER.indexOf(a.env) - ENV_ORDER.indexOf(b.env) || a.name.localeCompare(b.name, "fr", { numeric: true })],
     last: ["Dernier patch", (a, b) => (a.lastPatch || "0").localeCompare(b.lastPatch || "0")],
-    next: ["Prochain patch", (a, b) => (a.nextPatch || "9").localeCompare(b.nextPatch || "9")],
-    updates: ["MAJ en attente", (a, b) => (a.check?.security ?? -1) - (b.check?.security ?? -1) || (a.check?.updates ?? -1) - (b.check?.updates ?? -1)],
-    checked: ["Dernière vérification", (a, b) => (a.check?.at ?? "").localeCompare(b.check?.at ?? "")]
+    next: ["Prochain patch", (a, b) => (a.nextPatch || "9").localeCompare(b.nextPatch || "9")]
 };
 const patchSort = (() => {
     try { const s = JSON.parse(localStorage.getItem("deck-patch-sort")); if (PATCH_SORTS[s?.key]) return { key: s.key, desc: Boolean(s.desc) }; } catch { /* stockage indisponible */ }
@@ -3855,7 +3843,6 @@ function setPatchSort(key, desc) {
     renderPatches();
 }
 let patchPending = false;  // formulaire envoyé, en attente du serveur
-const patchChecking = new Set();   // VMs en cours de vérification (ssh, lecture seule)
 
 /** Regroupement de l'inventaire par cluster (retenu dans le navigateur). */
 let patchGroupByCluster = (() => { try { return localStorage.getItem("deck-patch-group") === "cluster"; } catch { return false; } })();
@@ -3887,7 +3874,9 @@ const vmLevel = (v) => { const d = patchDays(v); return d === null ? "orange" : 
  * selon son état, ↻ reboot requis, ⚠ sécurité en attente) ; état le plus urgent ; clic = replier / déplier.
  */
 function patchClusterHeader(cluster, nodes, all, folded = false) {
-    const env = cluster ? clusterEnv(cluster, all) : "";
+    const members = all.filter((v) => v.cluster === cluster);
+    const dead = cluster && members.length && members.every((v) => v.decommissioned);
+    const env = !cluster ? "" : dead ? "decom" : clusterEnv(cluster, all.filter((v) => !v.decommissioned));
     const tr = Object.assign(document.createElement("tr"), { className: `patch-group grp-${cluster ? env || "autre" : "none"}${folded ? " folded" : ""}` });
     const td = Object.assign(document.createElement("td"), { colSpan: 6 });
     const el = (cls, text, title) => Object.assign(document.createElement("span"), { className: cls, textContent: text, ...(title ? { title } : {}) });
@@ -3896,12 +3885,12 @@ function patchClusterHeader(cluster, nodes, all, folded = false) {
         tr.append(td);
         return tr;
     }
-    const total = all.filter((v) => v.cluster === cluster);
+    const total = members;
     const sets = [...new Set(total.map((v) => v.clusterSet).filter(Boolean))];
-    const levels = total.map(vmLevel);
-    const worst = levels.includes("rouge") ? "rouge" : levels.includes("orange") ? "orange" : "ok";
-    const checks = total.filter((v) => v.check && !v.check.error).length;
-    const reboot = total.filter((v) => v.check?.reboot).length;
+    // État du cluster : nœuds suivis seulement (les décommissionnés ne comptent plus)
+    const levels = total.filter((v) => !v.decommissioned).map(vmLevel);
+    const worst = dead ? "decom" : levels.includes("rouge") ? "rouge" : levels.includes("orange") ? "orange" : "ok";
+    const gone = total.filter((v) => v.decommissioned).length;
     const top = Object.assign(document.createElement("div"), { className: "patch-group-top" });
     top.append(
         el("patch-group-fold", folded ? "▸" : "▾"),
@@ -3911,26 +3900,27 @@ function patchClusterHeader(cluster, nodes, all, folded = false) {
         ...(sets.length ? [el("patch-group-meta", `ClusterSet ${sets.join(", ")}`)] : []),
         ...(total.some((v) => v.profile === "mysql-innodb") ? [el("patch-profile", "MySQL InnoDB")] : []),
         (() => {
+            if (dead) return "";   // cluster décommissionné : plus de PRIMARY à signaler
             const primary = total.find((v) => v.role === "primary");
             return primary ? el("patch-group-primary", `★ PRIMARY : ${primary.name}`, "Nœud PRIMARY renseigné dans l'inventaire (à mettre à jour après une bascule)")
                 : el("patch-group-primary none", "PRIMARY non renseigné", "Modifier un nœud › Rôle dans le cluster : PRIMARY");
         })(),
         el("grow", ""),
-        el(`patch-group-state lvl-${worst}`, worst === "rouge" ? "patch en retard ou imminent" : worst === "orange" ? "patch sous 7 j" : "à jour")
+        el(`patch-group-state lvl-${worst}`, worst === "decom" ? "⚫ cluster décommissionné" : worst === "rouge" ? "patch en retard ou imminent" : worst === "orange" ? "patch sous 7 j" : "à jour")
     );
     // Carte des nœuds : un coup d'œil sur tout le cluster, même replié
     const map = Object.assign(document.createElement("div"), { className: "patch-group-nodes" });
     for (const v of [...total].sort((a, b) => (b.role === "primary") - (a.role === "primary") || a.name.localeCompare(b.name, "fr", { numeric: true }))) {
         const d = patchDays(v);
-        const flags = `${v.check?.reboot ? " ↻" : ""}${v.check?.security ? " ⚠" : ""}${v.check?.error ? " ✕" : ""}`;
-        const pill = el(`patch-node-pill lvl-${vmLevel(v)}${nodes.includes(v) ? "" : " hidden-by-filter"}`, "",
-            `${v.name} · ${v.env} · prochain patch ${frDate(v.nextPatch)} (${patchLabel(d)})${v.check?.reboot ? " · reboot requis" : ""}${v.check?.security ? ` · ${v.check.security} MAJ de sécurité` : ""}${v.check?.error ? ` · vérification : ${v.check.error}` : ""}`);
-        pill.append(el("patch-node-dot", "●"), ` ${v.role === "primary" ? "★ " : ""}${v.name}`, ...(flags ? [el("patch-node-flags", flags)] : []));
+        const pill = el(`patch-node-pill lvl-${v.decommissioned ? "decom" : vmLevel(v)}${nodes.includes(v) ? "" : " hidden-by-filter"}`, "",
+            `${v.name} · ${v.env} · prochain patch ${frDate(v.nextPatch)} (${patchLabel(d)})`);
+        pill.append(el("patch-node-dot", v.decommissioned ? "⚫" : "●"), ` ${v.role === "primary" ? "★ " : ""}${v.name}`);
+        if (v.decommissioned) pill.title = `décommissionnée${v.decommissionedAt ? ` le ${frDate(v.decommissionedAt)}` : ""} · ${pill.title}`;
         if (v.role === "primary") { pill.classList.add("primary"); pill.title = `PRIMARY · ${pill.title}`; }
         else if (v.role === "secondary") pill.title = `SECONDARY · ${pill.title}`;
         map.append(pill);
     }
-    map.append(el("patch-group-meta", `${total.length} nœud(s)${nodes.length < total.length ? ` · ${nodes.length} affiché(s)` : ""}${checks ? ` · ${checks} vérifié(s)` : ""}${reboot ? ` · ${reboot} reboot requis` : ""}`));
+    map.append(el("patch-group-meta", `${total.length} nœud(s)${gone ? ` dont ${gone} décommissionné(s)` : ""}${nodes.length < total.length ? ` · ${nodes.length} affiché(s)` : ""}`));
     td.append(top, map);
     td.title = folded ? "Clic : déplier le cluster" : "Clic : replier le cluster (en-tête seul)";
     tr.addEventListener("click", () => {
@@ -3940,39 +3930,6 @@ function patchClusterHeader(cluster, nodes, all, folded = false) {
     });
     tr.append(td);
     return tr;
-}
-
-/** « il y a 2 h » / « hier » à partir d'une date ISO. */
-function ago(iso) {
-    const min = Math.round((Date.now() - Date.parse(iso)) / 60000);
-    if (min < 1) return "à l'instant";
-    if (min < 60) return `il y a ${min} min`;
-    if (min < 24 * 60) return `il y a ${Math.round(min / 60)} h`;
-    const d = Math.round(min / 1440);
-    return d === 1 ? "hier" : `il y a ${d} j`;
-}
-
-/** Ligne « dernière vérification » d'une VM (bouton Vérifier). */
-function patchCheckLine(vm) {
-    const div = Object.assign(document.createElement("div"), { className: "patch-check" });
-    if (patchChecking.has(vm.id)) {
-        div.classList.add("checking");
-        div.textContent = "⏳ vérification en cours (ssh, lecture seule)…";
-        return div;
-    }
-    const c = vm.check;
-    if (!c) return "";
-    if (c.error) {
-        div.classList.add("err");
-        div.textContent = `⚠ ${c.error} · ${ago(c.at)}`;
-        return div;
-    }
-    const sec = c.security ? ` dont ${c.security} de sécurité` : "";
-    const todo = c.updates === null ? "mises à jour : inconnu" : c.updates ? `${c.updates} MAJ en attente${sec}` : "à jour";
-    div.classList.add(c.reboot || c.security ? "warn" : c.updates ? "info" : "ok");
-    div.textContent = `${c.reboot || c.security ? "⚠" : c.updates ? "↻" : "✓"} ${todo}${c.reboot ? " · reboot requis" : ""} · ${(c.os || "?").replace(/\s*\(.*\)$/, "").replace(/^Red Hat Enterprise Linux/, "RHEL")} · ${ago(c.at)}`;
-    div.title = [`Vérifié le ${new Date(c.at).toLocaleString("fr-FR")}`, c.os, c.kernel && `noyau ${c.kernel}`, c.uptimeDays !== null && `démarrée depuis ${c.uptimeDays} j`, c.manager && `gestionnaire ${c.manager}`].filter(Boolean).join("\n");
-    return div;
 }
 
 const frDate = (d) => (d ? d.split("-").reverse().join("/") : "—");
@@ -4000,19 +3957,22 @@ function renderPatches() {
         .filter((v) => !patchFilter.env || v.env === patchFilter.env)
         .filter((v) => [...patchFilter.tags].every((t) => (v.tags ?? []).includes(t)))
         .filter((v) => !patchFilter.state || PATCH_STATES.find(([k]) => k === patchFilter.state)?.[2](v))
-        .sort((a, b) => (patchSort.desc ? -1 : 1) * PATCH_SORTS[patchSort.key][1](a, b) || a.name.localeCompare(b.name, "fr", { numeric: true }));
+        .sort((a, b) => (a.decommissioned === true) - (b.decommissioned === true)
+            || (patchSort.desc ? -1 : 1) * PATCH_SORTS[patchSort.key][1](a, b) || a.name.localeCompare(b.name, "fr", { numeric: true }));
     // Titres de colonnes : flèche sur la colonne triée
     for (const th of document.querySelectorAll(".patch-table th[data-sort]")) {
         const on = th.dataset.sort === patchSort.key;
         th.classList.toggle("sorted", on);
         th.dataset.arrow = on ? (patchSort.desc ? "↓" : "↑") : "";
     }
-    const late = vms.filter((v) => (patchDays(v) ?? 0) < 0).length;
-    $("#patch-summary").textContent = vms.length ? `${vms.length} VM(s)${late ? ` · ${late} en retard` : ""}` : "";
+    const late = vms.filter((v) => !v.decommissioned && (patchDays(v) ?? 0) < 0).length;
+    const decom = vms.filter((v) => v.decommissioned).length;
+    $("#patch-summary").textContent = vms.length ? `${vms.length - decom} VM(s)${late ? ` · ${late} en retard` : ""}${decom ? ` · ${decom} décommissionnée(s)` : ""}` : "";
     const grouped = patchGroupByCluster && shown.some((v) => v.cluster);
     const rowFor = (vm) => {
         const d = patchDays(vm);
-        const level = d === null || d <= 7 ? (d === null || d > 1 ? "orange" : "rouge") : "ok";
+        const decom = vm.decommissioned === true;
+        const level = decom ? "decom" : d === null || d <= 7 ? (d === null || d > 1 ? "orange" : "rouge") : "ok";
         const tr = Object.assign(document.createElement("tr"), { className: `patch-${level}` });
         const cell = (content, cls = "") => { const td = Object.assign(document.createElement("td"), { className: cls }); td.append(...[content].flat()); return td; };
         const name = Object.assign(document.createElement("strong"), { textContent: vm.name });
@@ -4021,25 +3981,30 @@ function renderPatches() {
         const tags = (vm.tags ?? []).map((t) => Object.assign(document.createElement("span"), { className: "patch-tag", textContent: t }));
         const where = [vm.host && vm.host !== vm.name ? vm.host : "", vm.identity ? `clé : ${vm.identity.split(/[\\/]/).pop()}` : ""].filter(Boolean).join(" · ");
         const host = where ? Object.assign(document.createElement("div"), { className: "hint", textContent: where, title: vm.identity || "" }) : "";
-        const next = Object.assign(document.createElement("div"), { textContent: frDate(vm.nextPatch) });
-        const when = Object.assign(document.createElement("div"), { className: "patch-when", textContent: patchLabel(d) });
+        const next = Object.assign(document.createElement("div"), { textContent: decom ? "—" : frDate(vm.nextPatch) });
+        const when = Object.assign(document.createElement("div"), { className: "patch-when", textContent: decom ? "hors suivi" : patchLabel(d) });
+        const decomBadge = decom ? Object.assign(document.createElement("span"), { className: "patch-decom-badge", textContent: `DÉCOMMISSIONNÉE${vm.decommissionedAt ? ` le ${frDate(vm.decommissionedAt)}` : ""}` }) : "";
         const btn = (label, title, run, cls = "") => { const b = Object.assign(document.createElement("button"), { type: "button", textContent: label, title, className: cls }); b.addEventListener("click", run); return b; };
         const del = btn("Supprimer", "Retirer cette VM de l'inventaire", (ev) => armOrRun(ev.target, "Confirmer ?", () => send({ t: "patch-delete", id: vm.id })), "danger");
         tr.append(
-            cell(Object.assign(document.createElement("span"), { className: "patch-dot", textContent: level === "rouge" ? "🔴" : level === "orange" ? "🟠" : "🟢" })),
+            cell(Object.assign(document.createElement("span"), { className: "patch-dot", textContent: decom ? "⚫" : level === "rouge" ? "🔴" : level === "orange" ? "🟠" : "🟢" })),
             // Mode regroupé : cluster et profil déjà dans l'en-tête du groupe
-            cell([name, " ", ...(role ? [role, " "] : []), env, ...tags.flatMap((t) => [" ", t]), grouped ? "" : patchClusterLine(vm), host, patchCheckLine(vm)]),
+            cell([name, " ", ...(decom ? [decomBadge, " "] : []), ...(role ? [role, " "] : []), env, ...tags.flatMap((t) => [" ", t]), grouped ? "" : patchClusterLine(vm), host]),
             cell(vm.description || "—", "patch-desc"),
             cell(`${frDate(vm.lastPatch)}${vm.everyDays ? ` · tous les ${vm.everyDays} j` : ""}`),
             cell([next, when]),
-            cell([
+            cell(decom ? [
+                // Décommissionnée : plus de patch ni de connexion ; remise en service ou suppression définitive
+                btn("Remettre en service", "La VM revient dans le suivi (voyant, alertes, échéances)", () => send({ t: "patch-decom", id: vm.id, on: false }), "primary"),
+                btn("Modifier", "", () => openPatchForm(vm)),
+                del
+            ] : [
                 btn("Patché", "Dernier patch = aujourd'hui ; prochain = aujourd'hui + fréquence", () => send({ t: "patch-done", id: vm.id }), "primary"),
                 btn("SSH", vm.identity ? `Tape « ssh -i ${vm.identity} » vers la VM (sans Entrée)` : "Tape « ssh » vers la VM dans le terminal (sans Entrée)", () => {
                     $("#patches").hidden = true;
                     const key = vm.identity ? `-i ${/\s/.test(vm.identity) ? `"${vm.identity}"` : vm.identity} ` : "";
                     typeInTerminal(`ssh ${key}${vm.host || vm.name}`);
                 }),
-                btn(patchChecking.has(vm.id) ? "…" : "Vérifier", "Se connecte en ssh (sans mot de passe) et lit, sans rien modifier : mises à jour en attente dont sécurité, reboot requis, OS, noyau", () => send({ t: "patch-check", id: vm.id })),
                 btn("Modifier", "", () => openPatchForm(vm)),
                 btn("Dupliquer", "Nouvelle VM à partir de celle-ci (nom suivant proposé : app-prod-01 → app-prod-02)", () => openPatchForm(vm, { duplicate: true })),
                 del
@@ -4058,10 +4023,11 @@ function renderPatches() {
         }
         // Dans un cluster : le PRIMARY en tête, les autres dans l'ordre du tri
         for (const list of groups.values()) list.sort((a, b) => (b.role === "primary") - (a.role === "primary"));
-        const ordered = [...groups].sort(([a], [b]) => (a === "") - (b === ""));
+        const allDecom = (cluster) => cluster && vms.filter((v) => v.cluster === cluster).every((v) => v.decommissioned);
+        const ordered = [...groups].sort(([a], [b]) => (a === "") - (b === "") || allDecom(a) - allDecom(b));
         // Un bloc par cluster : espace, en-tête, nœuds (sauf replié) encadrés aux couleurs de l'environnement
         $("#patch-list").replaceChildren(...ordered.flatMap(([cluster, nodes], gi) => {
-            const env = cluster ? clusterEnv(cluster, vms) : "";
+            const env = !cluster ? "" : allDecom(cluster) ? "decom" : clusterEnv(cluster, vms);
             const folded = cluster && patchFolded.has(cluster);
             const rows = folded ? [] : nodes.map((vm, i) => {
                 const tr = rowFor(vm);
@@ -4118,6 +4084,7 @@ function openPatchForm(vm = null, { duplicate = false } = {}) {
     $("#patch-profile").value = vm?.profile ?? "";
     // Copie d'un nœud : jamais un second PRIMARY
     $("#patch-role").value = duplicate && vm?.role ? "secondary" : vm?.role ?? "";
+    $("#patch-decom").checked = !duplicate && vm?.decommissioned === true;
     // Clusters et ClusterSets déjà utilisés proposés à la saisie
     const usedValues = (k) => [...new Set((state.patches ?? []).map((v) => v[k]).filter(Boolean))].sort();
     $("#patch-cluster-list").replaceChildren(...usedValues("cluster").map((c) => new Option(c)));
@@ -4140,7 +4107,8 @@ function savePatch() {
         name: $("#patch-name").value, host: $("#patch-host").value, identity: $("#patch-identity").value, env: $("#patch-env").value,
         lastPatch: $("#patch-last").value, nextPatch: $("#patch-next").value,
         everyDays: $("#patch-every").value, description: $("#patch-desc").value, tags: $("#patch-tags").value,
-        cluster: $("#patch-cluster").value, clusterSet: $("#patch-clusterset").value, profile: $("#patch-profile").value, role: $("#patch-role").value
+        cluster: $("#patch-cluster").value, clusterSet: $("#patch-clusterset").value, profile: $("#patch-profile").value, role: $("#patch-role").value,
+        decommissioned: $("#patch-decom").checked, decommissionedAt: $("#patch-decom").checked ? patchEditing?.decommissionedAt ?? "" : ""
     } });
 }
 
@@ -4397,11 +4365,6 @@ document.addEventListener("click", (ev) => {
     const input = ev.target.closest?.('input[type="date"], input[type="datetime-local"]');
     if (!input || input.disabled || input.readOnly) return;
     try { input.showPicker(); } catch { /* navigateur sans showPicker : icône du champ */ }
-});
-$("#patch-check-all").addEventListener("click", () => {
-    if (!(state.patches ?? []).length) return toast("aucune VM à vérifier");
-    send({ t: "patch-check", all: true });
-    toast(`vérification de ${state.patches.length} VM(s) en ssh (lecture seule)…`);
 });
 $("#patch-agenda").addEventListener("click", openAgenda);
 $("#agenda-close").addEventListener("click", () => { $("#agenda").hidden = true; });

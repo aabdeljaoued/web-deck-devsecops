@@ -58,14 +58,13 @@ urgentes.
 **Filtres** (sous l'en-tête), avec le nombre de VMs sur chaque bouton :
 
 - **environnement** (un à la fois) et **tags** (ils se **combinent** : **production** + **#critique**) ;
-- **État** : 🔴 en retard ou J-1, 🟠 sous 7 j ou à planifier, 🟢 plus tard, ⚠ sécurité en attente, ↻ reboot requis,
-  jamais vérifiée, ✕ vérification en échec (un à la fois ; seuls les états présents sont proposés) ;
+- **État** : 🔴 en retard ou J-1, 🟠 sous 7 j ou à planifier, 🟢 plus tard, ⚫ décommissionnée (un à la fois ;
+  seuls les états présents sont proposés) ;
 - le champ **Filtrer** cherche en plus dans le nom, l'hôte, la description et les tags.
 
 Tous se combinent ; re-cliquer retire un filtre, **Toutes** les retire tous.
 
-**Tri** : menu **Trier par** (urgence, nom, environnement, dernier patch, prochain patch, MAJ en attente, dernière
-vérification) et bouton **↑ croissant / ↓ décroissant** ; ou clic sur les titres **VM**, **Dernier patch**,
+**Tri** : menu **Trier par** (urgence, nom, environnement, dernier patch, prochain patch) et bouton **↑ croissant / ↓ décroissant** ; ou clic sur les titres **VM**, **Dernier patch**,
 **Prochain patch** (re-clic : ordre inversé, flèche sur la colonne triée). Le tri choisi est retenu.
 
 Pour chaque VM :
@@ -74,7 +73,6 @@ Pour chaque VM :
   l'action est notée dans le [journal](10-reglages-et-tracabilite.md#journal-des-actions) ;
 - **SSH** : tape `ssh <hôte>` dans le terminal (sans Entrée), ou `ssh -i <clé> <hôte>` si une clé est renseignée pour
   la VM (affichée sous son nom : « clé : … ») ;
-- **Vérifier** : voir ci-dessous ;
 - **Dupliquer** : une nouvelle VM pré-remplie à partir de celle-ci (hôte, clé, environnement, tags, dates, fréquence,
   description), avec le **nom suivant libre** (`app-prod-01` → `app-prod-02`, ou `-03` si `-02` existe) ; le nom est
   aussi remplacé dans l'hôte (`admin@app-prod-01.client.fr` → `admin@app-prod-02.client.fr`). Vérifie l'hôte et les
@@ -107,14 +105,32 @@ l'environnement (production rouge, recette bleu, qualification ambre, développe
 
 - **en-tête** : nom du cluster, environnement, ClusterSet, profil, et l'état le plus urgent du cluster ;
 - **carte des nœuds** : une pastille par nœud, colorée selon son patch (🔴 en retard ou J-1, 🟠 sous 7 j, 🟢 plus
-  tard), avec **↻** reboot requis, **⚠** mises à jour de sécurité en attente, **✕** vérification en échec (détail au
-  survol) ; le nombre de nœuds, de nœuds vérifiés et de reboots requis ;
+  tard ; détail au survol), ★ pour le PRIMARY, grisée pour un nœud décommissionné ; le nombre de nœuds ;
 - **clic sur l'en-tête** : replier le cluster (en-tête et carte seuls) ou le déplier ; retenu ;
 - les nœuds dessous, triés selon le tri choisi ; les VMs sans cluster à la fin. Hors regroupement, le cluster et le profil s'affichent sous le
 nom de la VM. Le champ **Filtrer** cherche aussi dans le cluster et le ClusterSet.
 
 **Dupliquer** un nœud garde son cluster, son ClusterSet et son profil (la copie est SECONDARY) : pratique pour ajouter le nœud suivant
 (`mysql-rec-03` → `mysql-rec-04`).
+
+## VM décommissionnée
+
+![VMs et cluster décommissionnés](img/patchs-decom.jpg)
+
+Une VM retirée du service reste **dans l'inventaire**, pour garder sa trace, mais sort du suivi. **Modifier › VM
+décommissionnée** (case à cocher), ou colonne CSV `decom` (`oui`, `oui 14/11/2026`, `x`…) :
+
+- la ligne est **grisée**, le nom barré, avec un badge « DÉCOMMISSIONNÉE le 14/11/2026 » ; elle passe **en fin de
+  liste** ; plus de date de patch exigée (« hors suivi ») ;
+- elle ne compte plus pour le **voyant** et les **alertes**, le **calendrier** et l'export Outlook, la **synthèse**,
+  ni dans les listes de connexion (**ssh VM**, nœuds MySQL) ;
+- si c'était le **PRIMARY**, elle perd ce rôle ;
+- ses boutons deviennent **Remettre en service** (retour dans le suivi), **Modifier** et **Supprimer** ;
+- filtre d'état **⚫ décommissionnée** ; l'en-tête de l'inventaire compte les VMs suivies et les décommissionnées.
+
+**Cluster** : un nœud décommissionné est grisé et barré sur la carte des nœuds et ne compte plus dans l'état du
+cluster (« 3 nœuds dont 1 décommissionné ») ; quand **tous** les nœuds le sont, le cluster passe **au gris**
+(« cluster décommissionné ») et descend en fin de liste.
 
 ## MySQL Cluster : les commandes de la session JS
 
@@ -152,31 +168,6 @@ d'abord la session, puis utilise ces touches.
 Après un **changer PRIMARY** ou un **forcer quorum**, mets à jour le rôle dans l'inventaire (**Modifier › Rôle**) :
 le deck ne le détecte pas seul.
 
-## Vérifier une VM en un clic
-
-**Vérifier** (sur une VM) ou **Vérifier tout** (en-tête, 4 VMs à la fois) : le deck se connecte en ssh avec la clé de
-la VM et lit, **sans rien modifier** :
-
-- le nombre de **mises à jour en attente**, dont celles de **sécurité** (apt, dnf / yum ; zypper et apk : total
-  seulement) ;
-- si un **redémarrage est requis** (nouveau noyau, `/var/run/reboot-required`, `needs-restarting`) ;
-- l'OS, le noyau et depuis combien de jours la VM tourne (au survol).
-
-Le résultat s'affiche sous le nom de la VM et reste dans l'inventaire : « ⚠ 47 MAJ en attente dont 12 de sécurité ·
-reboot requis · RHEL 9.4 · il y a 3 h », « ✓ à jour », ou l'erreur en clair. **Patché** l'efface (à re-vérifier
-après le patch) ; changer l'hôte ou la clé aussi.
-
-Sécurité :
-
-- **lecture seule** : simulation de mise à jour (`apt-get -s`, `dnf check-update`) et fichiers d'état, sans `sudo` ;
-- **jamais de mot de passe** ni de question : connexion par clé uniquement (`BatchMode`). Une VM dont la clé d'hôte
-  n'est pas encore connue est refusée : connecte-toi une première fois avec **SSH** pour vérifier et accepter son
-  empreinte, le deck ne le fait jamais à ta place ;
-- ssh est lancé sans shell local, avec l'hôte de l'inventaire (caractères de shell refusés à la saisie).
-
-Vérification disponible pour les VMs **Linux** ; une VM Windows affiche « vérification disponible pour Linux
-seulement » (touche **correctifs Windows** après un ssh).
-
 ## Ajouter une VM
 
 ![Formulaire d'une VM](img/patchs-formulaire.jpg)
@@ -198,7 +189,8 @@ patch et la fréquence, le prochain est calculé. Une erreur s'affiche dans le f
 - une ligne d'en-tête, puis une VM par ligne ; colonnes reconnues, dans n'importe quel ordre, en français ou en
   anglais : `nom` (obligatoire), `hote`, `cle`, `environnement`, `dernier_patch`, `prochain_patch`, `frequence`,
   `tags` (séparés par des virgules), `cluster`, `clusterset`, `profil` (`standard` ou `mysql`), `role` (`primary` ou `secondary` ; un seul PRIMARY
-  par cluster, le dernier du fichier est gardé et c'est signalé), `description` ;
+  par cluster, le dernier du fichier est gardé et c'est signalé), `decom` (`oui` ou `oui JJ/MM/AAAA` : VM
+  décommissionnée, sans date de patch exigée), `description` ;
 - séparateur `;` (Excel en français), `,` ou tabulation, détecté automatiquement ; valeurs entre guillemets acceptées ;
 - dates `JJ/MM/AAAA` ou `AAAA-MM-JJ` ; environnements `prod`, `dev`, `qualif` reconnus.
 
@@ -213,4 +205,5 @@ sauvegarde est faite juste avant.
 
 Dans `patches.json`, **hors Git**, sauvegardé automatiquement (Réglages › Sauvegardes) et inclus dans l'export de la
 [configuration complète](10-reglages-et-tracabilite.md#configuration-complète-et-mise-à-jour), pour passer d'un poste
-à l'autre. Le voyant ne calcule qu'à partir des dates : seul **Vérifier** se connecte aux VMs, en lecture seule.
+à l'autre. Le voyant ne calcule qu'à partir des dates : le deck ne se connecte jamais seul aux VMs ; les
+vérifications se font avec les touches de la rubrique, dans un terminal connecté (MAJ en attente, reboot requis…).

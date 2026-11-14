@@ -628,7 +628,6 @@
                 <span class="grow"></span>
                 <input id="patch-search" type="search" placeholder="Filtrer : nom, environnement, description…" spellcheck="false">
                 <button type="button" id="patch-new" class="primary">+ VM</button>
-                <button type="button" id="patch-check-all" title="Vérifier toutes les VMs en ssh, en lecture seule : mises à jour en attente, reboot requis (4 à la fois)">Vérifier tout</button>
                 <button type="button" id="patch-agenda" title="Calendrier des échéances (patchs et certificats), export pour Outlook / Google Agenda">Calendrier</button>
                 <button type="button" id="patch-import" title="Importer des VMs depuis un fichier CSV (Excel) : ajout, ou mise à jour si le nom existe">Importer…</button>
                 <button type="button" id="patch-export" title="Exporter l'inventaire en CSV (modifiable dans Excel, puis réimportable)">Exporter (CSV)</button>
@@ -639,7 +638,7 @@
                 <strong id="patch-import-title"></strong>
                 <span id="patch-import-summary"></span>
                 <ul id="patch-import-errors" class="patch-import-errors"></ul>
-                <span class="hint">Colonnes reconnues : nom (obligatoire), hote, cle, environnement, dernier_patch, prochain_patch, frequence, tags, cluster, clusterset, profil (standard ou mysql), role (primary ou secondary), description ; séparateur « ; » ou « , » ; dates JJ/MM/AAAA. Les VMs existantes (même nom) sont mises à jour, aucune n'est supprimée. <a href="#" id="patch-template">Télécharger un modèle CSV</a></span>
+                <span class="hint">Colonnes reconnues : nom (obligatoire), hote, cle, environnement, dernier_patch, prochain_patch, frequence, tags, cluster, clusterset, profil (standard ou mysql), role (primary ou secondary), decom (oui = décommissionnée), description ; séparateur « ; » ou « , » ; dates JJ/MM/AAAA. Les VMs existantes (même nom) sont mises à jour, aucune n'est supprimée. <a href="#" id="patch-template">Télécharger un modèle CSV</a></span>
                 <span class="settings-actions">
                     <button type="button" id="patch-import-ok" class="primary">Importer</button>
                     <button type="button" id="patch-import-cancel">Annuler</button>
@@ -679,6 +678,7 @@
                             <option value="secondary">SECONDARY</option>
                         </select>
                     </label>
+                    <label class="settings-check patch-decom-field"><input id="patch-decom" type="checkbox"> <span><strong>VM décommissionnée</strong> : gardée dans la liste (grisée), hors suivi (voyant, alertes, échéances, listes de connexion)</span></label>
                 </div>
                 <label>Description <textarea id="patch-desc" rows="2" maxlength="500" placeholder="Rôle, OS, contraintes (fenêtre de maintenance, contact…)"></textarea></label>
                 <span id="patch-error" class="mission-error" role="alert" hidden></span>
@@ -700,7 +700,6 @@
                 <span><i class="lg-dot lg-vert"></i>plus tard</span>
                 <span class="lg-sep"></span>
                 <span><b>Patché</b> dernier = aujourd'hui, prochain = + fréquence</span>
-                <span><b>Vérifier</b> ssh par clé, lecture seule</span>
                 <span class="grow"></span>
                 <span class="lg-file"><code>patches.json</code> · hors Git</span>
             </div>

@@ -8,7 +8,7 @@ import { tmpDir } from "./helpers.mjs";
 
 test("VM : champs vérifiés, prochain patch déduit du dernier et de la fréquence", () => {
     const vm = cleanVm({ name: " app-prod-01 ", env: "production", lastPatch: "2026-10-01", everyDays: 30, description: "API\npaiement" });
-    assert.deepEqual(vm, { name: "app-prod-01", host: "", identity: "", env: "production", description: "API paiement", tags: [], cluster: "", clusterSet: "", profile: "", role: "", lastPatch: "2026-10-01", nextPatch: "2026-10-31", everyDays: 30, check: null });
+    assert.deepEqual(vm, { name: "app-prod-01", host: "", identity: "", env: "production", description: "API paiement", tags: [], cluster: "", clusterSet: "", profile: "", role: "", decommissioned: false, decommissionedAt: "", lastPatch: "2026-10-01", nextPatch: "2026-10-31", everyDays: 30 });
     // Cluster, ClusterSet, profil (saisie libre normalisée)
     const node = cleanVm({ name: "mysql-rec-02", nextPatch: "2026-12-01", cluster: " CL-MYSQL-APP-REC ", clusterSet: "CS_MYSQL_APP", profile: "MySQL" });
     assert.deepEqual([node.cluster, node.clusterSet, node.profile], ["CL-MYSQL-APP-REC", "CS_MYSQL_APP", "mysql-innodb"]);
@@ -138,4 +138,39 @@ test("cluster : un seul PRIMARY (bascule à l'enregistrement, et à l'import)", 
     const res = p.importMany(vms);
     assert.match(res.errors.join(), /CL-REC : un seul PRIMARY possible, gardé n2/);
     assert.deepEqual(p.list().filter((v) => v.cluster === "CL-REC").map((v) => `${v.name}:${v.role}`).sort(), ["n1:secondary", "n2:primary", "n3:secondary"]);
+});
+
+test("VM décommissionnée : gardée, sans date de patch exigée, hors suivi, à la fin ; perd son rôle ; CSV aller-retour", async () => {
+    const { vmsFromCsv, vmsToCsv, isDecom } = await import("../server/patches.mjs");
+    assert.ok(isDecom("oui") && isDecom("oui 14/11/2026") && isDecom("x") && isDecom("Décommissionnée") && isDecom(true));
+    assert.ok(!isDecom("") && !isDecom("non") && !isDecom(false));
+    const p = new Patches(path.join(tmpDir(), "patches.json"));
+    const a = p.save({ name: "mysql-rec-01", nextPatch: "2026-12-01", cluster: "CL-REC", role: "primary" });
+    p.save({ name: "mysql-rec-02", nextPatch: "2026-12-05", cluster: "CL-REC", role: "secondary" });
+    p.save({ name: "vieille-vm", decommissioned: true, decommissionedAt: "2026-11-01" });   // pas de date de patch : accepté
+    assert.throws(() => p.save({ name: "sans-date" }), /prochain patch/);
+    const vm = p.setDecommissioned(a, true);
+    assert.equal(vm.role, "", "un PRIMARY décommissionné perd son rôle");
+    assert.equal(vm.decommissionedAt, (await import("../server/patches.mjs")).today());
+    assert.deepEqual(p.list().map((v) => v.name), ["mysql-rec-02", "mysql-rec-01", "vieille-vm"], "décommissionnées à la fin");
+    assert.deepEqual(p.active().map((v) => v.name), ["mysql-rec-02"]);
+    p.setDecommissioned(a, false);
+    assert.deepEqual(p.active().map((v) => v.name).sort(), ["mysql-rec-01", "mysql-rec-02"]);
+    // CSV : export « oui JJ/MM/AAAA », réimporté à l'identique ; ligne sans date de patch acceptée si décommissionnée
+    const back = vmsFromCsv(vmsToCsv(p.list())).vms.map(({ vm: v }) => `${v.name}:${v.decommissioned}:${v.decommissionedAt}`);
+    assert.ok(back.includes("vieille-vm:true:2026-11-01"), back.join());
+    assert.equal(vmsFromCsv("nom;decom\nancienne;oui").vms.length, 1);
+});
+
+test("voyant patchs : les VMs décommissionnées ne comptent pas", () => {
+    const hub = new StatusHub({ cfg: {}, apps: {}, containerCli: ["docker"] });
+    hub.patchAlertFile = path.join(tmpDir(), "alerts.json");
+    const p = new Patches(path.join(tmpDir(), "patches.json"));
+    p.save({ name: "en-retard", nextPatch: "2020-01-01" });
+    p.save({ name: "ok", nextPatch: addDays(today(), 30) });
+    p.setDecommissioned(p.list().find((v) => v.name === "en-retard").id, true);
+    hub.patchList = () => p.active();
+    hub.refreshPatches();
+    assert.equal(hub.states.patches.footer, "ok");
+    assert.equal(hub.states.patches.bg, "#2E7D32");
 });

@@ -80,13 +80,15 @@ export function cleanVm(def) {
         cluster: cleanClusterName(def?.cluster, "cluster"),
         clusterSet: cleanClusterName(def?.clusterSet, "ClusterSet"),
         profile: cleanProfile(def?.profile),
-        // Rôle dans le cluster (renseigné à la main : PRIMARY / SECONDARY) ; sans cluster, pas de rôle
-        role: String(def?.cluster ?? "").trim() ? cleanRole(def?.role) : "",
+        // Rôle dans le cluster (renseigné à la main : PRIMARY / SECONDARY) ; sans cluster ou décommissionnée, pas de rôle
+        role: String(def?.cluster ?? "").trim() && !isDecom(def?.decommissioned) ? cleanRole(def?.role) : "",
+        // Décommissionnée : gardée dans l'inventaire (grisée), hors suivi (voyant, alertes, échéances)
+        decommissioned: isDecom(def?.decommissioned),
+        decommissionedAt: isDecom(def?.decommissioned) ? cleanDay(def?.decommissionedAt, "date de décommissionnement") || today() : "",
         lastPatch,
         // Prochain patch déduit du dernier et de la fréquence s'il n'est pas donné
         nextPatch: nextPatch || (lastPatch && every ? addDays(lastPatch, every) : ""),
-        everyDays: every,
-        check: cleanCheck(def?.check)
+        everyDays: every
     };
 }
 
@@ -99,6 +101,13 @@ export function cleanProfile(v) {
     if (!s || s === "standard" || s === "aucun") return "";
     if (/^(mysql|innodb|mysql-innodb|mysql-innodb-cluster|mysql-cluster|group-replication)$/.test(s)) return "mysql-innodb";
     throw new Error(`profil inconnu : ${v} (standard ou mysql-innodb)`);
+}
+
+/** Décommissionnée ? (case du formulaire, ou CSV : oui, x, 1, décommissionnée…) */
+export function isDecom(v) {
+    if (typeof v === "boolean") return v;
+    // « oui », « oui 14/11/2026 » (export CSV), « x », « décommissionnée »…
+    return /^(oui|o|yes|y|true|1|x|d[ée]com\S*|decommission\S*|retir[ée]+e?)(\s+\S+)?$/i.test(String(v ?? "").trim());
 }
 
 /** Rôle d'un nœud de cluster : "primary", "secondary" ou "" (non renseigné, ou VM hors cluster). */
@@ -115,19 +124,6 @@ function cleanClusterName(v, what) {
     const s = String(v ?? "").trim();
     if (s && !/^[A-Za-z0-9][A-Za-z0-9_.-]{0,59}$/.test(s)) throw new Error(`${what} invalide : ${s} (lettres, chiffres, . _ -)`);
     return s;
-}
-
-/**
- * Résultat de la dernière vérification d'une VM (bouton « Vérifier ») : nombres et textes courts, ou erreur.
- * null si absent ou illisible.
- */
-export function cleanCheck(c) {
-    if (!c || typeof c !== "object" || Number.isNaN(new Date(c.at).getTime())) return null;
-    const n = (v) => (v === null || v === undefined || v === "" || !Number.isFinite(Number(v)) ? null : Math.max(0, Math.min(99999, Math.floor(Number(v)))));
-    const t = (v, max) => String(v ?? "").replace(/[\u0000-\u001f]/g, " ").trim().slice(0, max);
-    if (c.error) return { at: new Date(c.at).toISOString(), error: t(c.error, 300) };
-    return { at: new Date(c.at).toISOString(), os: t(c.os, 80), kernel: t(c.kernel, 80), uptimeDays: n(c.uptimeDays),
-        manager: t(c.manager, 10), updates: n(c.updates), security: n(c.security), reboot: c.reboot === true };
 }
 
 export class Patches {
@@ -151,15 +147,31 @@ export class Patches {
         }
     }
 
-    /** VMs triées du prochain patch le plus proche au plus lointain. */
+    /** VMs triées du prochain patch le plus proche au plus lointain ; décommissionnées à la fin. */
     list() {
-        return [...this.vms].sort((a, b) => a.nextPatch.localeCompare(b.nextPatch) || a.name.localeCompare(b.name));
+        return [...this.vms].sort((a, b) => (a.decommissioned === true) - (b.decommissioned === true)
+            || (a.decommissioned ? 0 : a.nextPatch.localeCompare(b.nextPatch)) || a.name.localeCompare(b.name));
+    }
+
+    /** VMs suivies (hors décommissionnées) : voyant, alertes, échéances, listes de connexion. */
+    active() {
+        return this.list().filter((v) => !v.decommissioned);
+    }
+
+    /** Décommissionner (date du jour) ou remettre en service ; un PRIMARY décommissionné perd son rôle. */
+    setDecommissioned(id, on) {
+        const vm = this.get(id);
+        vm.decommissioned = Boolean(on);
+        vm.decommissionedAt = on ? today() : "";
+        if (on) vm.role = "";
+        this.write();
+        return vm;
     }
 
     /** Création (sans id) ou modification ; nom unique (sans tenir compte de la casse). */
     save(def) {
         const vm = cleanVm(def);
-        if (!vm.nextPatch) throw new Error("indique la date du prochain patch (ou le dernier patch et la fréquence)");
+        if (!vm.nextPatch && !vm.decommissioned) throw new Error("indique la date du prochain patch (ou le dernier patch et la fréquence)");
         const id = def?.id ? String(def.id) : null;
         if (this.vms.some((v) => v.id !== id && v.name.toLowerCase() === vm.name.toLowerCase())) throw new Error(`une VM s'appelle déjà « ${vm.name} »`);
         // Un seul PRIMARY par cluster : l'ancien repasse SECONDARY (bascule)
@@ -171,10 +183,7 @@ export class Patches {
         if (id) {
             const i = this.vms.findIndex((v) => v.id === id);
             if (i < 0) throw new Error("VM introuvable");
-            // Dernière vérification gardée, sauf si l'hôte ou la clé changent (elle ne vaut plus pour cette VM)
-            const old = this.vms[i];
-            const sameTarget = old.host === vm.host && old.identity === vm.identity && old.name === vm.name;
-            this.vms[i] = { id, ...vm, check: vm.check ?? (sameTarget ? old.check : null) };
+            this.vms[i] = { id, ...vm };
         } else {
             if (this.vms.length >= MAX_VMS) throw new Error(`${MAX_VMS} VMs au plus`);
             this.vms.push({ id: newId(), ...vm });
@@ -190,17 +199,7 @@ export class Patches {
         vm.lastPatch = cleanDay(day, "date du patch");
         if (vm.everyDays) vm.nextPatch = addDays(vm.lastPatch, vm.everyDays);
         else if (vm.nextPatch <= vm.lastPatch) vm.nextPatch = "";
-        vm.check = null;   // mises à jour en attente : plus à jour après le patch, à re-vérifier
         this.write();
-        return vm;
-    }
-
-    /** Résultat d'une vérification (lecture seule sur la VM) enregistré dans l'inventaire. */
-    setCheck(id, check) {
-        const vm = this.vms.find((v) => v.id === id);
-        if (!vm) throw new Error("VM introuvable");
-        vm.check = cleanCheck(check);
-        this.write(false);
         return vm;
     }
 
@@ -231,7 +230,7 @@ export class Patches {
             if (seen.has(key)) { errors.push(`ligne ${line} : « ${vm.name} » apparaît deux fois dans le fichier`); continue; }
             seen.add(key);
             const i = next.findIndex((v) => v.name.toLowerCase() === key);
-            if (i >= 0) { next[i] = { id: next[i].id, ...vm, check: vm.check ?? next[i].check ?? null }; updated++; }
+            if (i >= 0) { next[i] = { id: next[i].id, ...vm }; updated++; }
             else { next.push({ id: newId(), ...vm }); added++; }
         }
         if (next.length > MAX_VMS) throw new Error(`l'inventaire dépasserait ${MAX_VMS} VMs`);
@@ -286,9 +285,10 @@ const COLUMNS = {
     cluster: "cluster", grappe: "cluster",
     clusterset: "clusterSet",
     profil: "profile", profile: "profile", type: "profile",
-    role: "role", roles: "role"
+    role: "role", roles: "role",
+    decom: "decommissioned", decommissionnee: "decommissioned", decommissionne: "decommissioned", decommissioned: "decommissioned", retiree: "decommissioned"
 };
-const EXPORT_HEADER = ["nom", "hote", "cle", "environnement", "dernier_patch", "prochain_patch", "frequence", "tags", "cluster", "clusterset", "profil", "role", "description"];
+const EXPORT_HEADER = ["nom", "hote", "cle", "environnement", "dernier_patch", "prochain_patch", "frequence", "tags", "cluster", "clusterset", "profil", "role", "decom", "description"];
 const colKey = (h) => String(h).normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().replace(/[^a-z]/g, "");
 
 /** Découpe un CSV (guillemets, séparateur doublé dans les guillemets, retours à la ligne entre guillemets). */
@@ -340,11 +340,14 @@ export function vmsFromCsv(text) {
         const def = {};
         fields.forEach((f, i) => { if (f) def[f] = r.cells[i] ?? ""; });
         if (def.lastPatch != null) def.lastPatch = isoDay(def.lastPatch);
+        // Colonne decom : « oui 14/11/2026 » -> décommissionnée à cette date
+        const decomDay = /(\d{1,2}[/.-]\d{1,2}[/.-]\d{4}|\d{4}-\d{2}-\d{2})/.exec(String(def.decommissioned ?? ""));
+        if (decomDay && isDecom(def.decommissioned)) def.decommissionedAt = isoDay(decomDay[1]);
         if (def.nextPatch != null) def.nextPatch = isoDay(def.nextPatch);
         if (def.env != null) def.env = String(def.env).trim() ? normalizeEnv(def.env) ?? String(def.env).trim().toLowerCase() : "autre";
         try {
             const vm = cleanVm(def);
-            if (!vm.nextPatch) throw new Error("prochain patch manquant (ou dernier patch et fréquence)");
+            if (!vm.nextPatch && !vm.decommissioned) throw new Error("prochain patch manquant (ou dernier patch et fréquence)");
             vms.push({ line: r.line, vm });
         } catch (err) {
             errors.push(`ligne ${r.line} : ${err.message}`);
@@ -357,6 +360,6 @@ export function vmsFromCsv(text) {
 export function vmsToCsv(vms) {
     const q = (v) => (/[;,"\n\r]/.test(String(v ?? "")) ? `"${String(v).replace(/"/g, '""')}"` : String(v ?? ""));
     const fr = (d) => (d ? d.split("-").reverse().join("/") : "");
-    const lines = vms.map((v) => [v.name, v.host, v.identity, v.env, fr(v.lastPatch), fr(v.nextPatch), v.everyDays ?? "", (v.tags ?? []).join(", "), v.cluster ?? "", v.clusterSet ?? "", v.profile ?? "", v.role ?? "", v.description].map(q).join(";"));
+    const lines = vms.map((v) => [v.name, v.host, v.identity, v.env, fr(v.lastPatch), fr(v.nextPatch), v.everyDays ?? "", (v.tags ?? []).join(", "), v.cluster ?? "", v.clusterSet ?? "", v.profile ?? "", v.role ?? "", v.decommissioned ? `oui ${fr(v.decommissionedAt)}`.trim() : "", v.description].map(q).join(";"));
     return `\uFEFF${[EXPORT_HEADER.join(";"), ...lines].join("\r\n")}\r\n`;
 }

@@ -35,7 +35,6 @@ import { buildReport } from "./report.mjs";
 import { resetRoutes } from "./certs.mjs";
 import { envProxy, ProxyManager } from "./proxy.mjs";
 import { agendaEvents, buildSummary, toIcs } from "./summary.mjs";
-import { checkVm } from "./vmcheck.mjs";
 import { RemoteWatch } from "./remote.mjs";
 import { StatusHub } from "./status.mjs";
 import { Terminals } from "./terminal.mjs";
@@ -425,7 +424,7 @@ for (const t of ["cert-alert", "patch-alert"]) {
     });
 }
 // Patchs des VMs : le voyant lit l'inventaire ; alertes retenues dans .deck-patch-alerts.json (hors Git)
-status.patchList = () => patches.list();
+status.patchList = () => patches.active();   // VMs décommissionnées : hors voyant et alertes
 status.patchAlertFile = path.join(ROOT, ".deck-patch-alerts.json");
 /** Inventaire modifié : renvoyé aux pages, voyant recalculé. */
 function patchesChanged() {
@@ -515,6 +514,14 @@ wss.on("connection", (ws) => {
                     break;
                 }
                 case "patch-delete": patches.remove(String(msg.id)); patchesChanged(); break;
+                // Décommissionner / remettre en service (gardée dans l'inventaire, hors suivi)
+                case "patch-decom": {
+                    const vm = patches.setDecommissioned(String(msg.id), msg.on === true);
+                    logAction({ label: `${msg.on ? "décommissionnement" : "remise en service"} ${vm.name}`, page: "Patchs", command: msg.on ? `VM décommissionnée le ${vm.decommissionedAt.split("-").reverse().join("/")}` : "VM remise en service", mode: "run" });
+                    patchesChanged();
+                    reply({ t: "vault-ok", text: msg.on ? `« ${vm.name} » décommissionnée : gardée dans la liste, hors suivi` : `« ${vm.name} » remise en service${vm.nextPatch ? "" : " : indique la date du prochain patch (Modifier)"}` });
+                    break;
+                }
                 // Import en masse (CSV) : aperçu (dryRun), puis import confirmé ; ajout ou mise à jour par nom
                 case "patch-import": {
                     if (String(msg.csv ?? "").length > 500000) throw new Error("fichier trop gros (500 Ko au plus)");
@@ -528,29 +535,9 @@ wss.on("connection", (ws) => {
                     break;
                 }
                 case "patch-export": reply({ t: "patch-export", csv: vmsToCsv(patches.list()) }); break;
-                // Vérification en lecture seule (ssh non interactif) : une VM, ou toutes (4 à la fois)
-                case "patch-check": {
-                    const list = msg.all ? patches.list() : [patches.get(String(msg.id))];
-                    broadcast({ t: "patch-checking", ids: list.map((v) => v.id) });
-                    let i = 0, failed = 0;
-                    const worker = async () => {
-                        while (i < list.length) {
-                            const vm = list[i++];
-                            const res = await checkVm(vm);
-                            if (res.error) failed++;
-                            try { patches.setCheck(vm.id, res); } catch { continue; }   // supprimée entre-temps
-                            broadcast({ t: "patches", vms: patches.list() });
-                        }
-                    };
-                    await Promise.all(Array.from({ length: Math.min(4, list.length) }, worker));
-                    broadcast({ t: "patch-checked", ids: list.map((v) => v.id) });
-                    status.refreshPatches();
-                    reply({ t: "vault-ok", text: list.length === 1 ? (failed ? `« ${list[0].name} » : vérification impossible` : `« ${list[0].name} » vérifiée`) : `${list.length - failed} VM(s) vérifiée(s)${failed ? `, ${failed} injoignable(s)` : ""}` });
-                    break;
-                }
                 // Échéances (patchs, certificats) : calendrier dans la page, export .ics pour Outlook / Google Agenda
                 case "agenda": {
-                    const events = agendaEvents({ vms: patches.list(), certs: status.states.certs?.items ?? [] });
+                    const events = agendaEvents({ vms: patches.active(), certs: status.states.certs?.items ?? [] });
                     const s = settings.get();
                     const mission = s.missions.find((m) => m.id === s.activeMission)?.name;
                     reply({ t: "agenda", events, ...(msg.ics ? { ics: toIcs(events, { name: `Échéances${mission ? ` ${mission}` : ""} (Deck DevSecOps)` }) } : {}) });
@@ -562,7 +549,7 @@ wss.on("connection", (ws) => {
                     reply({ t: "summary", markdown: buildSummary({
                         mission: s.missions.find((m) => m.id === s.activeMission)?.name ?? null,
                         kube: status.states.kube ?? null,
-                        vms: patches.list(), certs: status.states.certs?.items ?? [], entries: journal.entries
+                        vms: patches.active(), certs: status.states.certs?.items ?? [], entries: journal.entries
                     }) });
                     break;
                 }
@@ -579,7 +566,7 @@ wss.on("connection", (ws) => {
                         notes: view.unlocked ? view.notes : null,
                         mission: s.missions.find((m) => m.id === s.activeMission)?.name ?? null,
                         withSessions: msg.withSessions === true,
-                        vms: patches.list(), certs: status.states.certs?.items ?? []
+                        vms: patches.active(), certs: status.states.certs?.items ?? []
                     }) });
                     break;
                 }
@@ -684,7 +671,7 @@ wss.on("connection", (ws) => {
                         // Hôtes : VMs de l'inventaire des patchs en tête (nom et environnement affichés, clé SSH
                         // reprise pour « ssh -i »), puis les hôtes de ~/.ssh/config
                         if (liveParam(msg.name) === "host") {
-                            const vms = patches.list().sort((a, b) => a.name.localeCompare(b.name)).map((v) => ({ value: v.host || v.name, label: `${v.name} · ${v.env}`, identity: v.identity }));
+                            const vms = patches.active().sort((a, b) => a.name.localeCompare(b.name)).map((v) => ({ value: v.host || v.name, label: `${v.name} · ${v.env}`, identity: v.identity }));
                             const inventory = [...new Set(vms.map((v) => v.value))];
                             const config = (await paramOptions(ctx, msg.name)).filter((h) => !inventory.includes(h));
                             reply({ t: "param-options", req: msg.req, name: msg.name, options: [...inventory, ...config], inventory: inventory.length,
@@ -695,7 +682,7 @@ wss.on("connection", (ws) => {
                         // Nœud MySQL : ceux du cluster de la VM connectée dans le terminal actif (sinon tous les nœuds
                         // MySQL de l'inventaire), « hôte:3306 », PRIMARY en tête, rôle et cluster affichés
                         if (liveParam(msg.name) === "instance") {
-                            const all = patches.list().filter((v) => v.cluster || v.profile === "mysql-innodb");
+                            const all = patches.active().filter((v) => v.cluster || v.profile === "mysql-innodb");
                             const here = remoteTargets()[String(msg.sid ?? "")]?.vm;
                             const cluster = all.find((v) => v.name === here)?.cluster;
                             const nodes = (cluster ? all.filter((v) => v.cluster === cluster) : all)

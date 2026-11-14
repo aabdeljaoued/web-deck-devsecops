@@ -95,18 +95,17 @@ export function parcMarkdown({ vms = [], certs = [], now = new Date() }) {
     out.push("### Patchs des VMs", "");
     if (!vms.length) out.push("_Aucune VM dans l'inventaire (rubrique Patchs)._", "");
     else {
-        out.push("| Environnement | VMs | 🔴 en retard ou J-1 | 🟠 sous 7 j | Reboot requis |", "|---|---|---|---|---|");
+        out.push("| Environnement | VMs | 🔴 en retard ou J-1 | 🟠 sous 7 j |", "|---|---|---|---|");
         for (const env of envs(vms, (v) => v.env)) {
             const list = vms.filter((v) => v.env === env);
-            out.push(`| ${isProd(env) ? "**production**" : env} | ${list.length} | ${count(list, (v) => vmLevel(v, now) === "rouge")} | ${count(list, (v) => vmLevel(v, now) === "orange")} | ${count(list, (v) => v.check?.reboot)} |`);
+            out.push(`| ${isProd(env) ? "**production**" : env} | ${list.length} | ${count(list, (v) => vmLevel(v, now) === "rouge")} | ${count(list, (v) => vmLevel(v, now) === "orange")} |`);
         }
-        const todo = vms.filter((v) => vmLevel(v, now) !== "ok" || v.check?.reboot || v.check?.security).sort((a, b) => (a.nextPatch || "").localeCompare(b.nextPatch || ""));
+        const todo = vms.filter((v) => vmLevel(v, now) !== "ok").sort((a, b) => (a.nextPatch || "").localeCompare(b.nextPatch || ""));
         out.push("");
         for (const v of todo) {
             const d = v.nextPatch ? daysUntil(v.nextPatch, now) : null;
             const when = d === null ? "patch à planifier" : d < 0 ? `**patch en retard de ${-d} j**` : d === 0 ? "patch aujourd'hui" : `patch dans ${d} j (${fr(v.nextPatch)})`;
-            const check = v.check && !v.check.error ? ` · ${v.check.updates} MAJ en attente${v.check.security ? ` dont ${v.check.security} de sécurité` : ""}${v.check.reboot ? " · reboot requis" : ""} (vérifié le ${fr(v.check.at)})` : "";
-            out.push(`- ${vmLevel(v, now) === "rouge" ? "🔴" : vmLevel(v, now) === "orange" ? "🟠" : "🟢"} \`${v.name}\` (${v.env}) : ${when}${check}`);
+            out.push(`- ${vmLevel(v, now) === "rouge" ? "🔴" : vmLevel(v, now) === "orange" ? "🟠" : "🟢"} \`${v.name}\` (${v.env}) : ${when}`);
         }
         if (todo.length) out.push("");
     }

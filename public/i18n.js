@@ -1,7 +1,7 @@
 // Langue de l'interface (Réglages › Apparence › Langue). Le code et la page sont écrits en français ; en anglais, les
 // textes affichés dans les zones traduites (en-tête, Réglages, Patchs…) sont remplacés à l'affichage d'après le
 // dictionnaire /i18n/en.js : clé = texte français exact, ou modèle avec variables « {0} » (nombres, noms…).
-// Exclus : terminaux, coffre, documentation, et tout élément marqué data-no-i18n (données saisies).
+// Exclus : terminaux, documentation, notes, synthèse, et tout élément marqué data-no-i18n (données saisies).
 import EN from "/i18n/en.js";
 import { compile, translate } from "/i18n-core.js";
 
@@ -11,9 +11,10 @@ export { compile, translate };
 
 const COMPILED = compile(EN);
 let lang = "fr";
-/** Zones traduites (étape 1 : en-tête, barre des touches, Réglages, Patchs, tableau de bord, messages). */
-const SCOPE = "header, #grid, #settings, #patches, #patch-dash, #toast, #picker, #keytip, .tabs-bar";
-const EXCLUDE = ".xterm, #vault, #docs, [data-no-i18n], [translate=\"no\"], textarea, input, script, style, code, pre";
+/** Zone traduite : toute la page, sauf les exclusions ci-dessous. */
+const SCOPE = "body";
+// Documents restés en français : pages de la documentation, aperçu des notes, synthèse du client (texte destiné au client)
+const EXCLUDE = ".xterm, #docs-content, #docs-nav, #note-preview, #summary-view, [data-no-i18n], [translate=\"no\"], textarea, input, script, style, code, pre";
 const ATTRS = ["title", "placeholder", "aria-label"];
 const ORIGINAL = new WeakMap();   // nœud texte -> texte français d'origine
 const WRITTEN = new WeakMap();    // nœud texte -> dernière valeur écrite par la traduction (pas une modification de la page)

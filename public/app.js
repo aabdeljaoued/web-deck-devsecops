@@ -4,7 +4,10 @@ import { FitAddon } from "/vendor/addon-fit.mjs";
 import { WebLinksAddon } from "/vendor/addon-web-links.mjs";
 import { SearchAddon } from "/vendor/addon-search.mjs";
 import { toAnsi, toHtml } from "/markdown.js";
-import { setLang, sourceText } from "/i18n.js";
+import { setLang, sourceText, currentLang, t as tr } from "/i18n.js";
+
+/** Langue des dates affichées (jour/mois dans les deux cas : en-GB plutôt que en-US). */
+const dateLocale = () => (currentLang() === "en" ? "en-GB" : "fr-FR");
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -664,6 +667,8 @@ function keyElement(key) {
     const label = document.createElement("span");
     label.className = "label";
     label.textContent = key.label;
+    // Favoris et rubriques personnelles (« u-… ») : noms saisis, jamais traduits
+    if (key.fav || key.favGroup || String(key.id ?? "").startsWith("u-")) label.dataset.noI18n = "";
     el.append(sym, label);
 
     if (key.prodGuard && prodContext()) {
@@ -1171,7 +1176,7 @@ function renderJournal(entries) {
         if (e.prod) li.classList.add("prod");
         const time = new Date(e.time);
         li.append(
-            Object.assign(document.createElement("span"), { className: "j-time", textContent: `${time.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" })} ${time.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}` }),
+            Object.assign(document.createElement("span"), { className: "j-time", textContent: `${time.toLocaleDateString(dateLocale(), { day: "2-digit", month: "2-digit" })} ${time.toLocaleTimeString(dateLocale(), { hour: "2-digit", minute: "2-digit" })}` }),
             Object.assign(document.createElement("strong"), { textContent: e.label, title: e.page }),
             Object.assign(document.createElement("code"), { textContent: e.command, title: `${e.mode}${e.terminal ? ` · ${e.terminal}` : ""}` }),
             Object.assign(document.createElement("span"), { className: "j-kube", textContent: e.prod ? `PROD ${e.kube ?? ""}` : e.kube ?? "" }));
@@ -1369,6 +1374,7 @@ function addTerm(sid, name, kind = "posix", replay = "", title = null) {
     tab.draggable = true;
     tab.dataset.sid = sid;
     const label = Object.assign(document.createElement("span"), { className: "tab-title", title: "Double-clic : renommer · glisser : déplacer" });
+    label.dataset.noI18n = "";   // nom du terminal (renommable) : jamais traduit
     label.addEventListener("dblclick", (ev) => {
         ev.stopPropagation();
         startRename(sid);
@@ -1659,7 +1665,7 @@ setInterval(() => {
             t.tab.classList.add("done");
         }
         if (state.notify && (hidden || document.hidden) && "Notification" in window && Notification.permission === "granted") {
-            const n = new Notification(`Deck : « ${t.title ?? t.defaultTitle} » a terminé`, { body: "La commande ne produit plus de sortie.", icon: "/img/icon-64.png", tag: `deck-${sid}` });
+            const n = new Notification(tr(`Deck : « ${t.title ?? t.defaultTitle} » a terminé`), { body: tr("La commande ne produit plus de sortie."), icon: "/img/icon-64.png", tag: `deck-${sid}` });
             n.onclick = () => { window.focus(); activate(sid); n.close(); };
         }
     }
@@ -1827,7 +1833,7 @@ function renderCertsPanel(checking = false) {
         const route = c.direct ? " · en direct" : "";
         const when = c.error ? c.error
             : c.intercepted ? `certificat du proxy (${c.issuer}) : la date du site n'est pas visible d'ici`
-            : `${c.days < 0 ? `expiré depuis ${-c.days} j` : `${c.days} j`} · ${new Date(c.until).toLocaleDateString("fr-FR")} · ${c.issuer || "émetteur inconnu"}${c.trusted ? "" : " · chaîne non reconnue"}${route}`;
+            : `${c.days < 0 ? `expiré depuis ${-c.days} j` : `${c.days} j`} · ${new Date(c.until).toLocaleDateString(dateLocale())} · ${c.issuer || "émetteur inconnu"}${c.trusted ? "" : " · chaîne non reconnue"}${route}`;
         const title = [c.target, c.reason, c.via && !c.direct ? `via le proxy ${c.via}` : "", c.direct ? "le proxy n'atteint pas cet hôte : certificat lu en direct" : ""].filter(Boolean).join("\n");
         // Lien vers le site : https://hôte (port 443) ou https://hôte:port ; pas pour les ports non web (LDAP, mail…)
         const [host, port = "443"] = c.target.split(":");
@@ -1859,7 +1865,7 @@ function renderCertsPanel(checking = false) {
     const direct = all.filter((c) => c.direct).length;
     const route = proxies.length ? ` · proxy ${proxies.join(", ")}${direct ? ` (${direct} lu(s) en direct, hors d'atteinte du proxy)` : ""}` : "";
     const foot = Object.assign(document.createElement("p"), { className: "picker-note",
-        textContent: checking ? "vérification en cours…" : `vérifié à ${new Date(s.checked ?? Date.now()).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })} · ensuite toutes les 30 min${route}` });
+        textContent: checking ? "vérification en cours…" : `vérifié à ${new Date(s.checked ?? Date.now()).toLocaleTimeString(dateLocale(), { hour: "2-digit", minute: "2-digit" })} · ensuite toutes les 30 min${route}` });
     const again = Object.assign(document.createElement("button"), { type: "button", className: "picker-action", textContent: "Vérifier maintenant" });
     again.addEventListener("click", () => { renderCertsPanel(true); send({ t: "press", id: "certs" }); });
     const cal = Object.assign(document.createElement("button"), { type: "button", className: "picker-action", textContent: "Calendrier", title: "Échéances (certificats et patchs), export Outlook" });
@@ -1906,7 +1912,7 @@ function paletteEntries() {
         }
     }
     for (const r of recentCommands) {
-        const when = new Date(r.time).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+        const when = new Date(r.time).toLocaleString(dateLocale(), { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
         entries.push({ key: { label: r.command, icon: "lucide-history", color: "#546e7a" }, where: `Récent · ${when}`, detail: `${r.label}${r.kube ? ` · ${r.kube}` : ""} · tapée sans Entrée`, hay: `recent récent ${r.label} ${r.command}`.toLowerCase(), run: () => typeInTerminal(r.command) });
     }
     for (const m of state.settings?.missions ?? []) {
@@ -2349,8 +2355,8 @@ function renderNotes() {
         const li = Object.assign(document.createElement("li"), { className: `vault-item${n.id === vaultUi.noteId ? " on" : ""}${n.color ? " colored" : ""}` });
         if (n.color) li.style.setProperty("--nc", n.color);
         li.append(
-            Object.assign(document.createElement("span"), { className: "vault-item-title", textContent: n.title }),
-            Object.assign(document.createElement("span"), { className: "vault-item-sub", textContent: n.body.split("\n")[0].slice(0, 80) || "—" })
+            Object.assign(document.createElement("span"), { className: "vault-item-title", textContent: n.title, translate: false }),
+            Object.assign(document.createElement("span"), { className: "vault-item-sub", textContent: n.body.split("\n")[0].slice(0, 80) || "—", translate: false })
         );
         li.addEventListener("click", () => selectNote(n.id));
         return li;
@@ -2368,7 +2374,7 @@ function loadNoteInEditor() {
     vaultUi.noteColor = note?.color ?? "";
     renderNoteColors();
     toggleNotePreview(Boolean(vaultUi.preview) && Boolean(note));   // l'aperçu reste ouvert d'une ouverture à l'autre
-    $("#note-status").textContent = note ? `modifiée le ${new Date(note.updated).toLocaleString("fr-FR")}` : "";
+    $("#note-status").textContent = note ? `modifiée le ${new Date(note.updated).toLocaleString(dateLocale())}` : "";
     $("#note-delete").textContent = "Supprimer";
     delete $("#note-delete").dataset.armed;
 }
@@ -2514,8 +2520,8 @@ function renderSecrets() {
         const info = Object.assign(document.createElement("div"), { className: "secret-info" });
         const shown = vaultUi.shown.get(s.id);
         info.append(
-            Object.assign(document.createElement("span"), { className: "vault-item-title", textContent: s.name }),
-            Object.assign(document.createElement("span"), { className: "vault-item-sub", textContent: [s.user, s.url].filter(Boolean).join(" · ") || "—" }),
+            Object.assign(document.createElement("span"), { className: "vault-item-title", textContent: s.name, translate: false }),
+            Object.assign(document.createElement("span"), { className: "vault-item-sub", textContent: [s.user, s.url].filter(Boolean).join(" · ") || "—", translate: false }),
             Object.assign(document.createElement("code"), { className: `secret-mask${shown ? " shown" : ""}`, textContent: shown ?? "•".repeat(Math.min(s.length, 24)) })
         );
         li.append(info,
@@ -2771,7 +2777,7 @@ function renderServer() {
 
 function applyUpdate(u) {
     state.update = u;
-    const date = u.date ? new Date(u.date).toLocaleDateString("fr-FR") : "";
+    const date = u.date ? new Date(u.date).toLocaleDateString(dateLocale()) : "";
     const version = u.version ? `Version ${u.version}${date ? ` du ${date}` : ""}` : "Version inconnue";
     const status = u.error ? `vérification impossible : ${u.error}`
         : u.behind ? `${u.behind} nouveauté(s) disponible(s) sur GitHub`
@@ -2852,7 +2858,7 @@ function renderBackups(all) {
         const row = Object.assign(document.createElement("div"), { className: "backup-row" });
         const select = document.createElement("select");
         if (!list.length) select.append(new Option("aucune copie pour l'instant", ""));
-        for (const b of list) select.append(new Option(`${new Date(b.time).toLocaleString("fr-FR")} (${b.size < 1024 ? `${b.size} o` : `${Math.round(b.size / 1024)} Ko`})`, b.id));
+        for (const b of list) select.append(new Option(`${new Date(b.time).toLocaleString(dateLocale())} (${b.size < 1024 ? `${b.size} o` : `${Math.round(b.size / 1024)} Ko`})`, b.id));
         select.disabled = !list.length;
         const btn = Object.assign(document.createElement("button"), { type: "button", textContent: "Restaurer", disabled: !list.length });
         btn.addEventListener("click", () => {
@@ -3342,7 +3348,7 @@ function renderProxyState() {
     const el = $("#proxy-state");
     if (!p || !el) return;
     el.classList.toggle("on", p.active);
-    el.textContent = `${p.active ? `● Actif : ${p.url}${p.noProxy ? ` · sans proxy : ${p.noProxy}` : ""}` : "○ Inactif : connexion directe"} · ${p.label}${p.checked ? ` · ${new Date(p.checked).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}` : ""}`;
+    el.textContent = `${p.active ? `● Actif : ${p.url}${p.noProxy ? ` · sans proxy : ${p.noProxy}` : ""}` : "○ Inactif : connexion directe"} · ${p.label}${p.checked ? ` · ${new Date(p.checked).toLocaleTimeString(dateLocale(), { hour: "2-digit", minute: "2-digit" })}` : ""}`;
 }
 
 function fillProxySettings() {
@@ -3570,7 +3576,7 @@ async function readVaultFile(file) {
         const box = data?.kind === "coffre" ? data.vault : data;
         if (box?.kdf !== "scrypt" || !box?.data) throw new Error("ce n'est pas un export du coffre du deck");
         pendingVault = data;
-        const when = data.exported ? ` exporté le ${new Date(data.exported).toLocaleString("fr-FR")}` : "";
+        const when = data.exported ? ` exporté le ${new Date(data.exported).toLocaleString(dateLocale())}` : "";
         $("#vault-import-summary").textContent = `${file.name}${when} (contenu chiffré)`;
         $("#vault-import-confirm").hidden = false;
         refreshVaultIo();
@@ -3651,7 +3657,7 @@ function renderRecordings(files) {
     list.replaceChildren(...files.slice(0, 20).map((f) => {
         const li = document.createElement("li");
         li.append(
-            Object.assign(document.createElement("span"), { className: "j-time", textContent: new Date(f.time).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) }),
+            Object.assign(document.createElement("span"), { className: "j-time", textContent: new Date(f.time).toLocaleString(dateLocale(), { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) }),
             Object.assign(document.createElement("code"), { textContent: f.name.replace(/\.cast$/, ""), title: `${f.name} (et .txt)` }),
             Object.assign(document.createElement("span"), { className: "j-time", textContent: size(f.size) }));
         const play = Object.assign(document.createElement("button"), { type: "button", className: "rec-play", textContent: "▶", title: "Rejouer dans le deck" });
@@ -3763,11 +3769,11 @@ function closePlayer() {
 
 /** Message dans le deck et notification du système (si autorisée), une fois par seuil (géré par le serveur). */
 function certAlert(alerts) {
-    const text = alerts.map((a) => `${a.target} : ${a.days < 0 ? "EXPIRÉ" : `expire dans ${a.days} j`} (${new Date(a.until).toLocaleDateString("fr-FR")})`).join(" · ");
+    const text = alerts.map((a) => tr(`${a.target} : ${a.days < 0 ? "EXPIRÉ" : `expire dans ${a.days} j`} (${new Date(a.until).toLocaleDateString(dateLocale())})`)).join(" · ");
     const red = alerts.some((a) => a.level === "rouge");
     toast(`${red ? "🔴" : "🟠"} certificat ${red ? "urgent" : "à renouveler"} : ${text}`, red ? "ko" : "ok");
     if ("Notification" in window && Notification.permission === "granted") {
-        new Notification(red ? "Deck : certificat urgent" : "Deck : certificat à renouveler", { body: text, icon: "/img/icon-64.png", tag: "deck-certs" });
+        new Notification(tr(red ? "Deck : certificat urgent" : "Deck : certificat à renouveler"), { body: text, icon: "/img/icon-64.png", tag: "deck-certs" });
     }
 }
 
@@ -3898,7 +3904,7 @@ function renderPatchDash() {
     const clusters = [...new Set(all.map((v) => v.cluster).filter(Boolean))].sort();
     const vipCount = clusters.reduce((n, c) => n + (state.patchClusters?.[c]?.vips?.length ?? 0), 0);
     const noPrimary = clusters.filter((c) => { const nodes = vms.filter((v) => v.cluster === c); return nodes.length && !nodes.some((v) => v.role === "primary"); });
-    $("#dash-asof").textContent = `${vms.length} VM(s) suivie(s) · mis à jour à ${new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}`;
+    $("#dash-asof").textContent = `${vms.length} VM(s) suivie(s) · mis à jour à ${new Date().toLocaleTimeString(dateLocale(), { hour: "2-digit", minute: "2-digit" })}`;
     if (!all.length) {
         $("#dash-body").replaceChildren(h("p", "hint", "Aucune VM dans l'inventaire : « + VM » ou « Importer… » dans l'inventaire des patchs."));
         return;
@@ -3948,8 +3954,8 @@ function renderPatchDash() {
         const start = new Date(Date.now() + w.i * 7 * 86400000);
         const col = h("div", "dash-col");
         const fill = h("span", "dash-col-bar", null, { style: `height:${w.list.length ? Math.max(4, (w.list.length / maxWeek) * 100) : 0}%` });
-        col.dataset.tip = `${w.i === 0 ? "Cette semaine" : `Semaine du ${start.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" })}`} : ${w.list.length} patch(s)${w.list.length ? `\n${w.list.map((v) => v.name).slice(0, 10).join(", ")}${w.list.length > 10 ? "…" : ""}` : ""}`;
-        col.append(h("span", "dash-col-value", w.list.length ? String(w.list.length) : ""), h("div", "dash-col-track"), h("span", "dash-col-label", w.i === 0 ? "cette sem." : start.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" })));
+        col.dataset.tip = `${w.i === 0 ? "Cette semaine" : `Semaine du ${start.toLocaleDateString(dateLocale(), { day: "2-digit", month: "2-digit" })}`} : ${w.list.length} patch(s)${w.list.length ? `\n${w.list.map((v) => v.name).slice(0, 10).join(", ")}${w.list.length > 10 ? "…" : ""}` : ""}`;
+        col.append(h("span", "dash-col-value", w.list.length ? String(w.list.length) : ""), h("div", "dash-col-track"), h("span", "dash-col-label", w.i === 0 ? "cette sem." : start.toLocaleDateString(dateLocale(), { day: "2-digit", month: "2-digit" })));
         col.children[1].append(fill);
         cols.append(col);
     }
@@ -4399,11 +4405,12 @@ const PATCH_TEMPLATE = "\uFEFFnom;hote;cle;environnement;dernier_patch;prochain_
 
 /** VM passée à l'orange / au rouge : message et notification du système (si autorisée), une fois par seuil. */
 function patchAlert(alerts) {
-    const text = alerts.map((a) => `${a.target} : ${a.days === null ? "patch à planifier" : a.days < 0 ? `patch en retard de ${-a.days} j` : `patch ${patchLabel(a.days)}`}`).join(" · ");
+    // Chaque VM traduite à part (liste assemblée : un modèle ne saurait pas où couper) ; aussi pour la notification système
+    const text = alerts.map((a) => tr(`${a.target} : ${a.days === null ? "patch à planifier" : a.days < 0 ? `patch en retard de ${-a.days} j` : `patch ${patchLabel(a.days)}`}`)).join(" · ");
     const red = alerts.some((a) => a.level === "rouge");
     toast(`${red ? "🔴" : "🟠"} ${text}`, red ? "ko" : "ok");
     if ("Notification" in window && Notification.permission === "granted") {
-        new Notification(red ? "Deck : patch urgent" : "Deck : patch à prévoir", { body: text, icon: "/img/icon-64.png", tag: "deck-patches" });
+        new Notification(tr(red ? "Deck : patch urgent" : "Deck : patch à prévoir"), { body: text, icon: "/img/icon-64.png", tag: "deck-patches" });
     }
 }
 
@@ -4429,7 +4436,8 @@ function agendaChip(e, short = false) {
     const chip = Object.assign(document.createElement("span"), {
         className: `ag-chip ${e.kind === "patch" ? "ag-patch" : "ag-cert"} lvl-${e.level}${e.env === "production" ? " ag-prod" : ""}`,
         textContent: short ? e.title.replace(/^Patch /, "").replace(/^Expiration du certificat /, "🔒 ") : e.title,
-        title: `${e.title} (${e.env})${e.detail ? `\n${e.detail}` : ""}`
+        // Détail assemblé par le serveur (« description · hôte … · tous les … j ») : chaque morceau traduit à part
+        title: `${e.title} (${e.env})${e.detail ? `\n${e.detail.split(" · ").map((part) => tr(part)).join(" · ")}` : ""}`
     });
     if (e.kind === "patch") {
         chip.classList.add("clickable");
@@ -4447,7 +4455,7 @@ function renderAgenda() {
     if ($("#agenda").hidden) return;
     const today = isoDay(new Date());
     const y = agendaMonth.getFullYear(), m = agendaMonth.getMonth();
-    $("#agenda-title").textContent = agendaMonth.toLocaleDateString("fr-FR", { month: "long", year: "numeric" });
+    $("#agenda-title").textContent = agendaMonth.toLocaleDateString(dateLocale(), { month: "long", year: "numeric" });
     const byDay = new Map();
     for (const e of agendaEvents) byDay.set(e.date, [...(byDay.get(e.date) ?? []), e]);
     const cells = ["lun.", "mar.", "mer.", "jeu.", "ven.", "sam.", "dim."].map((d) => Object.assign(document.createElement("div"), { className: "ag-head", textContent: d }));
@@ -4539,7 +4547,7 @@ function reportToVault() {
     const text = $("#report-text").value;
     if (!text.trim()) return toast("rapport vide : clique sur Générer");
     if (!state.vault.unlocked) return toast("déverrouille d'abord le coffre (bouton cadenas)");
-    const title = `Rapport d'intervention du ${new Date().toLocaleDateString("fr-FR")}`;
+    const title = `Rapport d'intervention du ${new Date().toLocaleDateString(dateLocale())}`;
     send({ t: "note-save", title, body: text, req: `report-${crypto.randomUUID()}` });
     toast(`rapport enregistré dans le coffre : « ${title} »`, "ok");
 }

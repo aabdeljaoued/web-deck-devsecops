@@ -34,11 +34,18 @@ que soit la section ; **Enregistrer** enregistre toutes les sections d'un coup. 
 **Langue / Language** passe l'interface en **anglais** (ou la remet en français), tout de suite, sans recharger la page ;
 **Annuler** revient à la langue d'avant, **Enregistrer** la garde (`settings.json`, la même dans tous les navigateurs).
 
-Pour l'instant, sont traduits : l'en-tête, les **Réglages** (toutes les sections), la rubrique **Patchs** (touches,
-inventaire, formulaires, clusters et VIP, import CSV, tableau de bord) et leurs messages. Le reste (autres rubriques,
-coffre, documentation) reste en français pour le moment.
+Toute l'interface est traduite : en-tête, accueil et voyants, toutes les rubriques (noms des touches, bulles d'aide),
+**Réglages**, **Patchs** (inventaire, clusters, tableau de bord), coffre, favoris, palette ⌘K, terminaux (barre, recherche,
+diffusion, enregistrement), échéances, rapport et messages ; les dates suivent la langue (jour/mois dans les deux cas).
+
+![Accueil en anglais : rubrique K8s / OCP et bulle d'aide d'une touche](img/accueil-anglais.jpg)
 
 ![Tableau de bord des patchs en anglais](img/patchs-dashboard-anglais.jpg)
+
+![Échéances en anglais](img/echeances-anglais.jpg)
+
+Restent en français : la **documentation** (pages et captures), et les **documents produits pour le client** (rapport
+d'intervention, synthèse du client, fichier `.ics` des échéances), à relire avant diffusion.
 
 Ce que tu saisis n'est jamais traduit : noms de VMs, descriptions, tags, noms de missions, commandes, sorties des
 terminaux. Les valeurs à taper restent les mêmes dans les deux langues (environnements `production`, `recette`… dans les

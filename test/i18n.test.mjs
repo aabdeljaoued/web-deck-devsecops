@@ -33,3 +33,10 @@ test("textes sur plusieurs lignes : infobulle, texte HTML coupé, ligne par lign
     assert.equal(translate(C, "Tableau de bord\n            des patchs"), "Patch dashboard");
     assert.equal(translate(C, "app-01 : à planifier\napp-02 : dans 3 j (17/11/2026)"), "app-01: to schedule\napp-02: in 3 d (17/11/2026)");
 });
+
+test("dictionnaire : pas de clé en double (la seconde écraserait la première sans prévenir)", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const src = await readFile(new URL("../public/i18n/en.js", import.meta.url), "utf8");
+    const keys = [...src.matchAll(/(?:^|,)\s*("(?:[^"\\]|\\.)*")\s*:/gm)].map((m) => m[1]);
+    assert.deepEqual(keys.filter((k, i) => keys.indexOf(k) !== i), []);
+});

@@ -82,6 +82,26 @@ Pour chaque VM :
 **Calendrier** (en-tête) : les échéances du mois et l'export vers Outlook, voir
 [Échéances et synthèse](14-echeances-et-synthese.md).
 
+## Tableau de bord
+
+![Tableau de bord des patchs](img/patchs-dashboard.jpg)
+
+**Tableau de bord** (en-tête de l'inventaire, ou ⌘K › « Tableau de bord des patchs ») : une vue d'ensemble, mise à
+jour en direct, des VMs suivies (les décommissionnées sont comptées à part) :
+
+- **chiffres clés** : VMs suivies (dont production), en retard ou J-1, sous 7 jours (et sans date), clusters (et ceux
+  sans PRIMARY), VIP, décommissionnées ;
+- **patch par environnement** : une barre par environnement, découpée par statut (en retard ou J-1, sous 7 jours, à
+  planifier, à jour), avec la légende, le nombre dans chaque segment, le détail au survol (les VMs concernées) et
+  **Voir en tableau** pour les chiffres ;
+- **prochains patchs sur 8 semaines** : nombre de VMs à patcher par semaine (détail au survol), plus le rappel du
+  retard et des VMs sans date ;
+- **clusters** : environnement, carte des nœuds (couleur du statut, cercle doré pour le PRIMARY, pointillés pour un
+  nœud décommissionné), nœuds, PRIMARY, VIP et état du cluster ;
+- **tags les plus fréquents**.
+
+**Inventaire** (en-tête) revient à la liste des VMs.
+
 ## Clusters (MySQL InnoDB Cluster…)
 
 ![Inventaire regroupé par cluster](img/patchs-clusters.jpg)
@@ -138,7 +158,7 @@ Une VM retirée du service reste **dans l'inventaire**, pour garder sa trace, ma
 décommissionnée** (case à cocher), ou colonne CSV `decom` (`oui`, `oui 14/11/2026`, `x`…) :
 
 - la ligne est **grisée**, le nom barré, avec un badge « DÉCOMMISSIONNÉE le 14/11/2026 » ; elle passe **en fin de
-  liste** ; plus de date de patch exigée (« hors suivi ») ;
+  liste** ; « hors suivi » au lieu de la date de patch ;
 - elle ne compte plus pour le **voyant** et les **alertes**, le **calendrier** et l'export Outlook, la **synthèse**,
   ni dans les listes de connexion (**ssh VM**, nœuds MySQL) ;
 - si c'était le **PRIMARY**, elle perd ce rôle ;
@@ -193,7 +213,7 @@ le deck ne le détecte pas seul.
 chemin de la clé privée pour `ssh -i`, tes clés de `~/.ssh` sont proposées ; caractères de shell refusés), environnement,
 **tags** (facultatif, séparés par des virgules : `linux, dmz, critique` ; en minuscules, 10 au plus, les tags déjà
 utilisés sont proposés), dernier patch,
-prochain patch, fréquence en jours, description (rôle, OS, fenêtre de maintenance, contact…). Un clic n'importe où
+prochain patch (**facultatif** : sans date, la VM est « à planifier », en orange), fréquence en jours, description (rôle, OS, fenêtre de maintenance, contact…). Un clic n'importe où
 dans un champ de date ouvre le **calendrier**, aux couleurs du thème (on peut aussi taper la date au clavier). Si tu donnes le dernier
 patch et la fréquence, le prochain est calculé. Une erreur s'affiche dans le formulaire sans perdre la saisie.
 
@@ -207,7 +227,8 @@ patch et la fréquence, le prochain est calculé. Une erreur s'affiche dans le f
   anglais : `nom` (obligatoire), `hote`, `cle`, `environnement`, `dernier_patch`, `prochain_patch`, `frequence`,
   `tags` (séparés par des virgules), `cluster`, `clusterset`, `profil` (`standard` ou `mysql`), `role` (`primary` ou `secondary` ; un seul PRIMARY
   par cluster, le dernier du fichier est gardé et c'est signalé), `decom` (`oui` ou `oui JJ/MM/AAAA` : VM
-  décommissionnée, sans date de patch exigée), `description` ;
+  décommissionnée), `description` ; seul `nom` est obligatoire : une ligne sans date de patch est importée « à
+  planifier » ;
 - séparateur `;` (Excel en français), `,` ou tabulation, détecté automatiquement ; valeurs entre guillemets acceptées ;
 - dates `JJ/MM/AAAA` ou `AAAA-MM-JJ` ; environnements `prod`, `dev`, `qualif` reconnus.
 

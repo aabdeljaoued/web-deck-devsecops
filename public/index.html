@@ -558,6 +558,20 @@
         </div>
     </div>
 
+    <div id="patch-dash" class="palette" hidden>
+        <div class="palette-box dash-box" role="dialog" aria-label="Tableau de bord des patchs">
+            <div class="player-head">
+                <strong>Tableau de bord des patchs</strong>
+                <span id="dash-asof" class="hint"></span>
+                <span class="grow"></span>
+                <button type="button" id="dash-inventory" title="Ouvrir l'inventaire des VMs">Inventaire</button>
+                <button type="button" id="dash-close" title="Fermer (Échap)">✕</button>
+            </div>
+            <div id="dash-body" class="dash-body"></div>
+            <div id="dash-tip" class="dash-tip" role="tooltip" hidden></div>
+        </div>
+    </div>
+
     <div id="agenda" class="palette" hidden>
         <div class="palette-box agenda-box" role="dialog" aria-label="Échéances">
             <div class="player-head">
@@ -628,6 +642,7 @@
                 <span class="grow"></span>
                 <input id="patch-search" type="search" placeholder="Filtrer : nom, environnement, description…" spellcheck="false">
                 <button type="button" id="patch-new" class="primary">+ VM</button>
+                <button type="button" id="patch-dash-open" title="Tableau de bord : VMs, patchs, environnements, clusters">Tableau de bord</button>
                 <button type="button" id="patch-agenda" title="Calendrier des échéances (patchs et certificats), export pour Outlook / Google Agenda">Calendrier</button>
                 <button type="button" id="patch-import" title="Importer des VMs depuis un fichier CSV (Excel) : ajout, ou mise à jour si le nom existe">Importer…</button>
                 <button type="button" id="patch-export" title="Exporter l'inventaire en CSV (modifiable dans Excel, puis réimportable)">Exporter (CSV)</button>

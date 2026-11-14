@@ -206,7 +206,6 @@ export class Patches {
     /** Création (sans id) ou modification ; nom unique (sans tenir compte de la casse). */
     save(def) {
         const vm = cleanVm(def);
-        if (!vm.nextPatch && !vm.decommissioned) throw new Error("indique la date du prochain patch (ou le dernier patch et la fréquence)");
         const id = def?.id ? String(def.id) : null;
         if (this.vms.some((v) => v.id !== id && v.name.toLowerCase() === vm.name.toLowerCase())) throw new Error(`une VM s'appelle déjà « ${vm.name} »`);
         // Un seul PRIMARY par cluster : l'ancien repasse SECONDARY (bascule)
@@ -401,7 +400,6 @@ export function vmsFromCsv(text) {
         if (def.env != null) def.env = String(def.env).trim() ? normalizeEnv(def.env) ?? String(def.env).trim().toLowerCase() : "autre";
         try {
             const vm = cleanVm(def);
-            if (!vm.nextPatch && !vm.decommissioned) throw new Error("prochain patch manquant (ou dernier patch et fréquence)");
             vms.push({ line: r.line, vm });
         } catch (err) {
             errors.push(`ligne ${r.line} : ${err.message}`);

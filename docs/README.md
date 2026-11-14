@@ -26,7 +26,7 @@ bouton **?** de l'en-tête :
 10. [Réglages et traçabilité](10-reglages-et-tracabilite.md) : apparence, journal, rapport d'intervention, sauvegardes, mise à jour, diagnostic, mode partage d'écran.
 11. [Sécurité](11-securite.md) : ce que le deck protège, et comment.
 12. [Dépannage](12-depannage.md) : problèmes courants et solutions.
-13. [Patchs des VMs](13-patchs.md) : inventaire, dates de patch, voyant et alertes, clusters, VMs décommissionnées.
+13. [Patchs des VMs](13-patchs.md) : inventaire, tableau de bord, dates de patch, voyant et alertes, clusters et VIP, VMs décommissionnées.
 14. [Échéances et synthèse](14-echeances-et-synthese.md) : calendrier, export Outlook (.ics), synthèse du client, rapport enrichi.
 
 Pour faire évoluer cette documentation : [Contribuer](CONTRIBUER.md).

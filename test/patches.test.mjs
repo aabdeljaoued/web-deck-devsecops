@@ -34,10 +34,12 @@ test("VM : champs vérifiés, prochain patch déduit du dernier et de la fréque
     assert.throws(() => cleanVm({ name: "a", nextPatch: "2026-12-01", everyDays: 0 }), /fréquence/);
 });
 
-test("inventaire : nom unique, prochain patch obligatoire, « patché » recalcule, rechargement", () => {
+test("inventaire : nom unique, prochain patch facultatif (« à planifier »), « patché » recalcule, rechargement", () => {
     const file = path.join(tmpDir(), "patches.json");
     const p = new Patches(file);
-    assert.throws(() => p.save({ name: "web-01" }), /prochain patch/);
+    const sansDate = p.save({ name: "sans-date-01" });   // pas de prochain patch : acceptée, « à planifier »
+    assert.equal(p.get(sansDate).nextPatch, "");
+    p.remove(sansDate);
     const id = p.save({ name: "web-01", lastPatch: "2026-10-01", everyDays: 15 });
     assert.throws(() => p.save({ name: "WEB-01", nextPatch: "2026-12-01" }), /s'appelle déjà/);
     p.save({ name: "db-01", nextPatch: "2026-11-20" });
@@ -84,12 +86,12 @@ test("import CSV : séparateur « ; » ou « , », guillemets, en-têtes FR / EN
         + "web-01;;;production;;31/02/2026;;date impossible\r\n"
         + "vide-01;;;autre;;;;pas de date\r\n";
     const { vms, errors } = vmsFromCsv(csv);
-    assert.deepEqual(vms.map((v) => [v.line, v.vm.name, v.vm.env, v.vm.nextPatch]), [[2, "app-01", "production", "2026-11-09"], [3, "db-01", "recette", "2026-12-15"]]);
+    // Ligne sans date de patch : importée (« à planifier ») ; date impossible : refusée
+    assert.deepEqual(vms.map((v) => [v.line, v.vm.name, v.vm.env, v.vm.nextPatch]), [[2, "app-01", "production", "2026-11-09"], [3, "db-01", "recette", "2026-12-15"], [6, "vide-01", "autre", ""]]);
     assert.equal(vms[0].vm.description, "API; paiement");
-    assert.equal(errors.length, 3);
+    assert.equal(errors.length, 2);
     assert.match(errors[0], /^ligne 4 : le nom/);
     assert.match(errors[1], /^ligne 5 : prochain patch : date invalide/);
-    assert.match(errors[2], /^ligne 6 : prochain patch manquant/);
     assert.throws(() => vmsFromCsv("hote,env\nx,prod"), /colonne « nom » introuvable/);
     const en = vmsFromCsv("name,host,next,every\nsrv-1,srv-1.lan,2026-12-01,15").vms[0].vm;
     assert.deepEqual([en.name, en.host, en.nextPatch, en.everyDays], ["srv-1", "srv-1.lan", "2026-12-01", 15]);
@@ -148,7 +150,6 @@ test("VM décommissionnée : gardée, sans date de patch exigée, hors suivi, à
     const a = p.save({ name: "mysql-rec-01", nextPatch: "2026-12-01", cluster: "CL-REC", role: "primary" });
     p.save({ name: "mysql-rec-02", nextPatch: "2026-12-05", cluster: "CL-REC", role: "secondary" });
     p.save({ name: "vieille-vm", decommissioned: true, decommissionedAt: "2026-11-01" });   // pas de date de patch : accepté
-    assert.throws(() => p.save({ name: "sans-date" }), /prochain patch/);
     const vm = p.setDecommissioned(a, true);
     assert.equal(vm.role, "", "un PRIMARY décommissionné perd son rôle");
     assert.equal(vm.decommissionedAt, (await import("../server/patches.mjs")).today());

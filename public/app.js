@@ -423,6 +423,7 @@ function handle(msg) {
         case "patches":
             state.patches = msg.vms;
             state.patchClusters = msg.clusters ?? {};
+            renderPatchDash();
             if (patchVipEditing) { $("#patch-vip-form").hidden = true; patchVipEditing = null; }
             renderPatches();
             if (!$("#agenda").hidden) send({ t: "agenda" });
@@ -586,7 +587,7 @@ function numberKeys() {
     });
 }
 
-const dialogOpen = () => ["#settings", "#vault", "#favdialog", "#palette", "#picker", "#duplicate", "#params", "#player", "#report", "#docs", "#patches", "#agenda", "#summary"].some((id) => $(id) && !$(id).hidden);
+const dialogOpen = () => ["#settings", "#vault", "#favdialog", "#palette", "#picker", "#duplicate", "#params", "#player", "#report", "#docs", "#patches", "#agenda", "#summary", "#patch-dash"].some((id) => $(id) && !$(id).hidden);
 
 // Phase de capture : avant le terminal (sinon ⌥1 taperait « ¡ » sur macOS)
 document.addEventListener("keydown", (ev) => {
@@ -1911,6 +1912,7 @@ function paletteEntries() {
     }
     entries.push({ key: { type: "vault", label: "Coffre : notes et secrets", icon: "lock", color: "#5c6bc0" }, where: "Coffre", detail: "notes et secrets chiffrés", hay: "coffre vault notes secrets mots de passe tokens password" });
     entries.push({ key: { label: "Échéances", icon: "lucide-calendar-check", color: "#00838F" }, where: "Suivi", detail: "calendrier des patchs et certificats, export Outlook (.ics)", hay: "echeances calendrier agenda outlook ics patchs certificats expiration", run: openAgenda });
+    entries.push({ key: { label: "Tableau de bord des patchs", icon: "lucide-layout-dashboard", color: "#00838F" }, where: "Suivi", detail: "VMs, patchs par environnement, prochaines semaines, clusters, tags", hay: "tableau de bord dashboard statistiques stats patchs vms clusters environnements", run: openPatchDash });
     entries.push({ key: { label: "Synthèse du client", icon: "lucide-clipboard-list", color: "#00838F" }, where: "Suivi", detail: "état de la mission : certificats, patchs, échéances, actions en production", hay: "synthese client mission etat parc point hebdo comite", run: openSummary });
     entries.push({ key: { label: "Rapport d'intervention", icon: "lucide-file-text", color: "#00838F" }, where: "Suivi", detail: "compte rendu d'une période (journal, sessions, patchs, état du parc)", hay: "rapport intervention compte rendu", run: openReport });
     for (const [page, keys] of Object.entries(state.pages)) {
@@ -3859,6 +3861,159 @@ function patchClusterLine(vm) {
     return div;
 }
 
+// ---------- Tableau de bord des patchs (VMs, environnements, clusters, échéances) ----------
+
+/** Statuts du patch : couleur réservée + icône + libellé (jamais la couleur seule). */
+const DASH_STATUS = [
+    ["late", "🔴", "en retard ou J-1", "#d03b3b"],
+    ["soon", "🟠", "sous 7 jours", "#fab219"],
+    ["todo", "◌", "à planifier", "#ec835a"],
+    ["ok", "🟢", "à jour", "#0ca30c"]
+];
+const dashStatus = (v) => { const d = patchDays(v); return d === null ? "todo" : d <= 1 ? "late" : d <= 7 ? "soon" : "ok"; };
+
+function openPatchDash() {
+    $("#patches").hidden = true;
+    $("#patch-dash").hidden = false;
+    send({ t: "patch-list" });
+    renderPatchDash();
+}
+
+/** Élément HTML court. */
+const h = (tag, cls, text, attrs = {}) => Object.assign(document.createElement(tag), { className: cls, ...(text != null ? { textContent: text } : {}), ...attrs });
+
+function renderPatchDash() {
+    if ($("#patch-dash").hidden) return;
+    const all = state.patches ?? [];
+    const vms = all.filter((v) => !v.decommissioned);
+    const decom = all.length - vms.length;
+    const count = (pred, list = vms) => list.filter(pred).length;
+    const byStatus = Object.fromEntries(DASH_STATUS.map(([k]) => [k, count((v) => dashStatus(v) === k)]));
+    const clusters = [...new Set(all.map((v) => v.cluster).filter(Boolean))].sort();
+    const vipCount = clusters.reduce((n, c) => n + (state.patchClusters?.[c]?.vips?.length ?? 0), 0);
+    const noPrimary = clusters.filter((c) => { const nodes = vms.filter((v) => v.cluster === c); return nodes.length && !nodes.some((v) => v.role === "primary"); });
+    $("#dash-asof").textContent = `${vms.length} VM(s) suivie(s) · mis à jour à ${new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}`;
+    if (!all.length) {
+        $("#dash-body").replaceChildren(h("p", "hint", "Aucune VM dans l'inventaire : « + VM » ou « Importer… » dans l'inventaire des patchs."));
+        return;
+    }
+
+    // 1. Tuiles : les chiffres qui comptent
+    const tile = (label, value, sub, cls = "") => { const t = h("div", `dash-tile ${cls}`); t.append(h("span", "dash-tile-label", label), h("span", "dash-tile-value", String(value)), h("span", "dash-tile-sub", sub)); return t; };
+    const tiles = h("section", "dash-tiles");
+    tiles.append(
+        tile("VMs suivies", vms.length, `${count((v) => v.env === "production")} en production`),
+        tile("En retard ou J-1", byStatus.late, byStatus.late ? "🔴 à patcher maintenant" : "🟢 aucune", byStatus.late ? "critical" : ""),
+        tile("Sous 7 jours", byStatus.soon, byStatus.todo ? `◌ ${byStatus.todo} sans date` : "toutes planifiées", byStatus.soon ? "warning" : ""),
+        tile("Clusters", clusters.length, noPrimary.length ? `★ ${noPrimary.length} sans PRIMARY` : `${count((v) => v.cluster)} nœuds`),
+        tile("VIP", vipCount, `${clusters.filter((c) => state.patchClusters?.[c]?.vips?.length).length} cluster(s) équipé(s)`),
+        tile("Décommissionnées", decom, "hors suivi")
+    );
+
+    // 2. Patch par environnement : barres empilées par statut (légende + étiquettes + infobulle)
+    const envs = [...new Set(vms.map((v) => v.env))].sort((a, b) => (a === "production" ? -1 : b === "production" ? 1 : a.localeCompare(b)));
+    const legend = h("div", "dash-legend");
+    for (const [, , label, color] of DASH_STATUS) { const i = h("span", "dash-legend-item"); i.append(h("i", "dash-swatch", null, { style: `background:${color}` }), label); legend.append(i); }
+    const maxEnv = Math.max(...envs.map((e) => count((v) => v.env === e)), 1);
+    const envRows = h("div", "dash-rows");
+    for (const env of envs) {
+        const list = vms.filter((v) => v.env === env);
+        const row = h("div", "dash-row");
+        const bar = h("div", "dash-stack", null, { style: `width:${Math.max(8, (list.length / maxEnv) * 100)}%` });
+        for (const [k, icon, label, color] of DASH_STATUS) {
+            const n = list.filter((v) => dashStatus(v) === k).length;
+            if (!n) continue;
+            const seg = h("span", "dash-seg", n / list.length >= 0.12 ? String(n) : "", { style: `flex:${n};background:${color};color:${k === "soon" ? "#0b0b0b" : "#fff"}` });
+            seg.dataset.tip = `${env} · ${icon} ${label} : ${n} VM(s)\n${list.filter((v) => dashStatus(v) === k).map((v) => v.name).slice(0, 8).join(", ")}${n > 8 ? "…" : ""}`;
+            bar.append(seg);
+        }
+        row.append(h("span", "dash-row-label", env), h("div", "dash-row-track", null), h("span", "dash-row-value", String(list.length)));
+        row.children[1].append(bar);
+        envRows.append(row);
+    }
+    const envTable = dashTable(["Environnement", ...DASH_STATUS.map(([, i, l]) => `${i} ${l}`), "Total"],
+        envs.map((e) => { const l = vms.filter((v) => v.env === e); return [e, ...DASH_STATUS.map(([k]) => l.filter((v) => dashStatus(v) === k).length), l.length]; }));
+
+    // 3. Prochains patchs : VMs par semaine sur 8 semaines (une teinte)
+    const weeks = Array.from({ length: 8 }, (_, i) => ({ i, list: vms.filter((v) => { const d = patchDays(v); return d !== null && d >= i * 7 && d < (i + 1) * 7; }) }));
+    const maxWeek = Math.max(...weeks.map((w) => w.list.length), 1);
+    const cols = h("div", "dash-cols");
+    for (const w of weeks) {
+        const start = new Date(Date.now() + w.i * 7 * 86400000);
+        const col = h("div", "dash-col");
+        const fill = h("span", "dash-col-bar", null, { style: `height:${w.list.length ? Math.max(4, (w.list.length / maxWeek) * 100) : 0}%` });
+        col.dataset.tip = `${w.i === 0 ? "Cette semaine" : `Semaine du ${start.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" })}`} : ${w.list.length} patch(s)${w.list.length ? `\n${w.list.map((v) => v.name).slice(0, 10).join(", ")}${w.list.length > 10 ? "…" : ""}` : ""}`;
+        col.append(h("span", "dash-col-value", w.list.length ? String(w.list.length) : ""), h("div", "dash-col-track"), h("span", "dash-col-label", w.i === 0 ? "cette sem." : start.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" })));
+        col.children[1].append(fill);
+        cols.append(col);
+    }
+
+    // 4. Clusters : état, PRIMARY, nœuds, VIP
+    const clusterRows = clusters.map((c) => {
+        const nodes = all.filter((v) => v.cluster === c);
+        const live = nodes.filter((v) => !v.decommissioned);
+        const worst = !live.length ? "decom" : live.some((v) => dashStatus(v) === "late") ? "late" : live.some((v) => dashStatus(v) === "soon") ? "soon" : live.some((v) => dashStatus(v) === "todo") ? "todo" : "ok";
+        const st = DASH_STATUS.find(([k]) => k === worst);
+        const row = h("div", `dash-cluster ${worst === "decom" ? "decom" : ""}`);
+        const pills = h("span", "dash-cluster-nodes");
+        for (const v of nodes) {
+            const s = DASH_STATUS.find(([k]) => k === dashStatus(v));
+            const p = h("i", `dash-node ${v.decommissioned ? "decom" : ""} ${v.role === "primary" ? "primary" : ""}`, null, { style: v.decommissioned ? "" : `background:${s[3]}` });
+            p.dataset.tip = `${v.name}${v.role ? ` · ${v.role.toUpperCase()}` : ""} · ${v.decommissioned ? "décommissionnée" : `${s[1]} ${s[2]}`}`;
+            pills.append(p);
+        }
+        row.append(
+            h("span", "dash-cluster-name", `⬡ ${c}`),
+            h("span", `patch-env env-${live[0]?.env ?? nodes[0].env}`, live[0]?.env ?? nodes[0].env),
+            pills,
+            h("span", "dash-cluster-meta", `${live.length} nœud(s)${nodes.length > live.length ? ` +${nodes.length - live.length} décom.` : ""}`),
+            h("span", "dash-cluster-meta", live.find((v) => v.role === "primary") ? `★ ${live.find((v) => v.role === "primary").name}` : live.length ? "★ PRIMARY ?" : ""),
+            h("span", "dash-cluster-meta", `${state.patchClusters?.[c]?.vips?.length ?? 0} VIP`),
+            h("span", "dash-cluster-state", worst === "decom" ? "⚫ décom." : `${st[1]} ${{ late: "en retard", soon: "sous 7 j", todo: "à planifier", ok: "à jour" }[worst]}`, { title: worst === "decom" ? "cluster décommissionné" : st[2] })
+        );
+        return row;
+    });
+
+    // 5. Tags les plus fréquents (classement, une teinte)
+    const tagCounts = {};
+    for (const v of vms) for (const t of v.tags ?? []) tagCounts[t] = (tagCounts[t] ?? 0) + 1;
+    const topTags = Object.entries(tagCounts).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, 8);
+    const maxTag = Math.max(...topTags.map(([, n]) => n), 1);
+    const tags = h("div", "dash-rows");
+    for (const [t, n] of topTags) {
+        const row = h("div", "dash-row");
+        const bar = h("span", "dash-hbar", null, { style: `width:${Math.max(3, (n / maxTag) * 100)}%` });
+        bar.dataset.tip = `#${t} : ${n} VM(s)`;
+        row.append(h("span", "dash-row-label", `#${t}`), h("div", "dash-row-track"), h("span", "dash-row-value", String(n)));
+        row.children[1].append(bar);
+        tags.append(row);
+    }
+
+    const card = (title, ...content) => { const c = h("section", "dash-card"); c.append(h("h3", "", title), ...content); return c; };
+    const grid = h("div", "dash-grid");
+    grid.append(
+        card("Patch par environnement", legend, envRows, envTable),
+        card("Prochains patchs · 8 semaines", cols, h("p", "hint", byStatus.late ? `+ ${byStatus.late} VM(s) déjà en retard ou à J-1, ${byStatus.todo} sans date` : `${byStatus.todo} VM(s) sans date de patch`)),
+        card(`Clusters (${clusters.length})`, ...(clusterRows.length ? clusterRows : [h("p", "hint", "Aucun cluster : renseigne le champ Cluster de tes VMs.")])),
+        card("Tags les plus fréquents", ...(topTags.length ? [tags] : [h("p", "hint", "Aucun tag.")]))
+    );
+    $("#dash-body").replaceChildren(tiles, grid);
+}
+
+/** Vue tableau d'un graphique (accessibilité, copie), repliée par défaut. */
+function dashTable(head, rows) {
+    const d = h("details", "dash-table");
+    const t = h("table", "patch-table");
+    const tr = h("tr", "");
+    for (const c of head) tr.append(h("th", "", c));
+    const thead = h("thead", ""); thead.append(tr);
+    const tbody = h("tbody", "");
+    for (const r of rows) { const row = h("tr", ""); for (const c of r) row.append(h("td", "", String(c))); tbody.append(row); }
+    t.append(thead, tbody);
+    d.append(h("summary", "", "Voir en tableau"), t);
+    return d;
+}
+
 /** Cluster dont les VIP sont en cours de modification (formulaire « ✎ VIP »). */
 let patchVipEditing = null;
 
@@ -4402,6 +4557,23 @@ document.addEventListener("click", (ev) => {
     try { input.showPicker(); } catch { /* navigateur sans showPicker : icône du champ */ }
 });
 $("#patch-agenda").addEventListener("click", openAgenda);
+$("#patch-dash-open").addEventListener("click", openPatchDash);
+$("#dash-close").addEventListener("click", () => { $("#patch-dash").hidden = true; });
+$("#dash-inventory").addEventListener("click", () => { $("#patch-dash").hidden = true; openPatches(); });
+$("#patch-dash").addEventListener("mousedown", (ev) => { if (ev.target.id === "patch-dash") $("#patch-dash").hidden = true; });
+$("#patch-dash").addEventListener("keydown", (ev) => { ev.stopPropagation(); if (ev.key === "Escape") { ev.preventDefault(); $("#patch-dash").hidden = true; } });
+// Infobulle du tableau de bord : tout élément avec data-tip
+$("#patch-dash").addEventListener("mousemove", (ev) => {
+    const target = ev.target.closest("[data-tip]");
+    const tip = $("#dash-tip");
+    if (!target) { tip.hidden = true; return; }
+    tip.textContent = target.dataset.tip;
+    tip.hidden = false;
+    const box = $(".dash-box").getBoundingClientRect();
+    tip.style.left = `${Math.min(ev.clientX - box.left + 14, box.width - tip.offsetWidth - 8)}px`;
+    tip.style.top = `${ev.clientY - box.top + 16}px`;
+});
+$("#patch-dash").addEventListener("mouseleave", () => { $("#dash-tip").hidden = true; });
 $("#agenda-close").addEventListener("click", () => { $("#agenda").hidden = true; });
 $("#agenda").addEventListener("mousedown", (ev) => { if (ev.target.id === "agenda") $("#agenda").hidden = true; });
 $("#agenda").addEventListener("keydown", (ev) => { ev.stopPropagation(); if (ev.key === "Escape") { ev.preventDefault(); $("#agenda").hidden = true; } });

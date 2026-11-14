@@ -114,6 +114,8 @@ const SCHEMA = {
     },
     /** Mode d'affichage : sombre, clair, ou celui du système. */
     appearance: { default: "dark", clean: oneOf("mode d'affichage", ["dark", "light", "system"]) },
+    /** Langue de l'interface : français ou anglais (public/i18n.js). */
+    language: { default: "fr", clean: oneOf("langue", ["fr", "en"]) },
     /** Signature en filigrane au fond des terminaux ("" = aucune). */
     watermark: {
         default: "",

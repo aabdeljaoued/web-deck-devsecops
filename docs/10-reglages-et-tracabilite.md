@@ -27,6 +27,27 @@ que soit la section ; **Enregistrer** enregistre toutes les sections d'un coup. 
 - **Thème de mission** aux couleurs d'un client (en-tête, barre des touches).
 - **Signature des terminaux** : texte ou image en filigrane, au fond de chaque terminal.
 
+### Langue : français ou anglais
+
+![Réglages en anglais](img/langue-anglais.jpg)
+
+**Langue / Language** passe l'interface en **anglais** (ou la remet en français), tout de suite, sans recharger la page ;
+**Annuler** revient à la langue d'avant, **Enregistrer** la garde (`settings.json`, la même dans tous les navigateurs).
+
+Pour l'instant, sont traduits : l'en-tête, les **Réglages** (toutes les sections), la rubrique **Patchs** (touches,
+inventaire, formulaires, clusters et VIP, import CSV, tableau de bord) et leurs messages. Le reste (autres rubriques,
+coffre, documentation) reste en français pour le moment.
+
+![Tableau de bord des patchs en anglais](img/patchs-dashboard-anglais.jpg)
+
+Ce que tu saisis n'est jamais traduit : noms de VMs, descriptions, tags, noms de missions, commandes, sorties des
+terminaux. Les valeurs à taper restent les mêmes dans les deux langues (environnements `production`, `recette`… dans les
+champs et le CSV).
+
+Les traductions sont dans `public/i18n/en.js` : clé = texte français affiché, valeur = texte anglais ; `{0}`, `{1}`
+remplacent les nombres et les noms (`"{0} VM(s)": "{0} {0:VM|VMs}"` accorde au singulier ou au pluriel). Un texte absent
+du dictionnaire reste en français : pour en traduire un nouveau, ajoute sa ligne.
+
 ## Rubriques et navigation
 
 - **Rubriques** : cocher celles de l'accueil, glisser pour l'ordre (18 touches au plus).

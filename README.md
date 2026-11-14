@@ -87,6 +87,8 @@ Dans **Réglages** (engrenage en haut à droite), rubrique **Apparence** :
 
 - **Signature des terminaux** : un texte (ton nom, par exemple) affiché en filigrane gris et flou au fond de chaque terminal, derrière le texte ; vide = aucune. **Style** : texte simple, ou **bannière ASCII** (grandes lettres en caractères, façon FIGlet) avec une **police** au choix (ANSI Shadow, Standard, Slant, Big, Small, Doom, Banner3, Block), taille ajustée à chaque terminal. **Image de signature…** utilise à la place une image PNG sur fond transparent (signature manuscrite), peinte dans le même gris ; elle est enregistrée dans `signature.png` (exclu de Git), **Retirer l'image** revient au texte.
 
+- **Langue / Language** : interface en **français** ou en **anglais** (en-tête, Réglages et rubrique Patchs pour l'instant ; voir [docs/10](docs/10-reglages-et-tracabilite.md#langue--français-ou-anglais)). Les données saisies (noms, descriptions, commandes) ne sont jamais traduites.
+
 Le choix s'affiche en aperçu immédiat et n'est gardé qu'avec **Enregistrer** (Annuler revient à l'apparence d'avant). Il est enregistré côté serveur dans `settings.json`, donc le même dans tous les navigateurs.
 
 | Thème | Couleurs | Source |

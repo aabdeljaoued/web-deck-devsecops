@@ -4,6 +4,7 @@ import { FitAddon } from "/vendor/addon-fit.mjs";
 import { WebLinksAddon } from "/vendor/addon-web-links.mjs";
 import { SearchAddon } from "/vendor/addon-search.mjs";
 import { toAnsi, toHtml } from "/markdown.js";
+import { setLang, sourceText } from "/i18n.js";
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -226,6 +227,7 @@ function handle(msg) {
             if (msg.vault) applyVault(msg.vault);
             if (msg.settings) {
                 state.settings = msg.settings;
+                setTimeout(() => setLang(msg.settings.language));
                 setTimeout(renderMissionSwitch);
                 applyWatermark();
                 applyAppearance(msg.settings.appearance, msg.settings.missionTheme);
@@ -282,6 +284,7 @@ function handle(msg) {
             break;
         case "settings":
             state.settings = msg.settings;
+            setLang(msg.settings.language);
             renderMissionSwitch();
             if (!$("#settings").hidden) renderMissions();
             applyWatermark();
@@ -3377,7 +3380,8 @@ const SETTINGS_GROUPS = [
 ];
 let settingsTab = (() => { try { return localStorage.getItem("deck-settings-tab") || "Apparence"; } catch { return "Apparence"; } })();
 const settingsSections = () => [...document.querySelectorAll("#settings-pane > fieldset.settings-group")];
-const sectionName = (fs) => fs.querySelector(":scope > legend")?.textContent.trim() ?? "";
+// Nom français d'origine (clé des groupes et de l'onglet mémorisé), même quand l'interface est en anglais
+const sectionName = (fs) => sourceText(fs.querySelector(":scope > legend")).trim();
 
 function renderSettingsNav() {
     const byName = new Map(settingsSections().map((fs) => [sectionName(fs), fs]));
@@ -3423,6 +3427,7 @@ function openSettings() {
     $("#set-autohome-on").checked = state.settings.autoHomeEnabled !== false;
     toggleAutoHomeRow();
     $("#set-appearance").value = state.settings.appearance ?? "dark";
+    $("#set-language").value = state.settings.language ?? "fr";
     $("#set-theme").value = state.settings.missionTheme ?? "";
     $("#set-watermark").value = state.settings.watermark ?? "";
     $("#set-watermark-style").value = state.settings.watermarkStyle ?? "text";
@@ -3614,6 +3619,7 @@ function closeSettings() {
     hideImportConfirm();
     hideVaultImport();
     applyAppearance(state.settings.appearance, state.settings.missionTheme);
+    setLang(state.settings.language);   // langue en aperçu : retour à celle enregistrée
 }
 
 /** Aperçu immédiat du mode et du thème choisis (enregistrés seulement avec « Enregistrer »). */
@@ -4166,9 +4172,10 @@ function renderPatches() {
         const tr = Object.assign(document.createElement("tr"), { className: `patch-${level}` });
         const cell = (content, cls = "") => { const td = Object.assign(document.createElement("td"), { className: cls }); td.append(...[content].flat()); return td; };
         const name = Object.assign(document.createElement("strong"), { textContent: vm.name });
+        name.dataset.noI18n = "";   // données saisies : jamais traduites
         const role = vm.role ? Object.assign(document.createElement("span"), { className: `patch-role role-${vm.role}`, textContent: vm.role === "primary" ? "★ PRIMARY" : "SECONDARY", title: vm.role === "primary" ? "Nœud PRIMARY du cluster (lecture / écriture) : à patcher en dernier" : "Nœud SECONDARY du cluster" }) : "";
         const env = Object.assign(document.createElement("span"), { className: `patch-env env-${vm.env}`, textContent: vm.env });
-        const tags = (vm.tags ?? []).map((t) => Object.assign(document.createElement("span"), { className: "patch-tag", textContent: t }));
+        const tags = (vm.tags ?? []).map((t) => { const el = Object.assign(document.createElement("span"), { className: "patch-tag", textContent: t }); el.dataset.noI18n = ""; return el; });
         const where = [vm.host && vm.host !== vm.name ? vm.host : "", vm.identity ? `clé : ${vm.identity.split(/[\\/]/).pop()}` : ""].filter(Boolean).join(" · ");
         const host = where ? Object.assign(document.createElement("div"), { className: "hint", textContent: where, title: vm.identity || "" }) : "";
         const next = Object.assign(document.createElement("div"), { textContent: decom ? "—" : frDate(vm.nextPatch) });
@@ -4180,7 +4187,7 @@ function renderPatches() {
             cell(Object.assign(document.createElement("span"), { className: "patch-dot", textContent: decom ? "⚫" : level === "rouge" ? "🔴" : level === "orange" ? "🟠" : "🟢" })),
             // Mode regroupé : cluster et profil déjà dans l'en-tête du groupe
             cell([name, " ", ...(decom ? [decomBadge, " "] : []), ...(role ? [role, " "] : []), env, ...tags.flatMap((t) => [" ", t]), grouped ? "" : patchClusterLine(vm), host]),
-            cell(vm.description || "—", "patch-desc"),
+            Object.assign(cell(vm.description || "—", "patch-desc"), { translate: false }),
             cell(`${frDate(vm.lastPatch)}${vm.everyDays ? ` · tous les ${vm.everyDays} j` : ""}`),
             cell([next, when]),
             cell(decom ? [
@@ -4717,6 +4724,7 @@ $("#params-form").addEventListener("keydown", (ev) => {
 });
 $("#note-to-terminal").addEventListener("click", noteToTerminal);
 $("#settings-open").addEventListener("click", openSettings);
+$("#set-language").addEventListener("change", (ev) => setLang(ev.target.value));   // aperçu immédiat
 $("#proxy-toggle").addEventListener("click", (ev) => { ev.stopPropagation(); openProxyMenu(ev.currentTarget); });
 $("#proxy-test").addEventListener("click", () => { $("#proxy-state").textContent = "test en cours…"; send({ t: "proxy-test" }); });
 // Application installable (Edge / Chrome : « Installer ce site en tant qu'application ») ; le navigateur reste utilisable
@@ -4837,6 +4845,7 @@ $("#settings-form").addEventListener("submit", (ev) => {
         autoHomeEnabled: $("#set-autohome-on").checked,
         ...($("#set-autohome-on").checked ? { autoHomeSeconds: Number($("#set-autohome").value) } : {}),
         appearance: $("#set-appearance").value,
+        language: $("#set-language").value,
         missionTheme: $("#set-theme").value,
         journalEnabled: $("#set-journal-on").checked,
         proxy: { mode: $('input[name="proxy-mode"]:checked')?.value ?? "system", url: $("#set-proxy-url").value, noProxy: $("#set-proxy-noproxy").value },

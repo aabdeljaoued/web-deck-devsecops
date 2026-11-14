@@ -39,6 +39,10 @@ la clé, ni les options, ni la commande distante. À la déconnexion (`exit`), l
 **Bastion (CyberArk PSMP…)** : avec une destination `compte@utilisateur_cible@vm_cible@bastion`, c'est la **VM cible**
 qui est affichée et rapprochée de l'inventaire, avec la mention « via bastion » (le bastion au survol de l'onglet).
 
+**Git Bash (Windows)** : le processus intermédiaire entre bash et ssh disparaît, le ssh n'a plus de parent visible
+pour Windows ; le deck retrouve sa filiation dans la table de processus de Git Bash (`ps.exe` fourni avec Git) et le
+rattache au bon terminal (« filiation Git Bash » dans le diagnostic). Comptez 2 à 5 secondes après la connexion.
+
 Si le cadre n'apparaît pas, **Réglages › Serveur › Diagnostic**, ligne **Terminaux connectés**, terminal connecté :
 elle dit si la surveillance tourne, et pour chaque ssh vu, sa lignée de processus et pourquoi il est (ou non)
 rattaché au terminal.

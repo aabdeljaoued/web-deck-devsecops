@@ -4,6 +4,7 @@
 // Un ssh lancé par un autre programme (git push, scp, rsync…) ne compte pas : seul celui dont le parent est un shell.
 import { execFile, spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
+import { existsSync } from "node:fs";
 import path from "node:path";
 
 import { platform } from "./platform.mjs";
@@ -69,6 +70,15 @@ export function wslTarget(cmdline) {
     return i >= 0 && argv[i + 1] ? argv[i + 1].slice(0, 60) : null;
 }
 
+/**
+ * Sortie de « ps » de Git Bash (MSYS) -> [{ pid, ppid, winpid, cmd }] (pid / ppid MSYS, winpid = processus Windows).
+ * Lignes « [lettre d'état]  PID  PPID  PGID  WINPID  TTY  UID  STIME  COMMAND ».
+ */
+export function parseMsysPs(text) {
+    return String(text).split(/\r?\n/).map((l) => /^\s*[A-Z]?\s*(\d+)\s+(\d+)\s+\d+\s+(\d+)\s+\S+\s+\d+\s+\S+\s+(.*)$/.exec(l))
+        .filter(Boolean).map(([, pid, ppid, winpid, cmd]) => ({ pid: +pid, ppid: +ppid, winpid: +winpid, cmd: cmd.trim() }));
+}
+
 /** Nom de programme sans chemin ni .exe, en minuscules (« /usr/bin/ssh » ou « ssh.exe » -> « ssh »). */
 const base = (name) => path.basename(String(name).trim().replace(/\\/g, "/")).toLowerCase().replace(/\.exe$/, "").replace(/^-/, "");
 
@@ -81,6 +91,10 @@ export class RemoteWatch extends EventEmitter {
         this.pids = new Map();    // sid -> pid du ssh / wsl détecté
         this.cmds = new Map();    // pid -> ligne de commande (lue une fois par connexion)
         this.dest = new Map();    // sid -> destination (« admin@app-prod-01 », distribution wsl)
+        // Git Bash (Windows) : le processus intermédiaire entre bash et ssh disparaît, le ssh n'a plus de parent
+        // Windows visible ; sa filiation est retrouvée dans la table de processus MSYS (ps.exe de Git)
+        this.msysOwner = new Map();   // pid Windows du ssh -> { sid, at } (sid null : pas rattaché, réessai plus tard)
+        this.msysRun = null;          // commande ps de MSYS (tests : remplaçable)
         this.timer = null;
         this.ps = null;           // Windows : PowerShell qui liste les processus en boucle
     }
@@ -105,6 +119,55 @@ export class RemoteWatch extends EventEmitter {
     /** Destinations connues : { sid: "admin@app-prod-01.client.fr" } (ssh), ou la distribution (wsl). */
     targets() {
         return Object.fromEntries(this.dest);
+    }
+
+    /** ps.exe de Git Bash (MSYS), à côté du bash.exe d'un shell configuré ; null si aucun. */
+    msysPsPath() {
+        if (this._msysPs !== undefined) return this._msysPs;
+        for (const s of this.terminals.ctx?.shells ?? []) {
+            const exe = String(s.command?.[0] ?? "");
+            if (!/bash(\.exe)?$/i.test(exe)) continue;
+            const dir = path.dirname(exe);
+            for (const c of [path.join(dir, "ps.exe"), path.join(dir, "..", "usr", "bin", "ps.exe")]) {
+                if (existsSync(c)) return (this._msysPs = c);
+            }
+        }
+        return (this._msysPs = null);
+    }
+
+    /** Table de processus MSYS (texte de ps.exe), ou null si indisponible. */
+    readMsys() {
+        if (this.msysRun) return this.msysRun();
+        const ps = this.msysPsPath();
+        if (!ps) return Promise.resolve(null);
+        return new Promise((resolve) => execFile(ps, ["-a"], { windowsHide: true, timeout: 5000, maxBuffer: 1024 * 1024 }, (err, out) => resolve(err && !out ? null : String(out))));
+    }
+
+    /**
+     * Rattache des ssh « orphelins » (parent Windows disparu) à un terminal par la filiation MSYS : on remonte les
+     * parents MSYS du ssh jusqu'à un processus Windows appartenant à un terminal (son bash).
+     */
+    async linkMsys(orphans, owner) {
+        if (this.msysBusy) return;
+        this.msysBusy = true;
+        try {
+            const rows = parseMsysPs(await this.readMsys() ?? "");
+            const byWin = new Map(rows.map((r) => [r.winpid, r]));
+            const byPid = new Map(rows.map((r) => [r.pid, r]));
+            for (const pid of orphans) {
+                let row = byWin.get(pid), sid = null;
+                for (let i = 0; row && i < 20; i++) {
+                    const parent = byPid.get(row.ppid);
+                    if (!parent || parent === row) break;
+                    if (owner.has(parent.winpid)) { sid = owner.get(parent.winpid); break; }
+                    row = parent;
+                }
+                this.msysOwner.set(pid, { sid, at: Date.now() });
+            }
+        } finally {
+            this.msysBusy = false;
+        }
+        if (this.lastProcs) this.update(this.lastProcs);
     }
 
     /** Destination d'un ssh / wsl à partir de sa ligne de commande. */
@@ -181,9 +244,11 @@ export class RemoteWatch extends EventEmitter {
                 cur = parent;
             }
             const direct = byPid.get(p.ppid);
-            const shellParent = roots.has(p.ppid) || (direct && SHELLS.has(direct.name));
+            const msys = this.msysOwner.get(p.pid);
+            if (!sid && msys?.sid) { sid = msys.sid; chain.push(`terminal ${sid} (filiation Git Bash)`); }
+            const shellParent = roots.has(p.ppid) || (direct && SHELLS.has(direct.name)) || Boolean(msys?.sid);
             return { pid: p.pid, name: p.name, chain, terminal: sid, detected: [...this.pids].some(([, pid]) => pid === p.pid),
-                why: !sid ? "hors des terminaux du deck" : !shellParent ? `parent « ${direct?.name ?? "?"} » : pas un shell connu` : "",
+                why: !sid ? (msys ? "hors des terminaux du deck (même par la filiation Git Bash)" : this.msysPsPath() || this.msysRun ? "filiation Git Bash en cours de lecture" : "hors des terminaux du deck") : !shellParent ? `parent « ${direct?.name ?? "?"} » : pas un shell connu` : "",
                 dest: this.cmds.has(p.pid) ? this.targetOf(REMOTE[p.name], this.cmds.get(p.pid)) : null };
         });
     }
@@ -250,6 +315,17 @@ while ($true) {
         }
         const next = new Map();
         const pids = new Map();
+        // Processus Windows de chaque terminal (le shell et tous ses descendants) : rattachement des ssh « orphelins »
+        const owner = new Map();
+        for (const [sid, session] of this.terminals.sessions) {
+            const stack = [session.proc?.pid].filter(Boolean);
+            while (stack.length) {
+                const pid = stack.pop();
+                if (owner.has(pid)) continue;
+                owner.set(pid, sid);
+                stack.push(...(children.get(pid) ?? []).map((c) => c.pid));
+            }
+        }
         for (const [sid, session] of this.terminals.sessions) {
             const root = session.proc?.pid;
             if (!root) continue;
@@ -267,12 +343,24 @@ while ($true) {
                 stack.push(...(children.get(p.pid) ?? []));
             }
         }
+        // ssh orphelins (parent Windows absent : Git Bash) : rattachés par la table MSYS (résultat gardé par pid)
+        const orphans = procs.filter((p) => REMOTE[p.name] && !byPid.has(p.ppid) && ![...pids.values()].includes(p.pid));
+        const unknown = [];
+        for (const p of orphans) {
+            const link = this.msysOwner.get(p.pid);
+            if (link?.sid && this.terminals.sessions.has(link.sid) && !next.has(link.sid)) {
+                next.set(link.sid, REMOTE[p.name]);
+                pids.set(link.sid, p.pid);
+            } else if (!link || (!link.sid && Date.now() - link.at > 10000)) unknown.push(p.pid);
+        }
+        const alivePids = new Set(procs.map((p) => p.pid));
+        for (const pid of this.msysOwner.keys()) if (!alivePids.has(pid)) this.msysOwner.delete(pid);
+        if (unknown.length && (platform === "windows" || this.msysRun)) this.linkMsys(unknown, owner);
         const changed = next.size !== this.state.size || [...next].some(([sid, kind]) => this.state.get(sid) !== kind);
         this.state = next;
         this.pids = pids;
-        // Lignes de commande des connexions terminées : oubliées
-        const alive = new Set(pids.values());
-        for (const pid of this.cmds.keys()) if (!alive.has(pid)) this.cmds.delete(pid);
+        // Lignes de commande des processus disparus : oubliées (celles d'un ssh pas encore rattaché sont gardées)
+        for (const pid of this.cmds.keys()) if (!alivePids.has(pid)) this.cmds.delete(pid);
         // macOS / Linux : lecture ciblée des lignes de commande manquantes (Windows : déjà fournies par PowerShell)
         const missing = [...pids.values()].filter((pid) => !this.cmds.has(pid));
         if (missing.length && platform !== "windows" && !this.readingArgs) {

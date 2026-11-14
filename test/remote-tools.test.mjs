@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { RemoteWatch, splitTarget, sshTarget, wslTarget } from "../server/remote.mjs";
+import { parseMsysPs, RemoteWatch, splitTarget, sshTarget, wslTarget } from "../server/remote.mjs";
 import { neededTool } from "../server/tools.mjs";
 
 /** Terminal factice (shell pid 100) et liste de processus : seul un ssh lancé depuis un shell compte. */
@@ -73,6 +73,35 @@ test("diagnostic : lignée de chaque ssh et raison de la (non-)détection (Git B
     assert.match(seen[202].why, /git.*pas un shell/);
     assert.equal(seen[300].why, "hors des terminaux du deck");
     assert.ok(w.lastUpdate > 0);
+});
+
+test("Git Bash : ssh dont le parent Windows a disparu, rattaché au terminal par la table de processus MSYS", async () => {
+    // Terminal 1 : lanceur bin\bash.exe (100) -> usr\bin\bash.exe (101). Le ssh (300) a pour parent Windows 250, disparu.
+    const msys = [
+        "      PID    PPID    PGID     WINPID   TTY         UID    STIME COMMAND",
+        "     1717       1    1717        101  cons0     197609 09:40:00 /usr/bin/bash",
+        "I    1730    1717    1730        300  cons0     197609 09:44:58 /usr/bin/ssh",
+        "     1800       1    1800        999  cons1     197609 09:30:00 /usr/bin/bash"
+    ].join("\r\n");
+    assert.deepEqual(parseMsysPs(msys).map((r) => [r.pid, r.ppid, r.winpid]), [[1717, 1, 101], [1730, 1717, 300], [1800, 1, 999]]);
+    const w = new RemoteWatch({ sessions: new Map([["1", { proc: { pid: 100 } }]]) });
+    let reads = 0;
+    w.msysRun = async () => { reads++; return msys; };
+    w.cmds.set(300, '"C:\\Program Files\\Git\\usr\\bin\\ssh.exe" -i ~/.ssh/key compte@root@vm-01.example.test@bastion.example.test');
+    const changes = [];
+    w.on("change", (v) => changes.push(JSON.stringify(v)));
+    const procs = [{ pid: 101, ppid: 100, name: "bash" }, { pid: 300, ppid: 250, name: "ssh" }];
+    w.update(procs);
+    assert.deepEqual(w.view(), {}, "1er relevé : filiation pas encore lue");
+    await new Promise((r) => setTimeout(r, 20));
+    assert.deepEqual(w.view(), { 1: "ssh" }, "rattaché au terminal 1 par MSYS");
+    assert.equal(w.targets()[1], "compte@root@vm-01.example.test@bastion.example.test");
+    w.update(procs);
+    assert.equal(reads, 1, "filiation gardée : ps.exe pas relancé à chaque relevé");
+    assert.match(w.explain()[0].chain.join(" "), /terminal 1 \(filiation Git Bash\)/);
+    w.update([{ pid: 101, ppid: 100, name: "bash" }]);
+    assert.deepEqual(w.view(), {}, "déconnecté");
+    assert.equal(w.msysOwner.size, 0);
 });
 
 test("outils vérifiés : ceux qui ont une commande d'installation sur ce système", () => {

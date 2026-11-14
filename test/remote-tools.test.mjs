@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { RemoteWatch, sshTarget, wslTarget } from "../server/remote.mjs";
+import { RemoteWatch, splitTarget, sshTarget, wslTarget } from "../server/remote.mjs";
 import { neededTool } from "../server/tools.mjs";
 
 /** Terminal factice (shell pid 100) et liste de processus : seul un ssh lancé depuis un shell compte. */
@@ -47,6 +47,32 @@ test("terminal connecté : destination lue dans la ligne de commande (Windows) p
     assert.deepEqual(w.targets(), {});
     assert.equal(w.cmds.size, 0, "ligne de commande oubliée");
     assert.deepEqual(events, ['{"1":"admin@app-prod-01"}', "{}"]);
+});
+
+test("bastion type PSMP : compte@cible@hôte@bastion -> VM cible, via le bastion", () => {
+    const dest = sshTarget("ssh -i ~/.ssh/key.openssh compte01@root@mysql-rec-01.example.test@bastion-01.example.test");
+    assert.equal(dest, "compte01@root@mysql-rec-01.example.test@bastion-01.example.test");
+    assert.deepEqual(splitTarget(dest), { user: "root", host: "mysql-rec-01.example.test", via: "bastion-01.example.test" });
+    assert.deepEqual(splitTarget("admin@app-01"), { user: "admin", host: "app-01", via: null });
+    assert.deepEqual(splitTarget("app-01"), { user: null, host: "app-01", via: null });
+});
+
+test("diagnostic : lignée de chaque ssh et raison de la (non-)détection (Git Bash : lanceur bash -> bash -> ssh)", () => {
+    const w = new RemoteWatch({ sessions: new Map([["1", { proc: { pid: 100 } }]]) });
+    w.cmds.set(103, "ssh.exe admin@app-01");
+    w.update([
+        { pid: 101, ppid: 100, name: "bash" }, { pid: 102, ppid: 101, name: "bash" }, { pid: 103, ppid: 102, name: "ssh" },
+        { pid: 201, ppid: 100, name: "git" }, { pid: 202, ppid: 201, name: "ssh" },
+        { pid: 300, ppid: 1, name: "ssh" }
+    ]);
+    const seen = Object.fromEntries(w.explain().map((s) => [s.pid, s]));
+    assert.equal(seen[103].detected, true);
+    assert.equal(seen[103].dest, "admin@app-01");
+    assert.deepEqual(seen[103].chain, ["bash", "bash", "terminal 1"]);
+    assert.equal(seen[202].detected, false);
+    assert.match(seen[202].why, /git.*pas un shell/);
+    assert.equal(seen[300].why, "hors des terminaux du deck");
+    assert.ok(w.lastUpdate > 0);
 });
 
 test("outils vérifiés : ceux qui ont une commande d'installation sur ce système", () => {

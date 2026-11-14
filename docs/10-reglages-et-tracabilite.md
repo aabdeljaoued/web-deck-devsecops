@@ -93,8 +93,9 @@ Pour un poste qui passe par le proxy de l'entreprise au bureau, mais pas à la m
 
 ![Diagnostic](img/diagnostic.jpg)
 
-**Réglages › Serveur › Diagnostic** vérifie ce qui dépend du poste : presse-papiers, détection ssh / wsl, outils à
-installer, sauvegardes, shells, lancement en service, et **réseau** : proxy (`HTTPS_PROXY`, identifiants masqués),
+**Réglages › Serveur › Diagnostic** vérifie ce qui dépend du poste : presse-papiers, détection ssh / wsl,
+**terminaux connectés** (surveillance active, dernier relevé, chaque ssh vu avec sa lignée de processus et la raison de
+sa détection ou non : cadre de la machine, touches des VMs), outils à installer, sauvegardes, shells, lancement en service, et **réseau** : proxy (`HTTPS_PROXY`, identifiants masqués),
 DNS d'un nom public, accès HTTPS (direct ou via le proxy, interception TLS signalée), accès Git pour **Mettre à jour**.
 
 ## Mode partage d'écran

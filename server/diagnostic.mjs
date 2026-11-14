@@ -109,6 +109,22 @@ export async function runDiagnostic({ ctx, remote, tools, backups, supervisor, l
         };
     }));
 
+    // Surveillance continue (cadre de la machine connectée, touches des VMs) : relevés récents, et pour chaque ssh
+    // vu, sa lignée de parents et pourquoi il est (ou non) rattaché à un terminal
+    checks.push(await check("Terminaux connectés (cadre, touches des VMs)", () => {
+        const age = remote.lastUpdate ? Math.round((Date.now() - remote.lastUpdate) / 1000) : null;
+        const seen = remote.explain();
+        const parts = [
+            remote.watching ? `surveillance active, dernier relevé il y a ${age ?? "?"} s` : "surveillance ARRÊTÉE",
+            remote.lastExit ? `dernier arrêt : code ${remote.lastExit.code}${remote.lastExit.signal ? ` (${remote.lastExit.signal})` : ""}` : "",
+            remote.lastError ? `erreur PowerShell : ${remote.lastError.trim().split("\n").slice(-2).join(" ").slice(0, 300)}` : "",
+            seen.length ? seen.map((s) => `${s.name} (pid ${s.pid}) ← ${s.chain.join(" ← ")} : ${s.detected ? `détecté${s.dest ? ` → ${s.dest.replace(/^[^@]*@(?=.*@)/, "…@")}` : ", destination non lue"}` : `NON détecté (${s.why || "inconnu"})`}`).join(" · ")
+                : "aucun ssh / wsl en cours (connecte un terminal puis relance le diagnostic)"
+        ].filter(Boolean);
+        const stale = age === null || age > 15;
+        return { ok: remote.watching && !stale && seen.every((s) => s.detected || !s.terminal), warn: !seen.length, detail: parts.join(" · ") };
+    }));
+
     checks.push(await check("Rubriques Linux / macOS", () => ({
         detail: localUnix ? "poste Linux / macOS : Ansible actif en local"
             : "poste Windows : Ansible actif dans un terminal connecté en ssh / wsl"

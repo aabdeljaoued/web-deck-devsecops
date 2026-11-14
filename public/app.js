@@ -2704,7 +2704,7 @@ function remoteName(sid) {
     if (!kind) return null;
     const t = state.remoteTargets[sid];
     if (t?.vm) return t.vm;
-    if (t?.dest) return kind === "wsl" ? `wsl ${t.dest}` : t.dest.replace(/^[^@]*@/, "");
+    if (t?.dest) return kind === "wsl" ? `wsl ${t.dest}` : t.host || t.dest.replace(/^[^@]*@/, "");
     return kind;
 }
 
@@ -2721,11 +2721,11 @@ function markRemoteTabs() {
         t.screen.classList.toggle("remote-host", Boolean(name));
         t.screen.classList.toggle("remote-prod", target?.env === "production");
         // Étiquette accrochée au cadre (vue simple) : « SSH · app-prod-01 · production »
-        if (name) t.screen.dataset.remoteLabel = `${state.remote[sid] === "wsl" ? "WSL" : "SSH"} · ${name}${target?.env ? ` · ${target.env}` : ""}`;
+        if (name) t.screen.dataset.remoteLabel = `${state.remote[sid] === "wsl" ? "WSL" : "SSH"} · ${name}${target?.env ? ` · ${target.env}` : ""}${target?.via ? " · via bastion" : ""}`;
         else delete t.screen.dataset.remoteLabel;
         if (name) {
             t.tab.dataset.remote = name.length > 22 ? `${name.slice(0, 21)}…` : name;
-            t.tab.title = `${state.remote[sid] === "wsl" ? "WSL" : "Connecté en ssh"} : ${target?.dest ?? "?"}${target?.vm ? ` · VM ${target.vm}${target.env ? ` (${target.env})` : ""}` : ""}`;
+            t.tab.title = `${state.remote[sid] === "wsl" ? "WSL" : "Connecté en ssh"} : ${target?.host ?? target?.dest ?? "?"}${target?.via ? ` (via le bastion ${target.via})` : ""}${target?.vm ? ` · VM ${target.vm}${target.env ? ` (${target.env})` : ""}` : ""}`;
         } else {
             delete t.tab.dataset.remote;
             t.tab.removeAttribute("title");

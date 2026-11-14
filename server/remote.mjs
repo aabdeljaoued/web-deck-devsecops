@@ -51,6 +51,17 @@ function withUser(dest, user) {
     return user && !target.includes("@") ? `${user}@${target}` : target;
 }
 
+/**
+ * Destination ssh découpée : { user, host, via }. Bastion type CyberArk PSMP :
+ * « compte@utilisateur_cible@hôte_cible@bastion » -> utilisateur_cible @ hôte_cible, via bastion.
+ */
+export function splitTarget(dest) {
+    const parts = String(dest ?? "").split("@");
+    if (parts.length >= 3) return { user: parts.at(-3), host: parts.at(-2), via: parts.at(-1) };
+    if (parts.length === 2) return { user: parts[0], host: parts[1], via: null };
+    return { user: null, host: parts[0], via: null };
+}
+
 /** Distribution d'une commande wsl (wsl -d Ubuntu) ; null = distribution par défaut. */
 export function wslTarget(cmdline) {
     const argv = words(cmdline);
@@ -81,6 +92,7 @@ export class RemoteWatch extends EventEmitter {
     }
 
     stop() {
+        this.stopped = true;
         clearInterval(this.timer);
         this.ps?.kill();
     }
@@ -151,6 +163,31 @@ export class RemoteWatch extends EventEmitter {
         });
     }
 
+    /**
+     * Explication de la détection (diagnostic) : pour chaque ssh / mosh / wsl du dernier relevé, sa lignée de parents
+     * et pourquoi il est rattaché, ou non, à un terminal du deck.
+     */
+    explain() {
+        const procs = this.lastProcs ?? [];
+        const byPid = new Map(procs.map((p) => [p.pid, p]));
+        const roots = new Map([...this.terminals.sessions].map(([sid, s]) => [s.proc?.pid, sid]));
+        return procs.filter((p) => REMOTE[p.name]).map((p) => {
+            const chain = [];
+            let cur = p, sid = null;
+            for (let i = 0; i < 12 && cur; i++) {
+                if (roots.has(cur.ppid)) { sid = roots.get(cur.ppid); chain.push(`terminal ${sid}`); break; }
+                const parent = byPid.get(cur.ppid);
+                chain.push(parent ? parent.name : `pid ${cur.ppid} (absent)`);
+                cur = parent;
+            }
+            const direct = byPid.get(p.ppid);
+            const shellParent = roots.has(p.ppid) || (direct && SHELLS.has(direct.name));
+            return { pid: p.pid, name: p.name, chain, terminal: sid, detected: [...this.pids].some(([, pid]) => pid === p.pid),
+                why: !sid ? "hors des terminaux du deck" : !shellParent ? `parent « ${direct?.name ?? "?"} » : pas un shell connu` : "",
+                dest: this.cmds.has(p.pid) ? this.targetOf(REMOTE[p.name], this.cmds.get(p.pid)) : null };
+        });
+    }
+
     /** Surveillance en cours (Windows : le PowerShell en tâche de fond tourne-t-il ?). */
     get watching() {
         return platform === "windows" ? Boolean(this.ps) : Boolean(this.timer);
@@ -168,7 +205,8 @@ while ($true) {
     "---"
     Start-Sleep -Milliseconds ${INTERVAL_MS}
 }`;
-        this.ps = spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], { windowsHide: true, stdio: ["ignore", "pipe", "ignore"] });
+        this.ps = spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], { windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
+        this.ps.stderr.on("data", (d) => { this.lastError = `${this.lastError ?? ""}${d}`.slice(-2000); });
         let lines = [];
         let rest = "";
         this.ps.stdout.on("data", (chunk) => {
@@ -186,11 +224,23 @@ while ($true) {
                 }
             }
         });
-        this.ps.on("exit", () => { this.ps = null; });
+        // Arrêt du PowerShell (antivirus, EDR, erreur) : relance après 5 s, 20 fois par heure au plus
+        this.ps.on("exit", (code, signal) => {
+            this.ps = null;
+            this.lastExit = { at: new Date().toISOString(), code, signal };
+            const now = Date.now();
+            this.restarts = (this.restarts ?? []).filter((t) => now - t < 3600e3);
+            console.warn(`Surveillance ssh / wsl arrêtée (code ${code}${signal ? `, ${signal}` : ""})${this.lastError ? ` : ${this.lastError.trim().split("\n").pop()}` : ""}`);
+            if (this.stopped || this.restarts.length >= 20) return;
+            this.restarts.push(now);
+            setTimeout(() => { if (!this.stopped && !this.ps) this.startWindows(); }, 5000).unref?.();
+        });
     }
 
     /** Calcule l'état de chaque terminal à partir de la liste des processus ; émet "change" s'il a changé. */
     update(procs) {
+        this.lastUpdate = Date.now();
+        this.lastProcs = procs;
         this.emit("procs", procs);   // aussi utilisé par server/screenlock.mjs (écran de verrouillage Windows)
         const byPid = new Map(procs.map((p) => [p.pid, p]));
         const children = new Map();

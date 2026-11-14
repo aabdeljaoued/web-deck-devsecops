@@ -32,9 +32,16 @@ Dès qu'un terminal est connecté en **ssh** (ou **wsl**), le deck affiche la ma
 
 ![Deux terminaux connectés, vue partagée](img/ssh-vm-partage.jpg)
 
-La VM est reconnue par son hôte (`admin@app-prod-01.client.fr`), son nom d'hôte sans utilisateur, ou son nom
-d'inventaire (alias de `~/.ssh/config` du même nom). Seule la destination est lue dans la commande ssh : ni la
-clé, ni les options, ni la commande distante. À la déconnexion (`exit`), l'onglet redevient local.
+La VM est reconnue par son hôte (`admin@app-prod-01.client.fr`), son nom d'hôte sans utilisateur, son nom court ou
+son nom d'inventaire (alias de `~/.ssh/config` du même nom). Seule la destination est lue dans la commande ssh : ni
+la clé, ni les options, ni la commande distante. À la déconnexion (`exit`), l'onglet redevient local.
+
+**Bastion (CyberArk PSMP…)** : avec une destination `compte@utilisateur_cible@vm_cible@bastion`, c'est la **VM cible**
+qui est affichée et rapprochée de l'inventaire, avec la mention « via bastion » (le bastion au survol de l'onglet).
+
+Si le cadre n'apparaît pas, **Réglages › Serveur › Diagnostic**, ligne **Terminaux connectés**, terminal connecté :
+elle dit si la surveillance tourne, et pour chaque ssh vu, sa lignée de processus et pourquoi il est (ou non)
+rattaché au terminal.
 
 ## Les autres touches
 

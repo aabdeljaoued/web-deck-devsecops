@@ -35,7 +35,7 @@ import { buildReport } from "./report.mjs";
 import { resetRoutes } from "./certs.mjs";
 import { envProxy, ProxyManager } from "./proxy.mjs";
 import { agendaEvents, buildSummary, toIcs } from "./summary.mjs";
-import { RemoteWatch } from "./remote.mjs";
+import { RemoteWatch, splitTarget } from "./remote.mjs";
 import { StatusHub } from "./status.mjs";
 import { Terminals } from "./terminal.mjs";
 import { neededTool, Tools } from "./tools.mjs";
@@ -314,15 +314,17 @@ const remote = new RemoteWatch(terminals);
  * Reconnue si l'hôte de la VM, son nom ou le nom court de l'hôte correspond (avec ou sans « utilisateur@ »).
  */
 function remoteTargets() {
-    const hostOf = (s) => String(s ?? "").toLowerCase().replace(/^[^@]*@/, "");
+    // Hôte d'une adresse ssh, bastion PSMP compris (compte@cible@hôte@bastion -> hôte)
+    const hostOf = (s) => String(splitTarget(String(s ?? "").toLowerCase()).host ?? "");
     const vms = patches.list();
     return Object.fromEntries(Object.entries(remote.targets()).map(([sid, dest]) => {
-        const h = hostOf(dest);
+        const { host: h, via } = splitTarget(dest.toLowerCase());
         const vm = remote.state.get(sid) === "ssh"
             ? vms.find((v) => v.host && v.host.toLowerCase() === dest.toLowerCase())
-              ?? vms.find((v) => (v.host && hostOf(v.host) === h) || v.name.toLowerCase() === h || v.name.toLowerCase() === h.split(".")[0])
+              ?? vms.find((v) => (v.host && hostOf(v.host) === h) || v.name.toLowerCase() === h || v.name.toLowerCase() === h.split(".")[0]
+                  || (v.host && hostOf(v.host).split(".")[0] === h.split(".")[0]))
             : null;
-        return [sid, { dest, vm: vm?.name ?? null, env: vm?.env ?? null }];
+        return [sid, { dest, host: h, via, vm: vm?.name ?? null, env: vm?.env ?? null }];
     }));
 }
 remote.on("change", (state) => broadcast({ t: "remote", remote: state, targets: remoteTargets() }));

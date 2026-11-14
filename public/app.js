@@ -422,6 +422,8 @@ function handle(msg) {
             break;
         case "patches":
             state.patches = msg.vms;
+            state.patchClusters = msg.clusters ?? {};
+            if (patchVipEditing) { $("#patch-vip-form").hidden = true; patchVipEditing = null; }
             renderPatches();
             if (!$("#agenda").hidden) send({ t: "agenda" });
             break;
@@ -539,6 +541,7 @@ function handle(msg) {
         case "error":
             // Formulaire de VM : l'erreur s'affiche dans le formulaire (saisie gardée)
             if (patchPending) { patchPending = false; $("#patch-error").textContent = msg.error; $("#patch-error").hidden = false; }
+            else if (patchVipEditing && !$("#patch-vip-form").hidden) { $("#patch-vip-error").textContent = msg.error; $("#patch-vip-error").hidden = false; }
             // Secret en cours de lecture : la commande n'est pas tapée
             for (const w of secretWaits.values()) w.reject(new Error(msg.error));
             secretWaits.clear();
@@ -3856,6 +3859,20 @@ function patchClusterLine(vm) {
     return div;
 }
 
+/** Cluster dont les VIP sont en cours de modification (formulaire « ✎ VIP »). */
+let patchVipEditing = null;
+
+function openVipForm(cluster) {
+    patchVipEditing = cluster;
+    $("#patch-form").hidden = true;
+    $("#patch-vip-title").textContent = `VIP du cluster ${cluster}`;
+    $("#patch-vip-list").value = (state.patchClusters?.[cluster]?.vips ?? []).map((v) => `${v.address}${v.port ? `:${v.port}` : ""}${v.label ? ` ${v.label}` : ""}`).join("\n");
+    $("#patch-vip-error").hidden = true;
+    $("#patch-vip-form").hidden = false;
+    $("#patch-vip-form").scrollIntoView({ block: "nearest" });
+    $("#patch-vip-list").focus();
+}
+
 /** Clusters repliés (en-tête seul), retenus dans le navigateur. */
 const patchFolded = (() => { try { return new Set(JSON.parse(localStorage.getItem("deck-patch-folded") ?? "[]")); } catch { return new Set(); } })();
 
@@ -3921,7 +3938,25 @@ function patchClusterHeader(cluster, nodes, all, folded = false) {
         map.append(pill);
     }
     map.append(el("patch-group-meta", `${total.length} nœud(s)${gone ? ` dont ${gone} décommissionné(s)` : ""}${nodes.length < total.length ? ` · ${nodes.length} affiché(s)` : ""}`));
-    td.append(top, map);
+    // VIP du cluster : étiquettes (clic : test de connectivité tapé dans le terminal) et « ✎ VIP »
+    const vips = state.patchClusters?.[cluster]?.vips ?? [];
+    const vipLine = Object.assign(document.createElement("div"), { className: "patch-group-vips" });
+    vipLine.append(el("patch-group-meta", vips.length ? "VIP" : "Aucune VIP"));
+    for (const v of vips) {
+        const chip = Object.assign(document.createElement("button"), { type: "button", className: "patch-vip",
+            textContent: `${v.address}${v.port ? `:${v.port}` : ""}${v.label ? ` · ${v.label}` : ""}`,
+            title: v.port ? `Tape « nc -zv ${v.address} ${v.port} » dans le terminal (sans Entrée) : test de connectivité` : `Tape « nc -zv ${v.address} » dans le terminal (port à compléter)` });
+        chip.addEventListener("click", (ev) => {
+            ev.stopPropagation();
+            $("#patches").hidden = true;
+            typeInTerminal(`nc -zv ${v.address} ${v.port ?? ""}`.trimEnd() + (v.port ? "" : " "));
+        });
+        vipLine.append(chip);
+    }
+    const edit = Object.assign(document.createElement("button"), { type: "button", className: "patch-vip-edit", textContent: "✎ VIP", title: "Ajouter, modifier ou retirer les VIP du cluster" });
+    edit.addEventListener("click", (ev) => { ev.stopPropagation(); openVipForm(cluster); });
+    vipLine.append(edit);
+    td.append(top, map, vipLine);
     td.title = folded ? "Clic : déplier le cluster" : "Clic : replier le cluster (en-tête seul)";
     tr.addEventListener("click", () => {
         if (patchFolded.has(cluster)) patchFolded.delete(cluster); else patchFolded.add(cluster);
@@ -3953,7 +3988,7 @@ function renderPatches() {
     const vms = state.patches ?? [];
     const q = fold($("#patch-search").value.trim());
     renderPatchFilters(vms);
-    const shown = vms.filter((v) => !q || fold(`${v.name} ${v.host} ${v.env} ${v.description} ${(v.tags ?? []).join(" ")} ${v.cluster ?? ""} ${v.clusterSet ?? ""}`).includes(q))
+    const shown = vms.filter((v) => !q || fold(`${v.name} ${v.host} ${v.env} ${v.description} ${(v.tags ?? []).join(" ")} ${v.cluster ?? ""} ${v.clusterSet ?? ""} ${(state.patchClusters?.[v.cluster]?.vips ?? []).map((x) => x.address).join(" ")}`).includes(q))
         .filter((v) => !patchFilter.env || v.env === patchFilter.env)
         .filter((v) => [...patchFilter.tags].every((t) => (v.tags ?? []).includes(t)))
         .filter((v) => !patchFilter.state || PATCH_STATES.find(([k]) => k === patchFilter.state)?.[2](v))
@@ -4394,6 +4429,13 @@ $("#patch-import-cancel").addEventListener("click", () => { patchImportCsv = nul
 $("#patch-export").addEventListener("click", () => send({ t: "patch-export" }));
 $("#patch-template").addEventListener("click", (ev) => { ev.preventDefault(); downloadText(PATCH_TEMPLATE, "modele-vms-patchs.csv", "text/csv;charset=utf-8"); toast("modèle CSV téléchargé (dans Téléchargements)", "ok"); });
 $("#patch-cancel").addEventListener("click", () => { $("#patch-form").hidden = true; });
+$("#patch-vip-cancel").addEventListener("click", () => { $("#patch-vip-form").hidden = true; patchVipEditing = null; });
+$("#patch-vip-form").addEventListener("submit", (ev) => {
+    ev.preventDefault();
+    $("#patch-vip-error").hidden = true;
+    const vips = $("#patch-vip-list").value.split("\n").map((l) => l.trim()).filter(Boolean);
+    send({ t: "patch-vips", cluster: patchVipEditing, vips });
+});
 $("#patch-form").addEventListener("submit", (ev) => { ev.preventDefault(); savePatch(); });
 $("#patch-search").addEventListener("input", renderPatches);
 // Clic sur un titre de colonne : tri par cette colonne ; re-clic : ordre inversé

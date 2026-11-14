@@ -113,6 +113,23 @@ nom de la VM. Le champ **Filtrer** cherche aussi dans le cluster et le ClusterSe
 **Dupliquer** un nœud garde son cluster, son ClusterSet et son profil (la copie est SECONDARY) : pratique pour ajouter le nœud suivant
 (`mysql-rec-03` → `mysql-rec-04`).
 
+## VIP d'un cluster
+
+![VIP des clusters](img/patchs-vip.jpg)
+
+Chaque cluster peut avoir ses **VIP** (adresse virtuelle du routeur MySQL, de keepalived…), affichées dans l'en-tête de
+son bloc (vue **⬡ par cluster**), aux couleurs de l'environnement :
+
+- **✎ VIP** : une VIP par ligne, `adresse[:port] [libellé]` : `10.0.0.10:3306 RW`, `10.0.0.10:3307 RO`,
+  `vip-mysql-app.example.test:6446 router` ; 10 au plus par cluster ; adresse IP (v4 ou v6) ou nom d'hôte, sans
+  caractère de shell ; vider la liste retire les VIP ;
+- **clic sur une VIP** : tape `nc -zv <adresse> <port>` dans le terminal actif, **sans Entrée** : test de connectivité,
+  depuis le poste ou depuis un terminal connecté à un bastion ou à une VM ;
+- le champ **Filtrer** cherche aussi dans les adresses des VIP (taper `10.0.30` montre les nœuds du cluster).
+
+Les VIP sont enregistrées dans `patches.json` (hors Git) et incluses dans l'export de la **configuration complète** ;
+elles ne sont pas dans le CSV (une ligne par VM).
+
 ## VM décommissionnée
 
 ![VMs et cluster décommissionnés](img/patchs-decom.jpg)

@@ -126,6 +126,39 @@ function cleanClusterName(v, what) {
     return s;
 }
 
+/** VIP d'un cluster : { address, port, label } ; « 10.0.0.10:3306 RW » ou objet. Adresse sans caractère de shell. */
+export function cleanVip(v) {
+    let { address, port = null, label = "" } = typeof v === "string" ? parseVipLine(v) : v ?? {};
+    address = String(address ?? "").trim();
+    // « hôte:port » saisi dans l'adresse (pas pour une IPv6, qui contient plusieurs « : »)
+    const m = /^([^:]+):(\d{1,5})$/.exec(address);
+    if (m && (port === null || port === "")) { address = m[1]; port = m[2]; }
+    if (!/^[A-Za-z0-9][A-Za-z0-9.:_-]{0,252}$/.test(address)) throw new Error(`VIP invalide : ${address || "(vide)"} (adresse IP ou nom d'hôte)`);
+    const p = port === null || port === "" ? null : Number(port);
+    if (p !== null && (!Number.isInteger(p) || p < 1 || p > 65535)) throw new Error(`VIP ${address} : port invalide (${port})`);
+    const l = String(label ?? "").trim();
+    if (l.length > 24 || /[\u0000-\u001f<>"'`$;|&]/.test(l)) throw new Error(`VIP ${address} : libellé invalide (24 caractères au plus)`);
+    return { address, port: p, label: l };
+}
+
+/** Ligne « adresse[:port] [libellé…] ». */
+function parseVipLine(line) {
+    const [address = "", ...rest] = String(line).trim().split(/\s+/);
+    return { address, port: null, label: rest.join(" ") };
+}
+
+/** VIPs de chaque cluster : { "<cluster>": { vips: [...] } } (10 VIPs au plus par cluster). */
+export function cleanClusters(v) {
+    const out = {};
+    if (!v || typeof v !== "object" || Array.isArray(v)) return out;
+    for (const [name, def] of Object.entries(v).slice(0, MAX_VMS)) {
+        if (!/^[A-Za-z0-9][A-Za-z0-9_.-]{0,59}$/.test(name)) continue;
+        const vips = (Array.isArray(def?.vips) ? def.vips : []).slice(0, 10).map((x) => { try { return cleanVip(x); } catch { return null; } }).filter(Boolean);
+        if (vips.length) out[name] = { vips };
+    }
+    return out;
+}
+
 export class Patches {
     constructor(file, backups = null) {
         this.file = file;
@@ -135,9 +168,11 @@ export class Patches {
 
     reload() {
         this.vms = [];
+        this.clusters = {};
         if (!existsSync(this.file)) return;
         try {
             const data = JSON.parse(readFileSync(this.file, "utf8"));
+            this.clusters = cleanClusters(data?.clusters);
             for (const vm of Array.isArray(data?.vms) ? data.vms : []) {
                 try { this.vms.push({ id: /^vm-[0-9a-f]{8}$/.test(vm.id) ? vm.id : newId(), ...cleanVm(vm) }); }
                 catch (err) { console.warn(`  patches.json : VM ignorée (${err.message})`); }
@@ -252,18 +287,37 @@ export class Patches {
         return { added, updated, errors };
     }
 
-    /** Remplacement complet (import de la configuration) : chaque VM revalidée. */
-    replace(vms) {
+    /** Remplacement complet (import de la configuration) : chaque VM revalidée ; VIPs des clusters si fournies. */
+    replace(vms, clusters = undefined) {
         if (!Array.isArray(vms) || vms.length > MAX_VMS) throw new Error("liste de VMs invalide");
         const next = vms.map((vm) => ({ id: /^vm-[0-9a-f]{8}$/.test(vm?.id) ? vm.id : newId(), ...cleanVm(vm) }));
         this.backups?.before(this.file, { force: true });
         this.vms = next;
+        if (clusters !== undefined) this.clusters = cleanClusters(clusters);
         this.write(false);
+    }
+
+    /** VIPs d'un cluster (remplacées ; liste vide = retirées). Le cluster doit exister dans l'inventaire. */
+    setVips(cluster, vips) {
+        const name = String(cluster ?? "").trim();
+        if (!this.vms.some((v) => v.cluster === name)) throw new Error(`cluster inconnu : ${name}`);
+        if (!Array.isArray(vips) || vips.length > 10) throw new Error("10 VIPs au plus par cluster");
+        const list = vips.map(cleanVip);
+        const seen = new Set();
+        for (const v of list) {
+            const key = `${v.address.toLowerCase()}:${v.port ?? ""}`;
+            if (seen.has(key)) throw new Error(`VIP en double : ${v.address}${v.port ? `:${v.port}` : ""}`);
+            seen.add(key);
+        }
+        if (list.length) this.clusters[name] = { vips: list };
+        else delete this.clusters[name];
+        this.write();
+        return list;
     }
 
     write(backup = true) {
         if (backup) this.backups?.before(this.file);
-        writeFileSync(this.file, `${JSON.stringify({ vms: this.vms }, null, 2)}\n`);
+        writeFileSync(this.file, `${JSON.stringify({ vms: this.vms, clusters: this.clusters ?? {} }, null, 2)}\n`);
     }
 }
 

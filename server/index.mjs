@@ -430,7 +430,7 @@ status.patchList = () => patches.active();   // VMs décommissionnées : hors vo
 status.patchAlertFile = path.join(ROOT, ".deck-patch-alerts.json");
 /** Inventaire modifié : renvoyé aux pages, voyant recalculé. */
 function patchesChanged() {
-    broadcast({ t: "patches", vms: patches.list() });
+    broadcast({ t: "patches", vms: patches.list(), clusters: patches.clusters });
     status.refreshPatches();
     // VM renommée ou ajoutée : noms affichés sur les terminaux connectés recalculés
     if (remote.targets && Object.keys(remote.targets()).length) broadcast({ t: "remote", remote: remote.view(), targets: remoteTargets() });
@@ -501,7 +501,14 @@ wss.on("connection", (ws) => {
                 case "rec-stop": await stopRecording(String(msg.sid)); break;
                 case "rec-list": reply({ t: "rec-list", files: recorder.list(), dir: RECORDINGS }); break;
                 // Patchs des VMs : inventaire, ajout / modification, « patché », suppression
-                case "patch-list": reply({ t: "patches", vms: patches.list() }); break;
+                case "patch-list": reply({ t: "patches", vms: patches.list(), clusters: patches.clusters }); break;
+                // VIPs d'un cluster (« ✎ VIP » de l'en-tête du cluster)
+                case "patch-vips": {
+                    const list = patches.setVips(String(msg.cluster), msg.vips);
+                    patchesChanged();
+                    reply({ t: "vault-ok", text: list.length ? `${list.length} VIP(s) pour ${msg.cluster}` : `VIPs retirées de ${msg.cluster}` });
+                    break;
+                }
                 case "patch-save": {
                     patches.save(msg.vm);
                     patchesChanged();
@@ -881,6 +888,7 @@ wss.on("connection", (ws) => {
                         favorites: favorites.dump(),
                         actions: actions.list(),
                         patches: patches.list(),
+                        patchClusters: patches.clusters,
                         settings: settings.get(),
                         signature: existsSync(SIGNATURE_FILE) ? readFileSync(SIGNATURE_FILE).toString("base64") : null
                     } });
@@ -899,7 +907,7 @@ wss.on("connection", (ws) => {
                         done.push(`Mes actions (${actions.list().length} rubrique(s))`);
                     }
                     if (parts.patches && Array.isArray(data.patches)) {
-                        patches.replace(data.patches);
+                        patches.replace(data.patches, data.patchClusters);
                         patchesChanged();
                         done.push(`patchs (${patches.list().length} VM(s))`);
                     }

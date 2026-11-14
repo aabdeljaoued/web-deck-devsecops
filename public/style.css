@@ -1619,3 +1619,10 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover, input[type="datetim
 .patch-node-pill.lvl-decom .patch-node-dot { color: #90a4ae; }
 .patch-chip.state-decom.on { background: #546e7a; color: #fff; }
 .patch-decom-field { grid-column: span 2; flex-direction: row !important; align-items: flex-start; gap: 8px; color: var(--text) !important; }
+/* VIP d'un cluster (en-tête du bloc) */
+.patch-group-vips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 6px 0 0 20px; }
+.patch-vip { padding: 2px 9px; border: 1px solid color-mix(in srgb, var(--grp, var(--accent)) 70%, transparent); border-radius: 12px; background: color-mix(in srgb, var(--grp, var(--accent)) 14%, transparent); color: var(--text); font: 600 12px Consolas, Menlo, monospace; cursor: pointer; }
+.patch-vip:hover { background: color-mix(in srgb, var(--grp, var(--accent)) 30%, transparent); }
+.patch-vip-edit { padding: 1px 8px; border: 1px dashed color-mix(in srgb, var(--text) 35%, transparent); border-radius: 12px; background: transparent; color: var(--muted); font-size: 12px; cursor: pointer; }
+.patch-vip-edit:hover { color: var(--text); border-style: solid; }
+.share-mode .patch-vip { filter: blur(4px); }

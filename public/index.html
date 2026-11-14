@@ -687,6 +687,17 @@
                     <button type="button" id="patch-cancel">Annuler</button>
                 </span>
             </form>
+            <form id="patch-vip-form" class="mission-form patch-form" hidden autocomplete="off">
+                <strong id="patch-vip-title">VIP du cluster</strong>
+                <label>VIP <span class="hint">une par ligne : adresse IP ou nom, port facultatif, libellé facultatif (ex. RW, RO, router)</span>
+                    <textarea id="patch-vip-list" rows="4" spellcheck="false" placeholder="10.0.0.10:3306 RW&#10;10.0.0.10:3307 RO&#10;vip-mysql-app.example.test:6446 router"></textarea>
+                </label>
+                <span id="patch-vip-error" class="mission-error" role="alert" hidden></span>
+                <span class="settings-actions">
+                    <button type="submit" class="primary">Enregistrer les VIP</button>
+                    <button type="button" id="patch-vip-cancel">Annuler</button>
+                </span>
+            </form>
             <div id="patch-filters" class="patch-filters" role="group" aria-label="Filtrer par environnement ou par tag"></div>
             <div class="patch-table-wrap">
                 <table class="patch-table">

@@ -174,3 +174,26 @@ test("voyant patchs : les VMs décommissionnées ne comptent pas", () => {
     assert.equal(hub.states.patches.footer, "ok");
     assert.equal(hub.states.patches.bg, "#2E7D32");
 });
+
+test("VIPs d'un cluster : saisie « adresse[:port] [libellé] », contrôles, enregistrement, import de la configuration", async () => {
+    const { cleanVip, cleanClusters } = await import("../server/patches.mjs");
+    assert.deepEqual(cleanVip("10.0.0.10:3306 RW"), { address: "10.0.0.10", port: 3306, label: "RW" });
+    assert.deepEqual(cleanVip("vip-mysql-rec.example.test router lecture"), { address: "vip-mysql-rec.example.test", port: null, label: "router lecture" });
+    assert.deepEqual(cleanVip({ address: "fd00::10", port: "6446" }), { address: "fd00::10", port: 6446, label: "" });
+    assert.throws(() => cleanVip("10.0.0.10;rm -rf /"), /VIP invalide/);
+    assert.throws(() => cleanVip("10.0.0.10:99999"), /port invalide/);
+    assert.throws(() => cleanVip("10.0.0.10 $(id)"), /libellé invalide/);
+    const file = path.join(tmpDir(), "patches.json");
+    const p = new Patches(file);
+    p.save({ name: "mysql-rec-01", nextPatch: "2026-12-01", cluster: "CL-MYSQL-APP-REC" });
+    assert.throws(() => p.setVips("CL-INCONNU", ["10.0.0.10"]), /cluster inconnu/);
+    assert.throws(() => p.setVips("CL-MYSQL-APP-REC", ["10.0.0.10:3306", "10.0.0.10:3306 RW"]), /en double/);
+    p.setVips("CL-MYSQL-APP-REC", ["10.0.0.10:3306 RW", "10.0.0.10:3307 RO"]);
+    assert.equal(new Patches(file).clusters["CL-MYSQL-APP-REC"].vips.length, 2, "gardées après rechargement");
+    p.setVips("CL-MYSQL-APP-REC", []);
+    assert.deepEqual(new Patches(file).clusters, {}, "liste vide : retirées");
+    // Import de la configuration complète : VMs et VIPs ; entrées invalides ignorées
+    p.replace(p.list(), { "CL-MYSQL-APP-REC": { vips: [{ address: "10.0.0.20", port: 6446, label: "router" }, { address: "bad;x" }] }, "nom invalide !": { vips: ["1.2.3.4"] } });
+    assert.deepEqual(new Patches(file).clusters, { "CL-MYSQL-APP-REC": { vips: [{ address: "10.0.0.20", port: 6446, label: "router" }] } });
+    assert.deepEqual(cleanClusters(null), {});
+});

@@ -150,15 +150,20 @@ with ✕ or **All**. With the keyboard: Tab then Enter.
 
 ### Watch points
 
-What can go wrong during a campaign, from most to least serious (🔴, 🟠, ℹ), with the VMs concerned:
+What can go wrong during a campaign, **grouped by type**: one line per type, with the number of clusters (or VMs)
+concerned, the first ones in plain text and all of them on hover; a click opens all their VMs in the inventory. From
+most to least serious (🟠 then ℹ):
 
-- **two nodes of the same cluster scheduled on the same day**: one node at a time (🔴 in production);
-- **most of a cluster's nodes overdue**: one node at a time, quorum checked in between;
-- **the PRIMARY scheduled before its SECONDARY nodes**: it is patched last;
-- **PRIMARY not set** in a cluster of several nodes;
-- **production scheduled before its UAT**: matched by name, without the environment words (`app-prod-01` and
+- 🟠 **production scheduled before its UAT**: matched by name, without the environment words (`app-prod-01` and
   `app-rec-01`, `CL-MYSQL-APP-PROD` and `CL-MYSQL-APP-REC`);
-- ℹ **MySQL cluster without a VIP** set.
+- 🟠 **the PRIMARY scheduled before its SECONDARY nodes**: it is patched last;
+- 🟠 **PRIMARY not set** in a cluster of several nodes;
+- ℹ **nodes of one cluster scheduled on the same day**: normal for a maintenance window, as long as you patch one node
+  at a time;
+- ℹ **MySQL cluster without a VIP** set;
+- ℹ **reboot required** according to the [survey](#patch-survey-the-vms-real-state).
+
+Being overdue is not a watch point: it is already in the figures, the rings and the patch order.
 
 ### Suggested patch order
 

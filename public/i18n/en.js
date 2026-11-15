@@ -1406,12 +1406,7 @@ export default {
     "Semaine du {0}": "Week of {0}",
     "Points de vigilance ({0})": "Watch points ({0})",
     "🟢 Rien à signaler : un nœud à la fois, PRIMARY en dernier, recette avant production.": "🟢 Nothing to report: one node at a time, PRIMARY last, UAT before production.",
-    "{0} : {1} nœuds prévus le {2} (un nœud à la fois)": "{0}: {1} nodes scheduled on {2} (one node at a time)",
-    "{0} : {1} nœuds sur {2} en retard (un nœud à la fois, quorum vérifié entre chaque)": "{0}: {1} of {2} nodes overdue (one node at a time, quorum checked in between)",
-    "{0} : le PRIMARY {1} est prévu avant ses SECONDARY (à patcher en dernier)": "{0}: PRIMARY {1} is scheduled before its SECONDARY nodes (patch it last)",
     "{0} : PRIMARY non renseigné": "{0}: PRIMARY not set",
-    "{0} : aucune VIP renseignée": "{0}: no VIP set",
-    "{0} (production, le {1}) est prévu avant {2} ({3}, le {4})": "{0} (production, on {1}) is scheduled before {2} ({3}, on {4})",
     "Ordre de patch proposé · 7 jours et retard": "Suggested patch order · 7 days and overdue",
     "PRIMARY non renseigné : vérifie-le (cluster status) avant de commencer": "PRIMARY not set: check it (cluster status) before starting",
     "↻ Basculer le PRIMARY de {0} vers {1} (touche « changer PRIMARY »)": "↻ Switch the PRIMARY from {0} to {1} (\"switch PRIMARY\" key)",
@@ -1460,8 +1455,15 @@ export default {
     "Redémarrage requis (noyau ou bibliothèques mis à jour)": "Reboot required (kernel or libraries updated)",
     "🟠 sous 7 j, à planifier ou sécurité {0}": "🟠 within 7 d, to schedule or security {0}",
     "sous 7 j ou sécurité": "within 7 d or security",
-    "{0} VM(s) avec redémarrage requis : {1}": "{0} {0:VM|VMs} with reboot required: {1}",
     "{0} · {1} MAJ de sécurité": "{0} · {1} security {1:update|updates}",
     "sécu": "sec",
-    "Sous 7 j ou sécurité": "Within 7 d or security"
+    "Sous 7 j ou sécurité": "Within 7 d or security",
+    // ---------- Points de vigilance regroupés ----------
+    "Nœuds d'un même cluster prévus le même jour : un nœud à la fois": "Nodes of one cluster scheduled on the same day: one node at a time",
+    "PRIMARY prévu avant ses SECONDARY (à patcher en dernier)": "PRIMARY scheduled before its SECONDARY nodes (patch it last)",
+    "Cluster MySQL sans VIP renseignée": "MySQL cluster without a VIP set",
+    "Production prévue avant sa recette": "Production scheduled before its UAT",
+    "Redémarrage requis (relevé)": "Reboot required (survey)",
+    "{0} cluster(s)": "{0} {0:cluster|clusters}",
+    "{0} application(s)": "{0} {0:application|applications}"
 };

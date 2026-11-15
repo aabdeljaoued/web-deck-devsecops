@@ -86,36 +86,33 @@ export const appKey = (name) => {
 };
 
 /**
- * Points de vigilance, du plus grave au moins grave (critical, warning, info), chacun avec les VMs concernées :
- * deux nœuds d'un cluster le même jour, majorité des nœuds en retard, PRIMARY prévu avant ses SECONDARY,
- * PRIMARY non renseigné, production prévue avant sa recette, cluster MySQL sans VIP, redémarrage requis (relevé).
+ * Points de vigilance, regroupés par type (une ligne par type, même avec beaucoup de clusters), du plus grave au moins
+ * grave : production prévue avant sa recette, PRIMARY prévu avant ses SECONDARY, PRIMARY non renseigné (warning) ;
+ * nœuds d'un cluster prévus le même jour, cluster MySQL sans VIP, redémarrage requis (info).
+ * Chaque point : { level, kind, text, unit, items (clusters ou VMs concernés), vms (VMs à ouvrir dans l'inventaire) }.
+ * Le retard n'en fait pas partie : il est déjà dans les chiffres, les anneaux et l'ordre de patch.
  */
-export function patchRisks(vms, clusters = {}, { today = new Date() } = {}) {
-    const days = (v) => daysUntil(v.nextPatch, today);
-    const risks = [];
-    const add = (level, text, names) => risks.push({ level, text, vms: names });
+export function patchRisks(vms, clusters = {}) {
+    const groups = new Map();
+    const add = (kind, level, text, unit, item, names) => {
+        const g = groups.get(kind) ?? { level, kind, text, unit, items: [], vms: new Set() };
+        g.items.push(item);
+        for (const n of names) g.vms.add(n);
+        groups.set(kind, g);
+    };
     for (const [cluster, nodes] of clusterNodes(vms)) {
-        const prod = nodes.some((v) => v.env === "production");
-        // Même jour : un nœud à la fois
-        const byDay = new Map();
-        for (const v of nodes) if (v.nextPatch) byDay.set(v.nextPatch, [...(byDay.get(v.nextPatch) ?? []), v]);
-        for (const [day, same] of byDay) {
-            if (same.length > 1) add(prod ? "critical" : "warning", `${cluster} : ${same.length} nœuds prévus le ${frDay(day)} (un nœud à la fois)`, same.map((v) => v.name).sort());
-        }
-        // Majorité des nœuds en retard
-        const late = nodes.filter((v) => (days(v) ?? 1) < 0);
-        if (nodes.length > 1 && late.length > nodes.length / 2) {
-            add("critical", `${cluster} : ${late.length} nœuds sur ${nodes.length} en retard (un nœud à la fois, quorum vérifié entre chaque)`, late.map((v) => v.name).sort());
-        }
+        const names = nodes.map((v) => v.name);
+        // Même jour : normal pour une fenêtre de maintenance, à condition de patcher un nœud à la fois
+        const days = new Map();
+        for (const v of nodes) if (v.nextPatch) days.set(v.nextPatch, (days.get(v.nextPatch) ?? 0) + 1);
+        if ([...days.values()].some((n) => n > 1)) add("same-day", "info", "Nœuds d'un même cluster prévus le même jour : un nœud à la fois", "cluster(s)", cluster, names);
         const primary = nodes.find((v) => v.role === "primary");
         const secondaries = nodes.filter((v) => v !== primary && v.nextPatch);
         if (primary?.nextPatch && secondaries.length && primary.nextPatch < secondaries.map((v) => v.nextPatch).sort()[0]) {
-            add("warning", `${cluster} : le PRIMARY ${primary.name} est prévu avant ses SECONDARY (à patcher en dernier)`, [primary.name, ...secondaries.map((v) => v.name).sort()]);
+            add("primary-first", "warning", "PRIMARY prévu avant ses SECONDARY (à patcher en dernier)", "cluster(s)", `${cluster} (${primary.name})`, names);
         }
-        if (!primary && nodes.length > 1) add("warning", `${cluster} : PRIMARY non renseigné`, nodes.map((v) => v.name).sort());
-        if (nodes.some((v) => v.profile === "mysql-innodb") && !clusters[cluster]?.vips?.length) {
-            add("info", `${cluster} : aucune VIP renseignée`, nodes.map((v) => v.name).sort());
-        }
+        if (!primary && nodes.length > 1) add("no-primary", "warning", "PRIMARY non renseigné", "cluster(s)", cluster, names);
+        if (nodes.some((v) => v.profile === "mysql-innodb") && !clusters[cluster]?.vips?.length) add("no-vip", "info", "Cluster MySQL sans VIP renseignée", "cluster(s)", cluster, names);
     }
     // Production prévue avant la recette (ou un autre environnement) de la même application
     const apps = new Map();
@@ -128,12 +125,13 @@ export function patchRisks(vms, clusters = {}, { today = new Date() } = {}) {
         const other = list.filter((v) => v.env !== "production").sort((a, b) => a.nextPatch.localeCompare(b.nextPatch));
         if (!prod.length || !other.length || prod[0].nextPatch >= other[0].nextPatch) continue;
         const label = (v) => v.cluster || v.name;
-        add("warning", `${label(prod[0])} (production, le ${frDay(prod[0].nextPatch)}) est prévu avant ${label(other[0])} (${other[0].env}, le ${frDay(other[0].nextPatch)})`,
-            [...new Set([...prod, ...other].map((v) => v.name))].sort());
+        add("prod-first", "warning", "Production prévue avant sa recette", "application(s)",
+            `${label(prod[0])} (${frDay(prod[0].nextPatch)}) → ${label(other[0])} (${frDay(other[0].nextPatch)})`, [...prod, ...other].map((v) => v.name));
     }
     // Redémarrage requis d'après le dernier relevé (noyau ou bibliothèques mis à jour, pas encore pris en compte)
-    const reboot = live(vms).filter((v) => v.check?.reboot).map((v) => v.name).sort();
-    if (reboot.length) add("info", `${reboot.length} VM(s) avec redémarrage requis : ${reboot.slice(0, 6).join(", ")}${reboot.length > 6 ? "…" : ""}`, reboot);
+    for (const v of live(vms).filter((x) => x.check?.reboot)) add("reboot", "info", "Redémarrage requis (relevé)", "VM(s)", v.name, [v.name]);
     const rank = { critical: 0, warning: 1, info: 2 };
-    return risks.sort((a, b) => rank[a.level] - rank[b.level] || a.text.localeCompare(b.text, "fr"));
+    return [...groups.values()]
+        .map((g) => ({ ...g, items: [...new Set(g.items)].sort((a, b) => a.localeCompare(b, "fr", { numeric: true })), vms: [...g.vms].sort() }))
+        .sort((a, b) => rank[a.level] - rank[b.level] || b.items.length - a.items.length);
 }

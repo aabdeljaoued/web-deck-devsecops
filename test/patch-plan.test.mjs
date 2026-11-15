@@ -50,23 +50,26 @@ test("clé d'application : mots d'environnement retirés", () => {
     assert.equal(appKey("serveur-01"), "");   // aucun mot d'environnement : pas de rapprochement
 });
 
-test("points de vigilance : même jour, quorum, PRIMARY avant SECONDARY, sans PRIMARY, sans VIP, production avant recette", () => {
+test("points de vigilance : regroupés par type, une ligne par type ; le retard n'en fait pas partie", () => {
     const risks = patchRisks([
         node("p1", "production", "2026-11-20", "secondary", "CL-MYSQL-APP-PROD"),
         node("p2", "production", "2026-11-20", "secondary", "CL-MYSQL-APP-PROD"),
         node("p3", "production", "2026-11-10", "primary", "CL-MYSQL-APP-PROD"),
         node("r1", "recette", "2026-11-25", "", "CL-MYSQL-APP-REC"),
-        node("r2", "recette", "2026-11-12", "", "CL-MYSQL-APP-REC"),
-        node("r3", "recette", "2026-11-11", "", "CL-MYSQL-APP-REC")
-    ], { "CL-MYSQL-APP-PROD": { vips: [{ address: "10.0.0.10" }] } }, { today: TODAY });
-    const texts = risks.map((r) => `${r.level} ${r.text}`);
-    assert.ok(texts.includes("critical CL-MYSQL-APP-PROD : 2 nœuds prévus le 20/11/2026 (un nœud à la fois)"), texts.join("\n"));
-    assert.ok(texts.some((t) => t.startsWith("critical CL-MYSQL-APP-REC : 2 nœuds sur 3 en retard")));
-    assert.ok(texts.includes("warning CL-MYSQL-APP-PROD : le PRIMARY p3 est prévu avant ses SECONDARY (à patcher en dernier)"));
-    assert.ok(texts.includes("warning CL-MYSQL-APP-REC : PRIMARY non renseigné"));
-    assert.ok(texts.includes("info CL-MYSQL-APP-REC : aucune VIP renseignée"));
-    assert.ok(texts.includes("warning CL-MYSQL-APP-PROD (production, le 10/11/2026) est prévu avant CL-MYSQL-APP-REC (recette, le 11/11/2026)"));
-    assert.deepEqual(risks.map((r) => r.level), [...risks.map((r) => r.level)].sort((a, b) => ["critical", "warning", "info"].indexOf(a) - ["critical", "warning", "info"].indexOf(b)));
+        node("r2", "recette", "2026-11-11", "", "CL-MYSQL-APP-REC"),
+        node("r3", "recette", "2026-11-11", "", "CL-MYSQL-APP-REC"),
+        node("q1", "qualification", "2026-11-11", "", "CL-MYSQL-RH-QUALIF"),
+        node("q2", "qualification", "2026-11-11", "", "CL-MYSQL-RH-QUALIF")
+    ], { "CL-MYSQL-APP-PROD": { vips: [{ address: "10.0.0.10" }] } });
+    const by = Object.fromEntries(risks.map((r) => [r.kind, r]));
+    assert.deepEqual(Object.keys(by).sort(), ["no-primary", "no-vip", "primary-first", "prod-first", "same-day"]);
+    assert.deepEqual(by["no-primary"].items, ["CL-MYSQL-APP-REC", "CL-MYSQL-RH-QUALIF"], "un seul point pour tous les clusters sans PRIMARY");
+    assert.deepEqual(by["same-day"].items, ["CL-MYSQL-APP-PROD", "CL-MYSQL-APP-REC", "CL-MYSQL-RH-QUALIF"]);
+    assert.equal(by["same-day"].level, "info");
+    assert.deepEqual(by["primary-first"].items, ["CL-MYSQL-APP-PROD (p3)"]);
+    assert.deepEqual(by["prod-first"].items, ["CL-MYSQL-APP-PROD (10/11/2026) → CL-MYSQL-APP-REC (11/11/2026)"]);
+    assert.deepEqual(by["no-primary"].vms, ["q1", "q2", "r1", "r2", "r3"]);
+    assert.deepEqual(risks.map((r) => r.level), ["warning", "warning", "warning", "info", "info"]);
 });
 
 test("points de vigilance : rien à signaler sur un inventaire sain", () => {
@@ -75,12 +78,12 @@ test("points de vigilance : rien à signaler sur un inventaire sain", () => {
         node("a2", "recette", "2026-11-21", "primary", "CL-A-REC"),
         vm("app-rec-01", "recette", "2026-11-20"),
         vm("app-prod-01", "production", "2026-11-27")
-    ], { "CL-A-REC": { vips: [{ address: "10.0.0.1" }] } }, { today: TODAY }), []);
+    ], { "CL-A-REC": { vips: [{ address: "10.0.0.1" }] } }), []);
 });
 
 test("relevé : la sécurité en attente fait entrer la VM dans le plan ; redémarrage requis signalé", () => {
     const vms = [vm("app-rec-01", "recette", "2027-01-15", { check: { security: 2, reboot: true } }), vm("app-rec-02", "recette", "2027-01-15")];
     assert.deepEqual(patchPlan(vms, { today: TODAY }).map((g) => g.vms[0]), ["app-rec-01"]);
-    const risks = patchRisks(vms, {}, { today: TODAY });
-    assert.ok(risks.some((r) => r.level === "info" && r.text === "1 VM(s) avec redémarrage requis : app-rec-01"));
+    const reboot = patchRisks(vms, {}).find((r) => r.kind === "reboot");
+    assert.deepEqual([reboot.level, reboot.items], ["info", ["app-rec-01"]]);
 });

@@ -4067,10 +4067,15 @@ function renderPatchDash() {
     const RISK_ICON = { critical: "🔴", warning: "🟠", info: "ℹ" };
     const riskList = h("div", "dash-risks");
     for (const r of risks) {
+        // Une ligne par type : titre, nombre de clusters (ou VMs) concernés, les premiers en clair, tous au survol
         const row = h("div", `dash-risk ${r.level}`);
-        row.append(h("span", "dash-risk-icon", RISK_ICON[r.level]), h("span", "dash-risk-text", r.text));
-        // Libellé de la sélection : le cluster ou la VM concernés (début du texte)
-        riskList.append(drillable(row, r.vms, `⚠ ${r.text.split(/ : | \(/)[0]}`));
+        const body = h("span", "dash-risk-body");
+        const items = h("span", "dash-risk-items", `${r.items.slice(0, 4).join(" · ")}${r.items.length > 4 ? ` +${r.items.length - 4}` : ""}`);
+        items.dataset.noI18n = "";
+        body.append(h("span", "dash-risk-text", r.text), h("span", "dash-risk-count", `${r.items.length} ${r.unit}`), items);
+        row.append(h("span", "dash-risk-icon", RISK_ICON[r.level]), body);
+        row.dataset.tip = r.items.join("\n");
+        riskList.append(drillable(row, r.vms, `⚠ ${tr(r.text)}`));
     }
     const riskCard = card(`Points de vigilance (${risks.length})`, risks.length ? riskList : h("p", "hint", "🟢 Rien à signaler : un nœud à la fois, PRIMARY en dernier, recette avant production."));
 
@@ -4121,7 +4126,9 @@ function renderPatchDash() {
 }
 
 /** Environnements dans l'anneau : ordre fixe (la couleur suit l'environnement, jamais son rang), teintes non réservées. */
-const DASH_ENVS = ["production", "recette", "développement", "qualification", "autre"];
+// Ordre de l'anneau et couleurs (style.css, --env-N) choisis pour que deux parts voisines restent distinctes, daltonisme
+// compris : production bleu, recette orange, qualification violet, développement aqua, autre gris
+const DASH_ENVS = ["production", "recette", "qualification", "développement", "autre"];
 
 /**
  * Anneau (camembert évidé) : un tout en 6 parts au plus, lu d'un coup d'œil. Parts séparées par un liseré, nombre

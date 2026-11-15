@@ -1681,9 +1681,10 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover, input[type="datetim
 .dash-click:focus-visible { outline: 2px solid var(--accent-strong); outline-offset: 2px; border-radius: 4px; }
 .dash-tile.dash-click:hover, .dash-cluster.dash-click:hover, .dash-risk.dash-click:hover, .dash-plan-head.dash-click:hover, .dash-row.dash-click:hover { background: color-mix(in srgb, var(--accent-strong) 12%, transparent); }
 .dash-row-label.dash-click:hover { text-decoration: underline; }
-/* Anneaux : environnements en teintes non réservées (validées daltonisme, ordre fixe), redéfinies en mode clair */
-#patch-dash { --env-0: #3987e5; --env-1: #199e70; --env-2: #9085e9; --env-3: #d55181; --env-4: #8a8f98; }
-[data-mode="light"] #patch-dash { --env-0: #2a78d6; --env-1: #1baf7a; --env-2: #6250d6; --env-3: #e87ba4; --env-4: #8a8f98; }
+/* Anneaux : environnements (ordre fixe, voir DASH_ENVS) : production bleu, recette orange, qualification violet,
+   développement aqua, autre gris. Validé daltonisme : seuls bleu et violet se confondent, jamais voisins sauf sans recette */
+#patch-dash { --env-0: #3987e5; --env-1: #d95926; --env-2: #9085e9; --env-3: #199e70; --env-4: #8a8f98; }
+[data-mode="light"] #patch-dash { --env-0: #2a78d6; --env-1: #eb6834; --env-2: #6250d6; --env-3: #1baf7a; --env-4: #8a8f98; }
 .dash-donuts { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; }
 .dash-donut { display: flex; align-items: center; gap: 16px; }
 .dash-donut-chart { position: relative; width: 150px; height: 150px; flex: none; }
@@ -1698,7 +1699,7 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover, input[type="datetim
 .dash-donut-legend { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
 .dash-donut-item { display: grid; grid-template-columns: 12px minmax(0, 1fr) auto 40px; align-items: center; gap: 8px; padding: 3px 6px; border-radius: 6px; font-size: 12.5px; }
 .dash-donut-item.dash-click:hover { background: color-mix(in srgb, var(--accent-strong) 12%, transparent); }
-.dash-donut-name { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dash-donut-name { color: var(--text); line-height: 1.25; overflow-wrap: anywhere; }
 .dash-donut-count { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; text-align: right; }
 .dash-donut-pct { color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; }
 /* Points de vigilance : icône + texte (jamais la couleur seule) */
@@ -1707,6 +1708,9 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover, input[type="datetim
 .dash-risk.critical { border-left-color: #d03b3b; }
 .dash-risk.warning { border-left-color: #fab219; }
 .dash-risk.info { border-left-color: var(--border); color: var(--muted); }
+.dash-risk-body { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; min-width: 0; }
+.dash-risk-count { font-size: 11.5px; font-weight: 700; padding: 0 6px; border-radius: 9px; background: color-mix(in srgb, var(--text) 10%, transparent); white-space: nowrap; }
+.dash-risk-items { flex-basis: 100%; font-size: 11.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Ordre de patch proposé */
 .dash-plan { display: flex; flex-direction: column; gap: 10px; max-height: 340px; overflow: auto; }
 .dash-plan-group { border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; }

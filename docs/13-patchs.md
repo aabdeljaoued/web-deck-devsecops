@@ -151,15 +151,20 @@ de vigilance ouvre l'**inventaire filtré sur ses VMs**, avec un filtre **Sélec
 
 ### Points de vigilance
 
-Ce qui peut mal tourner pendant une campagne, du plus grave au moins grave (🔴, 🟠, ℹ), avec les VMs concernées :
+Ce qui peut mal tourner pendant une campagne, **regroupé par type** : une ligne par type, avec le nombre de clusters
+(ou de VMs) concernés, les premiers en clair et tous au survol ; un clic ouvre toutes leurs VMs dans l'inventaire.
+Du plus grave au moins grave (🟠 puis ℹ) :
 
-- **deux nœuds d'un même cluster prévus le même jour** : un nœud à la fois (🔴 en production) ;
-- **la majorité des nœuds d'un cluster en retard** : un nœud à la fois, quorum vérifié entre chaque ;
-- **le PRIMARY prévu avant ses SECONDARY** : il se patche en dernier ;
-- **PRIMARY non renseigné** dans un cluster de plusieurs nœuds ;
-- **la production prévue avant sa recette** : rapprochées par le nom, sans les mots d'environnement (`app-prod-01` et
-  `app-rec-01`, `CL-MYSQL-APP-PROD` et `CL-MYSQL-APP-REC`) ;
-- ℹ **cluster MySQL sans VIP** renseignée.
+- 🟠 **la production prévue avant sa recette** : rapprochées par le nom, sans les mots d'environnement (`app-prod-01`
+  et `app-rec-01`, `CL-MYSQL-APP-PROD` et `CL-MYSQL-APP-REC`) ;
+- 🟠 **le PRIMARY prévu avant ses SECONDARY** : il se patche en dernier ;
+- 🟠 **PRIMARY non renseigné** dans un cluster de plusieurs nœuds ;
+- ℹ **nœuds d'un même cluster prévus le même jour** : normal pour une fenêtre de maintenance, à condition de patcher un
+  nœud à la fois ;
+- ℹ **cluster MySQL sans VIP** renseignée ;
+- ℹ **redémarrage requis** d'après le [relevé](#relevé-patch--létat-réel-de-la-vm).
+
+Le retard n'est pas un point de vigilance : il est déjà dans les chiffres, les anneaux et l'ordre de patch.
 
 ### Ordre de patch proposé
 

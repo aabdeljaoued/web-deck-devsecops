@@ -3,18 +3,14 @@
 // certificats vérifiés par le voyant et du journal ; rien n'est envoyé ailleurs.
 import { createHash } from "node:crypto";
 
-import { daysUntil } from "./patches.mjs";
+import { daysUntil, vmLevel } from "./patches.mjs";
 
 const fr = (iso) => (iso ? iso.slice(0, 10).split("-").reverse().join("/") : "—");
 const cell = (s) => String(s ?? "").replace(/\|/g, "\\|").replace(/[\r\n]+/g, " ").trim();
 const isProd = (env) => (env ?? "production") === "production";
 
-/** Niveau d'une VM (comme le voyant patchs) : rouge à J-1 ou en retard, orange à 7 j ou moins / à planifier. */
-export function vmLevel(vm, now = new Date()) {
-    if (!vm.nextPatch) return "orange";
-    const d = daysUntil(vm.nextPatch, now);
-    return d <= 1 ? "rouge" : d <= 7 ? "orange" : "ok";
-}
+/** Niveau d'une VM : règle commune (patches.mjs), sécurité en attente comprise. */
+export { vmLevel };
 
 /**
  * Échéances : prochains patchs des VMs et expirations des certificats (vérifiés par le voyant), triées par date.

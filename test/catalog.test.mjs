@@ -64,3 +64,15 @@ test("touches à compléter : variante à paramètres, chacun avec liste réelle
     }
     assert.ok(picks.find((k) => k.label === "exec -it" && k.pick.startsWith("kubectl"))?.prodGuard, "garde-fou production conservé");
 });
+
+test("chaque rubrique du catalogue (sous-pages comprises) tient sur une page et décrit ses touches", () => {
+    const ids = buildDeck(ctx, []).worlds.list.map((w) => w.id);
+    for (const id of ids) {
+        // Une seule rubrique à la fois sur l'accueil : seule la limite de la rubrique compte
+        const worlds = Object.fromEntries(ids.map((w) => [w, w === id]));
+        let deck;
+        assert.doesNotThrow(() => { deck = buildDeck(ctx, [], worlds); }, `rubrique ${id}`);
+        const missing = keys(deck).filter((k) => ["text", "run", "web"].includes(k.type) && !k.desc && !k.page.startsWith("fav"));
+        assert.deepEqual(missing.map((k) => `${k.page}/${k.label}`), [], `rubrique ${id} : touches sans description`);
+    }
+});

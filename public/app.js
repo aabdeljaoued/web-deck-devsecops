@@ -427,6 +427,10 @@ function handle(msg) {
         case "cert-alert":
             certAlert(msg.alerts);
             break;
+        case "patch-survey":
+            if (!msg.ok) { toast(`relevé reçu de ${msg.host} : aucune VM de l'inventaire ne correspond (connecte le terminal à la VM, ou ajoute-la)`, "ko"); break; }
+            toast(`relevé de ${msg.vm} : ${surveyText(msg.check)}${msg.lastChanged !== null ? ` · dernier patch ${frDate(msg.lastPatch)}${msg.nextPatch ? `, prochain ${frDate(msg.nextPatch)}` : ""}` : ""}`, msg.check.security ? "ko" : "ok");
+            break;
         case "patches":
             state.patches = msg.vms;
             state.patchClusters = msg.clusters ?? {};
@@ -3844,8 +3848,8 @@ const patchFilter = { env: null, tags: new Set(), state: null, pick: null };
 const live = (pred) => (v) => !v.decommissioned && pred(v);   // VM suivie (hors décommissionnées)
 const PATCH_STATES = [
     ["late", "🔴 en retard ou J-1", live((v) => patchDays(v) !== null && patchDays(v) <= 1)],
-    ["soon", "🟠 sous 7 j ou à planifier", live((v) => patchDays(v) === null || (patchDays(v) > 1 && patchDays(v) <= 7))],
-    ["ok", "🟢 plus tard", live((v) => patchDays(v) !== null && patchDays(v) > 7)],
+    ["soon", "🟠 sous 7 j, à planifier ou sécurité", live((v) => vmLevel(v) === "orange")],
+    ["ok", "🟢 plus tard", live((v) => vmLevel(v) === "ok")],
     ["decom", "⚫ décommissionnée", (v) => v.decommissioned === true]
 ];
 
@@ -3887,11 +3891,12 @@ function patchClusterLine(vm) {
 /** Statuts du patch : couleur réservée + icône + libellé (jamais la couleur seule). */
 const DASH_STATUS = [
     ["late", "🔴", "en retard ou J-1", "#d03b3b"],
-    ["soon", "🟠", "sous 7 jours", "#fab219"],
+    ["soon", "🟠", "sous 7 j ou sécurité", "#fab219"],
     ["todo", "◌", "à planifier", "#ec835a"],
     ["ok", "🟢", "à jour", "#0ca30c"]
 ];
-const dashStatus = (v) => { const d = patchDays(v); return d === null ? "todo" : d <= 1 ? "late" : d <= 7 ? "soon" : "ok"; };
+// Sécurité en attente (relevé) avec une date lointaine : compte avec « sous 7 j » (orange)
+const dashStatus = (v) => { const d = patchDays(v); return d === null ? "todo" : d <= 1 ? "late" : d <= 7 || securityPending(v) ? "soon" : "ok"; };
 
 function openPatchDash() {
     $("#patches").hidden = true;
@@ -3951,7 +3956,7 @@ function renderPatchDash() {
     tiles.append(
         drillable(tile("VMs suivies", vms.length, `${count((v) => v.env === "production")} en production`), names(vms), tr("VMs suivies")),
         drillable(tile("En retard ou J-1", byStatus.late, byStatus.late ? "🔴 à patcher maintenant" : "🟢 aucune", byStatus.late ? "critical" : ""), names(vms.filter((v) => dashStatus(v) === "late")), tr("En retard ou J-1")),
-        drillable(tile("Sous 7 jours", byStatus.soon, byStatus.todo ? `◌ ${byStatus.todo} sans date` : "toutes planifiées", byStatus.soon ? "warning" : ""), names(vms.filter((v) => ["soon", "todo"].includes(dashStatus(v)))), tr("Sous 7 jours")),
+        drillable(tile("Sous 7 j ou sécurité", byStatus.soon, byStatus.todo ? `◌ ${byStatus.todo} sans date` : "toutes planifiées", byStatus.soon ? "warning" : ""), names(vms.filter((v) => ["soon", "todo"].includes(dashStatus(v)))), tr("Sous 7 j ou sécurité")),
         drillable(tile("Clusters", clusters.length, noPrimary.length ? `★ ${noPrimary.length} sans PRIMARY` : `${count((v) => v.cluster)} nœuds`), names(vms.filter((v) => v.cluster)), tr("Clusters")),
         drillable(tile("VIP", vipCount, `${clusters.filter((c) => state.patchClusters?.[c]?.vips?.length).length} cluster(s) équipé(s)`), names(vms.filter((v) => state.patchClusters?.[v.cluster]?.vips?.length)), tr("VIP")),
         drillable(tile("Décommissionnées", decom, "hors suivi"), names(all.filter((v) => v.decommissioned)), tr("Décommissionnées"))
@@ -4091,6 +4096,7 @@ function renderPatchDash() {
                 if (st.role) li.append(h("span", `patch-role role-${st.role}`, st.role === "primary" ? "★ PRIMARY" : "SECONDARY"));
                 if (st.note) li.append(h("span", "dash-plan-note", st.note));
                 li.append(h("span", "dash-plan-when", st.due ? patchLabel(st.days) : `pas encore dû · ${patchLabel(st.days)}`));
+                if (st.security) li.append(h("span", "patch-badge sec", `🛡 ${st.security} sécurité`));
             }
             ol.append(li);
         }
@@ -4209,7 +4215,10 @@ function clusterEnv(cluster, all) {
 }
 
 /** Niveau d'urgence du patch d'une VM (comme sur sa ligne). */
-const vmLevel = (v) => { const d = patchDays(v); return d === null ? "orange" : d <= 1 ? "rouge" : d <= 7 ? "orange" : "ok"; };
+/** Mises à jour de sécurité en attente d'après le dernier relevé fait sur la VM. */
+const securityPending = (v) => !v.decommissioned && (v.check?.security ?? 0) > 0;
+/** Niveau d'une VM (même règle que le serveur) : rouge à J-1 ou en retard ; orange à 7 j, à planifier ou sécurité en attente. */
+const vmLevel = (v) => { const d = patchDays(v); return d === null ? "orange" : d <= 1 ? "rouge" : d <= 7 || securityPending(v) ? "orange" : "ok"; };
 
 /**
  * En-tête d'un cluster (mode regroupé) : nom, environnement, ClusterSet, profil ; carte des nœuds (pastille par nœud
@@ -4299,6 +4308,28 @@ const patchDays = (vm) => {
     const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
     return Math.round((Date.parse(`${vm.nextPatch}T00:00:00Z`) - today) / 86400000);
 };
+/** Résumé d'un relevé : « 12 MAJ dont 3 de sécurité · redémarrage requis » (nombres inconnus : non affichés). */
+function surveyText(c) {
+    const parts = [];
+    if (c.pending !== null) parts.push(c.pending ? `${c.pending} MAJ dont ${c.security ?? "?"} de sécurité` : "aucune MAJ en attente");
+    else if (c.security) parts.push(`${c.security} MAJ de sécurité`);
+    if (c.reboot) parts.push("redémarrage requis");
+    return parts.join(" · ") || "relevé fait";
+}
+
+/** Badges d'une VM d'après son dernier relevé : sécurité, mises à jour, redémarrage, date du relevé. */
+function surveyBadges(c) {
+    const box = Object.assign(document.createElement("div"), { className: "patch-survey" });
+    const badge = (text, cls, title) => box.append(Object.assign(document.createElement("span"), { className: `patch-badge ${cls}`, textContent: text, title }));
+    if (c.security) badge(`🛡 ${c.security} sécurité`, "sec", "Mises à jour de sécurité en attente : la VM passe en orange");
+    if (c.pending) badge(`${c.pending} MAJ`, "pending", "Mises à jour en attente (toutes)");
+    if (c.pending === 0 && !c.security) badge("✓ à jour", "ok", "Aucune mise à jour en attente lors du relevé");
+    if (c.reboot) badge("↻ reboot requis", "reboot", "Redémarrage requis (noyau ou bibliothèques mis à jour)");
+    const at = new Date(c.at);
+    box.append(Object.assign(document.createElement("span"), { className: "patch-survey-at", textContent: `relevé ${at.toLocaleDateString(dateLocale(), { day: "2-digit", month: "2-digit" })} ${at.toLocaleTimeString(dateLocale(), { hour: "2-digit", minute: "2-digit" })}`, title: [c.os, c.host].filter(Boolean).join(" · ") }));
+    return box;
+}
+
 const patchLabel = (d) => (d === null ? "à planifier" : d < 0 ? `en retard de ${-d} j` : d === 0 ? "aujourd'hui" : d === 1 ? "demain" : `dans ${d} j`);
 
 function openPatches() {
@@ -4333,7 +4364,7 @@ function renderPatches() {
     const rowFor = (vm) => {
         const d = patchDays(vm);
         const decom = vm.decommissioned === true;
-        const level = decom ? "decom" : d === null || d <= 7 ? (d === null || d > 1 ? "orange" : "rouge") : "ok";
+        const level = decom ? "decom" : vmLevel(vm);
         const tr = Object.assign(document.createElement("tr"), { className: `patch-${level}` });
         const cell = (content, cls = "") => { const td = Object.assign(document.createElement("td"), { className: cls }); td.append(...[content].flat()); return td; };
         const name = Object.assign(document.createElement("strong"), { textContent: vm.name });
@@ -4345,6 +4376,7 @@ function renderPatches() {
         const host = where ? Object.assign(document.createElement("div"), { className: "hint", textContent: where, title: vm.identity || "" }) : "";
         const next = Object.assign(document.createElement("div"), { textContent: decom ? "—" : frDate(vm.nextPatch) });
         const when = Object.assign(document.createElement("div"), { className: "patch-when", textContent: decom ? "hors suivi" : patchLabel(d) });
+        const survey = decom || !vm.check ? "" : surveyBadges(vm.check);
         const decomBadge = decom ? Object.assign(document.createElement("span"), { className: "patch-decom-badge", textContent: `DÉCOMMISSIONNÉE${vm.decommissionedAt ? ` le ${frDate(vm.decommissionedAt)}` : ""}` }) : "";
         const btn = (label, title, run, cls = "") => { const b = Object.assign(document.createElement("button"), { type: "button", textContent: label, title, className: cls }); b.addEventListener("click", run); return b; };
         const del = btn("Supprimer", "Retirer cette VM de l'inventaire", (ev) => armOrRun(ev.target, "Confirmer ?", () => send({ t: "patch-delete", id: vm.id })), "danger");
@@ -4354,7 +4386,7 @@ function renderPatches() {
             cell([name, " ", ...(decom ? [decomBadge, " "] : []), ...(role ? [role, " "] : []), env, ...tags.flatMap((t) => [" ", t]), grouped ? "" : patchClusterLine(vm), host]),
             Object.assign(cell(vm.description || "—", "patch-desc"), { translate: false }),
             cell(`${frDate(vm.lastPatch)}${vm.everyDays ? ` · tous les ${vm.everyDays} j` : ""}`),
-            cell([next, when]),
+            cell([next, when, survey]),
             cell(decom ? [
                 // Décommissionnée : plus de patch ni de connexion ; remise en service ou suppression définitive
                 btn("Remettre en service", "La VM revient dans le suivi (voyant, alertes, échéances)", () => send({ t: "patch-decom", id: vm.id, on: false }), "primary"),

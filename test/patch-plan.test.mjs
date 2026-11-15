@@ -77,3 +77,10 @@ test("points de vigilance : rien à signaler sur un inventaire sain", () => {
         vm("app-prod-01", "production", "2026-11-27")
     ], { "CL-A-REC": { vips: [{ address: "10.0.0.1" }] } }, { today: TODAY }), []);
 });
+
+test("relevé : la sécurité en attente fait entrer la VM dans le plan ; redémarrage requis signalé", () => {
+    const vms = [vm("app-rec-01", "recette", "2027-01-15", { check: { security: 2, reboot: true } }), vm("app-rec-02", "recette", "2027-01-15")];
+    assert.deepEqual(patchPlan(vms, { today: TODAY }).map((g) => g.vms[0]), ["app-rec-01"]);
+    const risks = patchRisks(vms, {}, { today: TODAY });
+    assert.ok(risks.some((r) => r.level === "info" && r.text === "1 VM(s) avec redémarrage requis : app-rec-01"));
+});

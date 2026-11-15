@@ -30,7 +30,7 @@ import { iconFile } from "./icons.mjs";
 import { loadConfig, ROOT } from "./config.mjs";
 import { launch, openBrowser, openFolder, platform, windowsPty } from "./platform.mjs";
 import { Recorder } from "./recorder.mjs";
-import { Patches, vmsFromCsv, vmsToCsv } from "./patches.mjs";
+import { Patches, parseSurvey, SURVEY_LINE, vmsFromCsv, vmsToCsv } from "./patches.mjs";
 import { buildReport } from "./report.mjs";
 import { resetRoutes } from "./certs.mjs";
 import { envProxy, ProxyManager } from "./proxy.mjs";
@@ -303,7 +303,46 @@ async function stopRecording(sid, reason = null) {
 terminals.on("output", (sid, d) => {
     broadcast({ t: "out", sid, d });
     if (!recorder.write(sid, d)) stopRecording(sid, "taille maximale atteinte (50 Mo)");
+    watchSurvey(sid, d);
 });
+
+// Relevé patch : la touche « relevé patch » lance, dans le terminal connecté à la VM, une commande en lecture seule qui
+// imprime une ligne repère (voir SURVEY_LINE). Le deck la reconnaît dans la sortie et met la VM à jour. Seule cette
+// ligne est lue ; rien n'est envoyé à la VM.
+const surveyTail = new Map();   // sid -> fin de la sortie récente (texte sans codes de couleur)
+const ANSI = /\x1b\[[0-9;?]*[A-Za-z]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[()][A-Z0-9]/g;
+function watchSurvey(sid, d) {
+    const text = String(d);
+    if (!text.includes("PATCH") && !surveyTail.has(sid)) return;   // rien en cours : coût nul pour la sortie ordinaire
+    let tail = `${surveyTail.get(sid) ?? ""}${text.replace(ANSI, "")}`.slice(-4000);
+    const m = SURVEY_LINE.exec(tail);
+    if (!m) {
+        // Début de ligne repère reçu : on garde la suite (sortie découpée en morceaux) ; sinon on oublie
+        if (tail.includes("DECK-PATCH")) surveyTail.set(sid, tail.slice(tail.lastIndexOf("DECK-PATCH")));
+        else surveyTail.delete(sid);
+        return;
+    }
+    tail = tail.slice(m.index + m[0].length);
+    if (tail.includes("DECK-PATCH")) surveyTail.set(sid, tail); else surveyTail.delete(sid);
+    const check = parseSurvey(m[0]);
+    if (!check) return;
+    // VM : celle du terminal connecté (inventaire), sinon par le nom d'hôte renvoyé par la VM
+    const host = check.host.toLowerCase();
+    const name = remoteTargets()[sid]?.vm
+        ?? patches.list().find((v) => v.name.toLowerCase() === host || v.name.toLowerCase() === host.split(".")[0]
+            || (v.host && splitTarget(v.host.toLowerCase()).host?.split(".")[0] === host.split(".")[0]))?.name;
+    if (!name) {
+        broadcast({ t: "patch-survey", ok: false, host: check.host });
+        return;
+    }
+    const { vm, lastChanged } = patches.applySurvey(name, check);
+    const fr = (day) => day.split("-").reverse().join("/");
+    logAction({ label: `relevé ${vm.name}`, page: "Patchs", mode: "run",
+        command: `relevé patch : ${check.os || "système inconnu"}, dernier patch ${check.last ? fr(check.last) : "inconnu"}, ${check.pending ?? "?"} MAJ dont ${check.security ?? "?"} de sécurité${check.reboot ? ", redémarrage requis" : ""}` });
+    patchesChanged();
+    broadcast({ t: "patch-survey", ok: true, vm: vm.name, check, lastChanged, lastPatch: vm.lastPatch, nextPatch: vm.nextPatch });
+}
+terminals.on("exit", (sid) => surveyTail.delete(sid));
 terminals.on("exit", (sid, code) => {
     broadcast({ t: "exit", sid, code });
     stopRecording(sid, "terminal fermé");

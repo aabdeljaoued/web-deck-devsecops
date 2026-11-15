@@ -15,9 +15,12 @@ Active-la dans **Réglages › Rubriques** (case **Patchs**). Elle contient :
 - **ssh VM** : choisis la VM dans la liste ;
 - **ssh -i VM** : choisis la VM, sa **clé** est reprise de l'inventaire (sinon choisis-la parmi tes clés privées de
   `~/.ssh`) → `ssh -i <clé> <hôte>` ;
-- des commandes à lancer **sur la VM** (après le ssh) : mises à jour en attente (**MAJ (apt)**, **MAJ (dnf)**),
-  **sécurité seule**, **reboot requis ?**, **noyau et boot**, **historique** des derniers paquets, **redémarrer** (dans
-  1 min, à valider) ; sous Windows, elles s'activent une fois le terminal connecté en ssh ;
+- **relevé patch** / **relevé Windows** : l'état réel de la VM connectée (dernier patch, mises à jour, sécurité,
+  redémarrage), qui met l'inventaire à jour, voir [Relevé patch](#relevé-patch--létat-réel-de-la-vm) ;
+- **vérifs VM** : la sous-page des vérifications détaillées à lancer **sur la VM** (après le ssh ; le relevé les
+  résume) : mises à jour en attente (**MAJ (apt)**, **MAJ (dnf)**), **sécurité seule**, **reboot requis ?**, **noyau
+  et boot**, **historique** des derniers paquets ; sous Windows, elles s'activent une fois le terminal connecté en ssh ;
+- **redémarrer** : redémarre la VM dans 1 min (tapée, à valider) ;
 - **correctifs Windows** : les 10 derniers KB installés (PowerShell) ;
 - **MySQL InnoDB Cluster**, depuis un terminal connecté à un nœud du cluster (lecture seule, mysqlsh demande le mot
   de passe root dans le terminal ; le deck ne le voit pas) :
@@ -33,7 +36,7 @@ Active-la dans **Réglages › Rubriques** (case **Patchs**). Elle contient :
 | Couleur du voyant | Signification |
 |---|---|
 | 🟢 vert | prochain patch dans plus de 7 jours |
-| 🟠 orange | dans 7 jours ou moins, ou date à planifier |
+| 🟠 orange | dans 7 jours ou moins, date à planifier, ou mises à jour de sécurité en attente (relevé) |
 | 🔴 rouge | demain, aujourd'hui, ou **en retard** |
 
 **Alertes** : comme pour les certificats, un message dans le deck et une notification du système (si autorisée avec la
@@ -44,6 +47,39 @@ l'inventaire viennent en tête**, par ordre alphabétique, avec leur nom et leur
 hôtes de `~/.ssh/config`. Tape quelques lettres (nom de VM, hôte ou environnement) pour filtrer.
 
 ![Choisir une VM de l'inventaire](img/patchs-ssh-vm.jpg)
+
+## Relevé patch : l'état réel de la VM
+
+![Relevé d'une VM : badges dans l'inventaire](img/patchs-releve.jpg)
+
+Plutôt que de cliquer **Patché** à la main, fais le relevé sur la VM : connecte-toi en ssh (bastion compris), puis
+touche **relevé patch** (rubrique Patchs). Elle lance une commande **en lecture seule, sans sudo**, qui lit sur la VM :
+
+| | RHEL / Rocky (dnf, yum) | Debian / Ubuntu (apt) |
+|---|---|---|
+| Dernier patch | date du dernier paquet installé (`rpm -qa --last`) | dernière modification des paquets (`/var/lib/dpkg/status`) |
+| Mises à jour en attente | `dnf check-update` | `apt list --upgradable` |
+| Dont sécurité | `dnf updateinfo list --security` | paquets venant de `-security` |
+| Redémarrage requis | `needs-restarting -r` | `/var/run/reboot-required` |
+
+Elle affiche une ligne `DECK-PATCH host=… last=… pending=… security=… reboot=…`, que le deck lit dans la sortie du
+terminal. Il met alors à jour **la VM à laquelle le terminal est connecté** (le cadre de couleur ; sinon, la VM dont le
+nom correspond au nom d'hôte renvoyé) :
+
+- **dernier patch** = la date lue sur la VM, **prochain patch** recalculé avec la fréquence ; tu patches, tu
+  redémarres, tu refais le relevé : plus besoin de **Patché** ;
+- **badges** sous la date : « 🛡 3 sécurité », « 12 MAJ », « ↻ reboot requis » ou « ✓ à jour », et l'heure du relevé ;
+- **mises à jour de sécurité en attente = VM en orange**, même si son prochain patch est loin : voyant (« sécu »),
+  alertes, filtre d'état, tableau de bord et ordre de patch en tiennent compte ;
+- **redémarrage requis** : badge et point de vigilance, sans changer la couleur ;
+- une ligne dans le **journal** (et donc le rapport d'intervention).
+
+**relevé Windows** fait de même sur un serveur Windows, dans une session PowerShell : date du dernier correctif (KB)
+et redémarrage requis (le nombre de mises à jour en attente n'est pas relevé).
+
+Le deck ne se connecte jamais seul à la VM et n'y envoie rien : c'est ton terminal qui lance la commande, le deck ne
+fait que lire la ligne repère. La commande imprime `DECK-%s … PATCH` : son propre texte, affiché à la frappe, n'est
+jamais pris pour un résultat.
 
 ## L'inventaire
 

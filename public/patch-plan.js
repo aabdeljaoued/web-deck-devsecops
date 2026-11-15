@@ -22,7 +22,7 @@ function clusterNodes(vms) {
 }
 
 /**
- * Ordre de patch proposé pour les VMs en retard ou dues dans `horizon` jours :
+ * Ordre de patch proposé pour les VMs en retard, dues dans `horizon` jours ou avec de la sécurité en attente :
  * - un groupe par cluster concerné (tous ses nœuds suivis : ils se patchent ensemble), un groupe par VM seule ;
  * - dans un cluster : les SECONDARY d'abord, un nœud à la fois, puis bascule du PRIMARY vers un nœud déjà patché,
  *   et l'ancien PRIMARY en dernier ;
@@ -30,13 +30,14 @@ function clusterNodes(vms) {
  */
 export function patchPlan(vms, { today = new Date(), horizon = 7 } = {}) {
     const days = (v) => daysUntil(v.nextPatch, today);
-    const due = (v) => days(v) !== null && days(v) <= horizon;
+    // Due : en retard, dans l'horizon, ou avec des mises à jour de sécurité en attente (relevé fait sur la VM)
+    const due = (v) => (days(v) !== null && days(v) <= horizon) || (v.check?.security ?? 0) > 0;
     const groups = [];
     for (const [cluster, nodes] of clusterNodes(vms)) {
         if (!nodes.some(due)) continue;
         const primary = nodes.find((v) => v.role === "primary") ?? null;
         const secondaries = nodes.filter((v) => v !== primary).sort((a, b) => (days(a) ?? 1e6) - (days(b) ?? 1e6) || byName(a, b));
-        const step = (v, note = "") => ({ kind: "patch", vm: v.name, role: v.role ?? "", days: days(v), due: due(v), note });
+        const step = (v, note = "") => ({ kind: "patch", vm: v.name, role: v.role ?? "", days: days(v), due: due(v), security: v.check?.security ?? 0, note });
         const steps = secondaries.map((v) => step(v));
         if (primary) {
             if (secondaries.length) steps.push({ kind: "switch", from: primary.name, to: secondaries[0].name });
@@ -44,13 +45,13 @@ export function patchPlan(vms, { today = new Date(), horizon = 7 } = {}) {
         }
         groups.push({
             env: nodes[0].env, cluster, vms: nodes.map((v) => v.name),
-            urgency: Math.min(...nodes.filter(due).map(days)),
+            urgency: Math.min(...nodes.filter(due).map((v) => days(v) ?? horizon)),
             warning: !primary && nodes.length > 1 ? "PRIMARY non renseigné : vérifie-le (cluster status) avant de commencer" : "",
             steps
         });
     }
     for (const v of live(vms).filter((x) => !x.cluster && due(x))) {
-        groups.push({ env: v.env, cluster: null, vms: [v.name], urgency: days(v), warning: "", steps: [{ kind: "patch", vm: v.name, role: "", days: days(v), due: true, note: "" }] });
+        groups.push({ env: v.env, cluster: null, vms: [v.name], urgency: days(v), warning: "", steps: [{ kind: "patch", vm: v.name, role: "", days: days(v), due: true, security: v.check?.security ?? 0, note: "" }] });
     }
     return groups.sort((a, b) => envRank(a.env) - envRank(b.env) || a.urgency - b.urgency || (a.cluster ?? a.vms[0]).localeCompare(b.cluster ?? b.vms[0], "fr", { numeric: true }));
 }
@@ -67,7 +68,7 @@ export function planMarkdown(plan, { today = new Date() } = {}) {
             n += 1;
             lines.push(s.kind === "switch"
                 ? `${n}. Basculer le PRIMARY de ${s.from} vers ${s.to} (\`dba.getCluster().setPrimaryInstance('${s.to}')\`)`
-                : `${n}. Patcher **${s.vm}**${s.role ? ` (${s.role.toUpperCase()}${s.note ? `, ${s.note}` : ""})` : ""} · ${when(s.days)}`);
+                : `${n}. Patcher **${s.vm}**${s.role ? ` (${s.role.toUpperCase()}${s.note ? `, ${s.note}` : ""})` : ""} · ${when(s.days)}${s.security ? ` · ${s.security} MAJ de sécurité en attente` : ""}`);
         }
         if (g.cluster) lines.push("", "Entre deux nœuds : `cluster status`, tous les membres ONLINE avant de passer au suivant.");
         lines.push("");
@@ -87,7 +88,7 @@ export const appKey = (name) => {
 /**
  * Points de vigilance, du plus grave au moins grave (critical, warning, info), chacun avec les VMs concernées :
  * deux nœuds d'un cluster le même jour, majorité des nœuds en retard, PRIMARY prévu avant ses SECONDARY,
- * PRIMARY non renseigné, production prévue avant sa recette, cluster MySQL sans VIP.
+ * PRIMARY non renseigné, production prévue avant sa recette, cluster MySQL sans VIP, redémarrage requis (relevé).
  */
 export function patchRisks(vms, clusters = {}, { today = new Date() } = {}) {
     const days = (v) => daysUntil(v.nextPatch, today);
@@ -130,6 +131,9 @@ export function patchRisks(vms, clusters = {}, { today = new Date() } = {}) {
         add("warning", `${label(prod[0])} (production, le ${frDay(prod[0].nextPatch)}) est prévu avant ${label(other[0])} (${other[0].env}, le ${frDay(other[0].nextPatch)})`,
             [...new Set([...prod, ...other].map((v) => v.name))].sort());
     }
+    // Redémarrage requis d'après le dernier relevé (noyau ou bibliothèques mis à jour, pas encore pris en compte)
+    const reboot = live(vms).filter((v) => v.check?.reboot).map((v) => v.name).sort();
+    if (reboot.length) add("info", `${reboot.length} VM(s) avec redémarrage requis : ${reboot.slice(0, 6).join(", ")}${reboot.length > 6 ? "…" : ""}`, reboot);
     const rank = { critical: 0, warning: 1, info: 2 };
     return risks.sort((a, b) => rank[a.level] - rank[b.level] || a.text.localeCompare(b.text, "fr"));
 }

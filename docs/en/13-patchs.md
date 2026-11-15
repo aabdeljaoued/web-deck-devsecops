@@ -15,9 +15,12 @@ Enable it in **Settings › Sections** (**Patches** box). It contains:
 - **ssh VM**: pick the VM in the list;
 - **ssh -i VM**: pick the VM; its **key** is taken from the inventory (otherwise pick one of your private keys in
   `~/.ssh`) → `ssh -i <key> <host>`;
-- commands to run **on the VM** (after the ssh): pending updates (**updates (apt)**, **updates (dnf)**), **security
-  only**, **reboot needed?**, **kernel & boot**, **history** of the latest packages, **reboot** (in 1 min, to
-  confirm); on Windows, they are enabled once the terminal is connected over ssh;
+- **patch survey** / **Windows survey**: the connected VM's real state (last patch, updates, security, reboot), which
+  updates the inventory, see [Patch survey](#patch-survey-the-vms-real-state);
+- **VM checks**: the sub-page of detailed checks to run **on the VM** (after the ssh; the survey sums them up): pending
+  updates (**updates (apt)**, **updates (dnf)**), **security only**, **reboot needed?**, **kernel & boot**, **history**
+  of the latest packages; on Windows, they are enabled once the terminal is connected over ssh;
+- **reboot**: reboots the VM in 1 min (typed, to confirm);
 - **Windows hotfixes**: the last 10 KBs installed (PowerShell);
 - **MySQL InnoDB Cluster**, from a terminal connected to a node of the cluster (read only; mysqlsh asks for the root
   password in the terminal; the deck does not see it):
@@ -32,7 +35,7 @@ Enable it in **Settings › Sections** (**Patches** box). It contains:
 | Indicator color | Meaning |
 |---|---|
 | 🟢 green | next patch in more than 7 days |
-| 🟠 orange | in 7 days or less, or date to schedule |
+| 🟠 orange | in 7 days or less, date to schedule, or pending security updates (survey) |
 | 🔴 red | tomorrow, today, or **overdue** |
 
 **Alerts**: as for certificates, a message in the deck and a system notification (if allowed with the terminals'
@@ -43,6 +46,39 @@ alphabetical order, with their name and environment on the right; then the hosts
 letters (VM name, host or environment) to filter.
 
 ![Picking an inventory VM](../img/patchs-ssh-vm.jpg)
+
+## Patch survey: the VM's real state
+
+![Survey of a VM: badges in the inventory](../img/patchs-releve.jpg)
+
+Rather than clicking **Patched** by hand, survey the VM: connect over ssh (bastion included), then the **patch
+survey** key (Patches section). It runs a **read-only command, without sudo**, which reads on the VM:
+
+| | RHEL / Rocky (dnf, yum) | Debian / Ubuntu (apt) |
+|---|---|---|
+| Last patch | date of the last installed package (`rpm -qa --last`) | last change of the packages (`/var/lib/dpkg/status`) |
+| Pending updates | `dnf check-update` | `apt list --upgradable` |
+| Of which security | `dnf updateinfo list --security` | packages from `-security` |
+| Reboot required | `needs-restarting -r` | `/var/run/reboot-required` |
+
+It prints a `DECK-PATCH host=… last=… pending=… security=… reboot=…` line, which the deck reads in the terminal
+output. It then updates **the VM the terminal is connected to** (the colored frame; otherwise, the VM whose name
+matches the returned host name):
+
+- **last patch** = the date read on the VM, **next patch** recomputed with the frequency; you patch, reboot, survey
+  again: no more need for **Patched**;
+- **badges** under the date: "🛡 3 security", "12 updates", "↻ reboot needed" or "✓ up to date", and the survey time;
+- **pending security updates = orange VM**, even if its next patch is far away: indicator ("sec"), alerts, state
+  filter, dashboard and patch order take it into account;
+- **reboot required**: badge and watch point, without changing the color;
+- a line in the **log** (and thus the intervention report).
+
+**Windows survey** does the same on a Windows server, in a PowerShell session: date of the last hotfix (KB) and reboot
+required (the number of pending updates is not surveyed).
+
+The deck never connects to the VM by itself and sends nothing to it: your terminal runs the command, the deck only
+reads the marker line. The command prints `DECK-%s … PATCH`: its own text, shown as you type, is never taken for a
+result.
 
 ## The inventory
 

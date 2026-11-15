@@ -88,8 +88,59 @@ export function cleanVm(def) {
         lastPatch,
         // Prochain patch déduit du dernier et de la fréquence s'il n'est pas donné
         nextPatch: nextPatch || (lastPatch && every ? addDays(lastPatch, every) : ""),
-        everyDays: every
+        everyDays: every,
+        // Dernier relevé fait sur la VM (touche « relevé patch ») ; null si jamais relevée
+        check: cleanCheck(def?.check)
     };
+}
+
+// ---------- Relevé fait sur la VM (touche « relevé patch », dans un terminal connecté) ----------
+
+/**
+ * Ligne repère affichée par la commande de relevé : « DECK-PATCH host=… os=… last=AAAA-MM-JJ pending=N security=N
+ * reboot=yes|no ». La commande l'imprime avec printf('DECK-%s', 'PATCH') : son propre texte (écho de la frappe) ne
+ * contient donc pas « DECK-PATCH » et n'est jamais pris pour un résultat.
+ */
+export const SURVEY_LINE = /DECK-PATCH host=(\S*) os=(\S*) last=(\S*) pending=(\S*) security=(\S*) reboot=(\S*)\r?\n/;
+
+const count = (v) => (/^\d{1,5}$/.test(String(v ?? "")) ? Number(v) : null);
+
+/** Relevé validé : { at, host, os, last, pending, security, reboot } ; null si absent ou illisible. */
+export function cleanCheck(v) {
+    if (!v || typeof v !== "object") return null;
+    const at = typeof v.at === "string" && !Number.isNaN(Date.parse(v.at)) ? new Date(v.at).toISOString() : null;
+    if (!at) return null;
+    return {
+        at,
+        host: /^[A-Za-z0-9_.-]{1,120}$/.test(v.host ?? "") ? v.host : "",
+        os: /^[A-Za-z0-9_.-]{1,40}$/.test(v.os ?? "") ? v.os : "",
+        last: ISO_DAY.test(v.last ?? "") && !Number.isNaN(Date.parse(v.last)) ? v.last : "",
+        pending: count(v.pending),
+        security: count(v.security),
+        reboot: v.reboot === true || v.reboot === "yes"
+    };
+}
+
+/** Ligne repère (sortie du terminal, codes de couleur retirés) -> relevé, ou null. */
+export function parseSurvey(text, now = new Date()) {
+    const m = SURVEY_LINE.exec(text);
+    if (!m) return null;
+    const [, host, os, last, pending, security, reboot] = m;
+    return cleanCheck({ at: now.toISOString(), host, os, last, pending, security, reboot });
+}
+
+/** Mises à jour de sécurité en attente d'après le dernier relevé (VM suivie seulement). */
+export const securityPending = (vm) => !vm.decommissioned && (vm.check?.security ?? 0) > 0;
+
+/**
+ * Niveau d'une VM (voyant, alertes, synthèse, échéances) : rouge à J-1, le jour même ou en retard ; orange à 7 jours
+ * ou moins, à planifier, ou avec des mises à jour de sécurité en attente (relevé) ; vert sinon.
+ */
+export function vmLevel(vm, now = new Date()) {
+    if (!vm.nextPatch) return "orange";
+    const d = daysUntil(vm.nextPatch, now);
+    if (d <= 1) return "rouge";
+    return d <= 7 || securityPending(vm) ? "orange" : "ok";
 }
 
 /** Profils de VM : comportement propre (vérifications, garde-fous) ; "" = standard. */
@@ -217,7 +268,8 @@ export class Patches {
         if (id) {
             const i = this.vms.findIndex((v) => v.id === id);
             if (i < 0) throw new Error("VM introuvable");
-            this.vms[i] = { id, ...vm };
+            // Le formulaire ne renvoie pas le relevé : celui de la VM est conservé
+            this.vms[i] = { id, ...vm, check: def?.check === undefined ? this.vms[i].check ?? null : vm.check };
         } else {
             if (this.vms.length >= MAX_VMS) throw new Error(`${MAX_VMS} VMs au plus`);
             this.vms.push({ id: newId(), ...vm });
@@ -235,6 +287,26 @@ export class Patches {
         else if (vm.nextPatch <= vm.lastPatch) vm.nextPatch = "";
         this.write();
         return vm;
+    }
+
+    /**
+     * Relevé reçu d'une VM : gardé sur la VM ; la date du dernier patch lue sur la VM remplace celle de l'inventaire
+     * (si elle n'est pas dans le futur) et le prochain patch est recalculé avec la fréquence.
+     * Retourne { vm, lastChanged } (lastChanged : ancienne date, ou null si inchangée).
+     */
+    applySurvey(name, check, now = new Date()) {
+        const vm = this.vms.find((v) => v.name === name);
+        if (!vm) throw new Error("VM introuvable");
+        vm.check = cleanCheck(check);
+        let lastChanged = null;
+        if (vm.check?.last && vm.check.last <= today(now) && vm.check.last !== vm.lastPatch) {
+            lastChanged = vm.lastPatch || "";
+            vm.lastPatch = vm.check.last;
+            if (vm.everyDays) vm.nextPatch = addDays(vm.lastPatch, vm.everyDays);
+            else if (vm.nextPatch && vm.nextPatch <= vm.lastPatch) vm.nextPatch = "";
+        }
+        this.write();
+        return { vm, lastChanged };
     }
 
     get(id) {
@@ -264,7 +336,7 @@ export class Patches {
             if (seen.has(key)) { errors.push(`ligne ${line} : « ${vm.name} » apparaît deux fois dans le fichier`); continue; }
             seen.add(key);
             const i = next.findIndex((v) => v.name.toLowerCase() === key);
-            if (i >= 0) { next[i] = { id: next[i].id, ...vm }; updated++; }
+            if (i >= 0) { next[i] = { id: next[i].id, ...vm, check: vm.check ?? next[i].check ?? null }; updated++; }
             else { next.push({ id: newId(), ...vm }); added++; }
         }
         if (next.length > MAX_VMS) throw new Error(`l'inventaire dépasserait ${MAX_VMS} VMs`);

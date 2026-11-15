@@ -2,7 +2,7 @@
 import { execFile } from "node:child_process";
 
 import { checkCert } from "./certs.mjs";
-import { daysUntil } from "./patches.mjs";
+import { daysUntil, vmLevel } from "./patches.mjs";
 import { EventEmitter } from "node:events";
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { stat } from "node:fs/promises";
@@ -191,15 +191,15 @@ export class StatusHub extends EventEmitter {
     refreshPatches() {
         const vms = this.patchList?.() ?? [];
         if (!vms.length) return this.publish("patches", { bg: "#455A64", title: "PATCHS", lines: ["aucune", "VM"], footer: "à renseigner", items: [] });
-        const items = vms.map((vm) => {
-            const days = vm.nextPatch ? daysUntil(vm.nextPatch) : null;
-            const level = days === null ? "orange" : days <= 1 ? "rouge" : days <= 7 ? "orange" : "ok";
-            return { ...vm, days, level };
-        }).sort((a, b) => (a.days ?? -1e6) - (b.days ?? -1e6));
+        // Niveau commun (patches.mjs) : sécurité en attente (relevé) = orange même si la date est loin
+        const rank = { rouge: 0, orange: 1, ok: 2 };
+        const items = vms.map((vm) => ({ ...vm, days: vm.nextPatch ? daysUntil(vm.nextPatch) : null, level: vmLevel(vm) }))
+            .sort((a, b) => rank[a.level] - rank[b.level] || (a.days ?? -1e6) - (b.days ?? -1e6));
         const worst = items[0];
         // Libellés courts pour la touche : J-5 (dans 5 jours), J (aujourd'hui), J+2 (2 jours de retard)
-        const label = (v) => (v.days === null ? "à planifier" : v.days < 0 ? `J+${-v.days}` : v.days === 0 ? "J" : `J-${v.days}`);
+        const label = (v) => (v.days !== null && v.days > 7 && v.check?.security ? "sécu" : v.days === null ? "à planifier" : v.days < 0 ? `J+${-v.days}` : v.days === 0 ? "J" : `J-${v.days}`);
         const long = (v) => (v.days === null ? "à planifier" : v.days < 0 ? `en retard de ${-v.days} j` : v.days === 0 ? "aujourd'hui" : v.days === 1 ? "demain" : `dans ${v.days} j`);
+        const sec = (v) => (v.check?.security ? ` · ${v.check.security} MAJ de sécurité` : "");
         this.levelAlerts(this.patchAlertFile, items.map((v) => ({ target: v.name, level: v.level, days: v.days, until: v.nextPatch })), "patch-alert");
         this.publish("patches", {
             bg: worst.level === "rouge" ? "#C62828" : worst.level === "orange" ? "#EF6C00" : "#2E7D32",
@@ -207,7 +207,7 @@ export class StatusHub extends EventEmitter {
             // Délai en gros (J+2, J-3), nom de la VM en bas de la touche
             lines: [label(worst)],
             footer: worst.name.length > 13 ? `${worst.name.slice(0, 12)}…` : worst.name,
-            detail: items.map((v) => `${v.name} : ${long(v)}${v.nextPatch ? ` (${v.nextPatch.split("-").reverse().join("/")})` : ""}`).join("\n"),
+            detail: items.map((v) => `${v.name} : ${long(v)}${v.nextPatch ? ` (${v.nextPatch.split("-").reverse().join("/")})` : ""}${sec(v)}`).join("\n"),
             items: items.map((v) => ({ id: v.id, name: v.name, env: v.env, days: v.days, level: v.level, nextPatch: v.nextPatch, lastPatch: v.lastPatch }))
         });
     }

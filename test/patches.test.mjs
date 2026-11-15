@@ -8,7 +8,7 @@ import { tmpDir } from "./helpers.mjs";
 
 test("VM : champs vérifiés, prochain patch déduit du dernier et de la fréquence", () => {
     const vm = cleanVm({ name: " app-prod-01 ", env: "production", lastPatch: "2026-10-01", everyDays: 30, description: "API\npaiement" });
-    assert.deepEqual(vm, { name: "app-prod-01", host: "", identity: "", env: "production", description: "API paiement", tags: [], cluster: "", clusterSet: "", profile: "", role: "", decommissioned: false, decommissionedAt: "", lastPatch: "2026-10-01", nextPatch: "2026-10-31", everyDays: 30 });
+    assert.deepEqual(vm, { name: "app-prod-01", host: "", identity: "", env: "production", description: "API paiement", tags: [], cluster: "", clusterSet: "", profile: "", role: "", decommissioned: false, decommissionedAt: "", lastPatch: "2026-10-01", nextPatch: "2026-10-31", everyDays: 30, check: null });
     // Cluster, ClusterSet, profil (saisie libre normalisée)
     const node = cleanVm({ name: "mysql-rec-02", nextPatch: "2026-12-01", cluster: " CL-MYSQL-APP-REC ", clusterSet: "CS_MYSQL_APP", profile: "MySQL" });
     assert.deepEqual([node.cluster, node.clusterSet, node.profile], ["CL-MYSQL-APP-REC", "CS_MYSQL_APP", "mysql-innodb"]);

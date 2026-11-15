@@ -397,6 +397,15 @@ function buildCatalog(ctx) {
         // Sous-page : commandes à lancer DANS une session « mysqlsh --js » (touche mysqlsh (JS)) ; {instance} = nœud du
         // cluster de la VM connectée, choisi dans l'inventaire ; remédiation tapée sans Entrée
         pages: {
+            // Vérifications détaillées, à lancer sur la VM après le ssh
+            "patchs-verifs": { label: "vérifs VM", keys: [
+                { ...textIcon("MAJ (apt)", "apt", "sudo apt-get update -qq && apt list --upgradable 2>/dev/null | tail -n +2", true, C.patch, "lucide-package-search"), unix: true },
+                { ...textIcon("MAJ (dnf)", "dnf", "sudo dnf -q check-update", true, C.patch, "lucide-package-search"), unix: true },
+                { ...textIcon("sécurité seule", "sec", "sudo dnf -q updateinfo list --security 2>/dev/null || apt list --upgradable 2>/dev/null | grep -i security", true, C.sec, "lucide-shield-check"), unix: true },
+                { ...textIcon("reboot requis ?", "↻", "[ -f /var/run/reboot-required ] && cat /var/run/reboot-required* || needs-restarting -r 2>/dev/null || echo 'aucun redémarrage signalé'", true, C.patch, "lucide-refresh-ccw"), unix: true },
+                { ...textIcon("noyau et boot", "ℹ", "uname -r; uptime; who -b 2>/dev/null", true, C.patch, "lucide-server-cog"), unix: true },
+                { ...textIcon("historique", "🕘", "(grep -h ' upgrade ' /var/log/dpkg.log* 2>/dev/null | tail -20) || sudo dnf history list | head -15", true, C.patch, "lucide-history"), unix: true }
+            ]},
             "patchs-mysql": { label: "MySQL Cluster", keys: [
                 { ...textIcon("status", "⬡", "dba.getCluster().status()", true, C.mysql, "lucide-list-checks"), unix: true },
                 { ...textIcon("status étendu", "⬡+", "dba.getCluster().status({extended: 1})", true, C.mysql, "lucide-file-search"), unix: true },
@@ -418,12 +427,12 @@ function buildCatalog(ctx) {
             status("patches", "patchs", "🩹", C.patch),
             withPick(textIcon("ssh VM", "ssh", "ssh ", false, C.patch, "lucide-log-in"), "ssh {host}"),
             withPick(textIcon("ssh -i VM", "-i", "ssh -i ", false, C.patch, "lucide-key-square"), "ssh -i {identity} {host}"),
-            { ...textIcon("MAJ (apt)", "apt", "sudo apt-get update -qq && apt list --upgradable 2>/dev/null | tail -n +2", true, C.patch, "lucide-package-search"), unix: true },
-            { ...textIcon("MAJ (dnf)", "dnf", "sudo dnf -q check-update", true, C.patch, "lucide-package-search"), unix: true },
-            { ...textIcon("sécurité seule", "sec", "sudo dnf -q updateinfo list --security 2>/dev/null || apt list --upgradable 2>/dev/null | grep -i security", true, C.sec, "lucide-shield-check"), unix: true },
-            { ...textIcon("reboot requis ?", "↻", "[ -f /var/run/reboot-required ] && cat /var/run/reboot-required* || needs-restarting -r 2>/dev/null || echo 'aucun redémarrage signalé'", true, C.patch, "lucide-refresh-ccw"), unix: true },
-            { ...textIcon("noyau et boot", "ℹ", "uname -r; uptime; who -b 2>/dev/null", true, C.patch, "lucide-server-cog"), unix: true },
-            { ...textIcon("historique", "🕘", "(grep -h ' upgrade ' /var/log/dpkg.log* 2>/dev/null | tail -20) || sudo dnf history list | head -15", true, C.patch, "lucide-history"), unix: true },
+            // Relevé patch : commande en lecture seule (sans sudo) qui imprime une ligne repère « DECK-PATCH … » ; le deck
+            // la lit dans la sortie et met à jour la VM connectée (dernier patch, MAJ en attente, sécurité, redémarrage)
+            { ...textIcon("relevé patch", "✓", "( o=$(. /etc/os-release 2>/dev/null && echo \"$ID$VERSION_ID\"); l=; p=; s=; r=no; if command -v dnf >/dev/null 2>&1 || command -v yum >/dev/null 2>&1; then m=$(command -v dnf || command -v yum); l=$(date -d \"$(LC_ALL=C rpm -qa --last 2>/dev/null | head -1 | sed 's/^[^ ]* *//')\" +%F 2>/dev/null); p=$($m -q check-update 2>/dev/null | grep -cE '^[[:alnum:]_.+-]+\\.(x86_64|noarch|i686|aarch64|ppc64le|s390x) '); s=$($m -q updateinfo list --security 2>/dev/null | grep -cE '\\.(x86_64|noarch|i686|aarch64|ppc64le|s390x)$'); needs-restarting -r >/dev/null 2>&1; [ $? -eq 1 ] && r=yes; elif command -v apt >/dev/null 2>&1; then l=$(date -r /var/lib/dpkg/status +%F 2>/dev/null); u=$(apt list --upgradable 2>/dev/null); p=$(printf '%s\\n' \"$u\" | grep -c upgradable); s=$(printf '%s\\n' \"$u\" | grep -c -- '-security'); [ -f /var/run/reboot-required ] && r=yes; fi; printf 'DECK-%s host=%s os=%s last=%s pending=%s security=%s reboot=%s\\n' PATCH \"$(hostname)\" \"$o\" \"$l\" \"$p\" \"$s\" \"$r\" )", true, C.patch, "lucide-clipboard-check"), unix: true },
+            textIcon("relevé Windows", "✓", sh(null, "& { $h = Get-HotFix | Where-Object InstalledOn | Sort-Object InstalledOn -Descending | Select-Object -First 1; $l = if ($h) { $h.InstalledOn.ToString('yyyy-MM-dd') } else { '' }; $r = if (Test-Path 'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\WindowsUpdate\\Auto Update\\RebootRequired') { 'yes' } else { 'no' }; 'DECK-{0} host={1} os=windows last={2} pending= security= reboot={3}' -f 'PATCH', $env:COMPUTERNAME, $l, $r }", null), true, C.patch, "lucide-clipboard-check"),
+            // Vérifications détaillées sur la VM (le relevé les résume) : sous-page, pour garder la rubrique sous 17 touches
+            folder("vérifs VM", "🔍", "patchs-verifs", C.patch, "lucide-search-check"),
             textIcon("correctifs Windows", "KB", sh(null, "Get-HotFix | Sort-Object InstalledOn -Descending | Select-Object -First 10 HotFixID, Description, InstalledOn", null), true, C.patch, "lucide-shield-check"),
             // MySQL InnoDB Cluster : depuis un terminal connecté à un nœud (mot de passe root demandé par mysqlsh)
             { ...textIcon("cluster status", "⬡", "mysqlsh root@`hostname` -- cluster status", true, C.patch, "lucide-database"), unix: true },

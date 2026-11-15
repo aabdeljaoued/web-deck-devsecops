@@ -37,6 +37,7 @@ que soit la section ; **Enregistrer** enregistre toutes les sections d'un coup. 
 Toute l'interface est traduite : en-tête, accueil et voyants, toutes les rubriques (noms des touches, bulles d'aide),
 **Réglages**, **Patchs** (inventaire, clusters, tableau de bord), coffre, favoris, palette ⌘K, terminaux (barre, recherche,
 diffusion, enregistrement), échéances, rapport et messages ; les dates suivent la langue (jour/mois dans les deux cas).
+La **documentation** (bouton **?**) s'ouvre dans la langue de l'interface ([version anglaise](en/README.md)).
 
 ![Accueil en anglais : rubrique K8s / OCP et bulle d'aide d'une touche](img/accueil-anglais.jpg)
 
@@ -44,8 +45,9 @@ diffusion, enregistrement), échéances, rapport et messages ; les dates suivent
 
 ![Échéances en anglais](img/echeances-anglais.jpg)
 
-Restent en français : la **documentation** (pages et captures), et les **documents produits pour le client** (rapport
-d'intervention, synthèse du client, fichier `.ics` des échéances), à relire avant diffusion.
+Restent en français les **documents produits pour le client** (rapport d'intervention, synthèse du client, fichier
+`.ics` des échéances), à relire avant diffusion. Les captures de la documentation anglaise montrent l'interface en
+français.
 
 Ce que tu saisis n'est jamais traduit : noms de VMs, descriptions, tags, noms de missions, commandes, sorties des
 terminaux. Les valeurs à taper restent les mêmes dans les deux langues (environnements `production`, `recette`… dans les

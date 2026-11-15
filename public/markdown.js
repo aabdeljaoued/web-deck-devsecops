@@ -119,7 +119,8 @@ const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, 
 function docsInline(t, docs) {
     if (!docs) return t;
     return t
-        .replace(/!\[([^\]]*)\]\((img\/[\w.-]+\.(?:jpe?g|png|svg|gif))\)/g, '<img src="/docs/$2" alt="$1" loading="lazy">')
+        // Pages anglaises (docs/en/) : images partagées, « ../img/… »
+        .replace(/!\[([^\]]*)\]\((?:\.\.\/)?(img\/[\w.-]+\.(?:jpe?g|png|svg|gif))\)/g, '<img src="/docs/$2" alt="$1" loading="lazy">')
         .replace(/\[([^\]]+)\]\(([\w-]+\.md)(#[^)\s]*)?\)/g, '<a href="#" data-doc="$2">$1</a>');
 }
 

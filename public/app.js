@@ -5,6 +5,7 @@ import { WebLinksAddon } from "/vendor/addon-web-links.mjs";
 import { SearchAddon } from "/vendor/addon-search.mjs";
 import { toAnsi, toHtml } from "/markdown.js";
 import { setLang, sourceText, currentLang, t as tr } from "/i18n.js";
+import { patchPlan, patchRisks, planMarkdown } from "/patch-plan.js";
 
 /** Langue des dates affichées (jour/mois dans les deux cas : en-GB plutôt que en-US). */
 const dateLocale = () => (currentLang() === "en" ? "en-GB" : "fr-FR");
@@ -3795,12 +3796,19 @@ function applyShare(on, announce = false) {
 // ---------- Documentation (docs/, Doc as Code) ----------
 
 /** Ouvre la documentation : sommaire à gauche (liens du sommaire docs/README.md), page à droite. */
+/** Dossier de la documentation dans la langue de l'interface (docs/en/ en anglais). */
+const docsBase = () => (currentLang() === "en" ? "/docs/en/" : "/docs/");
+
 async function openDocs(page = "README.md") {
     $("#docs").hidden = false;
-    if (!$("#docs-nav").childElementCount) {
+    // Sommaire reconstruit si la langue a changé depuis la dernière ouverture
+    if ($("#docs-nav").dataset.base !== docsBase()) {
+        $("#docs-nav").replaceChildren();
+        $("#docs-nav").dataset.base = docsBase();
         try {
-            const summary = await (await fetch("/docs/README.md")).text();
-            const links = [["README.md", "Accueil de la documentation"], ...[...summary.matchAll(/^\d+\.\s+\[([^\]]+)\]\(([\w-]+\.md)\)/gm)].map((m) => [m[2], m[1]])];
+            const summary = await (await fetch(`${docsBase()}README.md`)).text();
+            const home = currentLang() === "en" ? "Documentation home" : "Accueil de la documentation";
+            const links = [["README.md", home], ...[...summary.matchAll(/^\d+\.\s+\[([^\]]+)\]\(([\w-]+\.md)\)/gm)].map((m) => [m[2], m[1]])];
             $("#docs-nav").replaceChildren(...links.map(([file, label]) => {
                 const a = Object.assign(document.createElement("a"), { href: "#", textContent: label });
                 a.dataset.doc = file;
@@ -3814,7 +3822,7 @@ async function openDocs(page = "README.md") {
 async function showDoc(page) {
     const box = $("#docs-content");
     try {
-        const res = await fetch(`/docs/${page}`);
+        const res = await fetch(`${docsBase()}${page}`);
         if (!res.ok) throw new Error(`page introuvable : ${page}`);
         const md = await res.text();
         box.innerHTML = toHtml(md, { docs: true });   // texte échappé par markdown.js ; images et liens limités à docs/
@@ -3829,7 +3837,8 @@ async function showDoc(page) {
 // ---------- Patchs des VMs (rubrique Patchs) ----------
 
 let patchEditing = null;   // VM en cours de modification (null = nouvelle)
-const patchFilter = { env: null, tags: new Set(), state: null };   // filtres : environnement, tags combinés, état
+// Filtres : environnement, tags combinés, état ; « pick » = sélection venue du tableau de bord ({ label, names })
+const patchFilter = { env: null, tags: new Set(), state: null, pick: null };
 
 /** États filtrables d'une VM (urgence du patch, résultat de la dernière vérification). */
 const live = (pred) => (v) => !v.decommissioned && pred(v);   // VM suivie (hors décommissionnées)
@@ -3894,6 +3903,31 @@ function openPatchDash() {
 /** Élément HTML court. */
 const h = (tag, cls, text, attrs = {}) => Object.assign(document.createElement(tag), { className: cls, ...(text != null ? { textContent: text } : {}), ...attrs });
 
+/** Ouvre l'inventaire sur les VMs d'un élément du tableau de bord (filtre « Sélection », retiré d'un clic). */
+function dashDrill(names, label) {
+    patchFilter.env = null;
+    patchFilter.tags.clear();
+    patchFilter.state = null;
+    patchFilter.pick = { label, names: new Set(names) };
+    $("#patch-search").value = "";
+    $("#patch-dash").hidden = true;
+    openPatches();
+}
+
+/** Élément du tableau de bord cliquable (souris, Entrée ou Espace) : inventaire filtré sur ses VMs. */
+function drillable(el, names, label) {
+    if (!names.length) return el;
+    el.classList.add("dash-click");
+    el.tabIndex = 0;
+    el.setAttribute("role", "button");
+    if (el.dataset.tip) el.dataset.tip += "\nClic : voir dans l'inventaire";
+    else el.title = "Clic : voir dans l'inventaire";
+    const go = (ev) => { ev.stopPropagation(); dashDrill(names, label); };
+    el.addEventListener("click", go);
+    el.addEventListener("keydown", (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); go(ev); } });
+    return el;
+}
+
 function renderPatchDash() {
     if ($("#patch-dash").hidden) return;
     const all = state.patches ?? [];
@@ -3913,13 +3947,14 @@ function renderPatchDash() {
     // 1. Tuiles : les chiffres qui comptent
     const tile = (label, value, sub, cls = "") => { const t = h("div", `dash-tile ${cls}`); t.append(h("span", "dash-tile-label", label), h("span", "dash-tile-value", String(value)), h("span", "dash-tile-sub", sub)); return t; };
     const tiles = h("section", "dash-tiles");
+    const names = (list) => list.map((v) => v.name);
     tiles.append(
-        tile("VMs suivies", vms.length, `${count((v) => v.env === "production")} en production`),
-        tile("En retard ou J-1", byStatus.late, byStatus.late ? "🔴 à patcher maintenant" : "🟢 aucune", byStatus.late ? "critical" : ""),
-        tile("Sous 7 jours", byStatus.soon, byStatus.todo ? `◌ ${byStatus.todo} sans date` : "toutes planifiées", byStatus.soon ? "warning" : ""),
-        tile("Clusters", clusters.length, noPrimary.length ? `★ ${noPrimary.length} sans PRIMARY` : `${count((v) => v.cluster)} nœuds`),
-        tile("VIP", vipCount, `${clusters.filter((c) => state.patchClusters?.[c]?.vips?.length).length} cluster(s) équipé(s)`),
-        tile("Décommissionnées", decom, "hors suivi")
+        drillable(tile("VMs suivies", vms.length, `${count((v) => v.env === "production")} en production`), names(vms), tr("VMs suivies")),
+        drillable(tile("En retard ou J-1", byStatus.late, byStatus.late ? "🔴 à patcher maintenant" : "🟢 aucune", byStatus.late ? "critical" : ""), names(vms.filter((v) => dashStatus(v) === "late")), tr("En retard ou J-1")),
+        drillable(tile("Sous 7 jours", byStatus.soon, byStatus.todo ? `◌ ${byStatus.todo} sans date` : "toutes planifiées", byStatus.soon ? "warning" : ""), names(vms.filter((v) => ["soon", "todo"].includes(dashStatus(v)))), tr("Sous 7 jours")),
+        drillable(tile("Clusters", clusters.length, noPrimary.length ? `★ ${noPrimary.length} sans PRIMARY` : `${count((v) => v.cluster)} nœuds`), names(vms.filter((v) => v.cluster)), tr("Clusters")),
+        drillable(tile("VIP", vipCount, `${clusters.filter((c) => state.patchClusters?.[c]?.vips?.length).length} cluster(s) équipé(s)`), names(vms.filter((v) => state.patchClusters?.[v.cluster]?.vips?.length)), tr("VIP")),
+        drillable(tile("Décommissionnées", decom, "hors suivi"), names(all.filter((v) => v.decommissioned)), tr("Décommissionnées"))
     );
 
     // 2. Patch par environnement : barres empilées par statut (légende + étiquettes + infobulle)
@@ -3937,9 +3972,9 @@ function renderPatchDash() {
             if (!n) continue;
             const seg = h("span", "dash-seg", n / list.length >= 0.12 ? String(n) : "", { style: `flex:${n};background:${color};color:${k === "soon" ? "#0b0b0b" : "#fff"}` });
             seg.dataset.tip = `${env} · ${icon} ${label} : ${n} VM(s)\n${list.filter((v) => dashStatus(v) === k).map((v) => v.name).slice(0, 8).join(", ")}${n > 8 ? "…" : ""}`;
-            bar.append(seg);
+            bar.append(drillable(seg, names(list.filter((v) => dashStatus(v) === k)), `${tr(env)} · ${tr(label)}`));
         }
-        row.append(h("span", "dash-row-label", env), h("div", "dash-row-track", null), h("span", "dash-row-value", String(list.length)));
+        row.append(drillable(h("span", "dash-row-label", env), names(list), tr(env)), h("div", "dash-row-track", null), h("span", "dash-row-value", String(list.length)));
         row.children[1].append(bar);
         envRows.append(row);
     }
@@ -3957,7 +3992,7 @@ function renderPatchDash() {
         col.dataset.tip = `${w.i === 0 ? "Cette semaine" : `Semaine du ${start.toLocaleDateString(dateLocale(), { day: "2-digit", month: "2-digit" })}`} : ${w.list.length} patch(s)${w.list.length ? `\n${w.list.map((v) => v.name).slice(0, 10).join(", ")}${w.list.length > 10 ? "…" : ""}` : ""}`;
         col.append(h("span", "dash-col-value", w.list.length ? String(w.list.length) : ""), h("div", "dash-col-track"), h("span", "dash-col-label", w.i === 0 ? "cette sem." : start.toLocaleDateString(dateLocale(), { day: "2-digit", month: "2-digit" })));
         col.children[1].append(fill);
-        cols.append(col);
+        cols.append(drillable(col, names(w.list), w.i === 0 ? tr("Cette semaine") : tr(`Semaine du ${start.toLocaleDateString(dateLocale(), { day: "2-digit", month: "2-digit" })}`)));
     }
 
     // 4. Clusters : état, PRIMARY, nœuds, VIP
@@ -3983,7 +4018,7 @@ function renderPatchDash() {
             h("span", "dash-cluster-meta", `${state.patchClusters?.[c]?.vips?.length ?? 0} VIP`),
             h("span", "dash-cluster-state", worst === "decom" ? "⚫ décom." : `${st[1]} ${{ late: "en retard", soon: "sous 7 j", todo: "à planifier", ok: "à jour" }[worst]}`, { title: worst === "decom" ? "cluster décommissionné" : st[2] })
         );
-        return row;
+        return drillable(row, names(nodes), `⬡ ${c}`);
     });
 
     // 5. Tags les plus fréquents (classement, une teinte)
@@ -3998,10 +4033,77 @@ function renderPatchDash() {
         bar.dataset.tip = `#${t} : ${n} VM(s)`;
         row.append(h("span", "dash-row-label", `#${t}`), h("div", "dash-row-track"), h("span", "dash-row-value", String(n)));
         row.children[1].append(bar);
-        tags.append(row);
+        tags.append(drillable(row, names(vms.filter((v) => (v.tags ?? []).includes(t))), `#${t}`));
     }
 
     const card = (title, ...content) => { const c = h("section", "dash-card"); c.append(h("h3", "", title), ...content); return c; };
+
+    // Anneaux : état du parc, environnements, état des clusters (répartition d'un tout, d'un coup d'œil)
+    const okCount = byStatus.ok;
+    const statusDonut = dashDonut("État du parc", `${vms.length ? Math.round((okCount / vms.length) * 100) : 0} %`, "à jour",
+        DASH_STATUS.map(([k, , label, color]) => ({ label, value: byStatus[k], color, names: names(vms.filter((v) => dashStatus(v) === k)) })));
+    const otherEnvs = [...new Set(vms.map((v) => v.env))].filter((e) => !DASH_ENVS.includes(e));
+    const envDonut = dashDonut("VMs par environnement", vms.length, "VMs suivies",
+        [...DASH_ENVS, ...otherEnvs].map((e) => ({ label: e, value: count((v) => v.env === e), color: `var(--env-${DASH_ENVS.includes(e) ? DASH_ENVS.indexOf(e) : 4})`, names: names(vms.filter((v) => v.env === e)) })));
+    const clusterState = (c) => {
+        const live = all.filter((v) => v.cluster === c && !v.decommissioned);
+        return !live.length ? "decom" : ["late", "soon", "todo", "ok"].find((k) => live.some((v) => dashStatus(v) === k));
+    };
+    const clusterDonut = dashDonut("État des clusters", clusters.length, "clusters",
+        [...DASH_STATUS.map(([k, , label, color]) => [k, label, color]), ["decom", "décommissionné", "#78909c"]].map(([k, label, color]) => {
+            const list = clusters.filter((c) => clusterState(c) === k);
+            return { label, value: list.length, color, names: names(all.filter((v) => list.includes(v.cluster))) };
+        }), "Clusters");
+    const donuts = h("div", "dash-donuts");
+    donuts.append(statusDonut, envDonut, ...(clusters.length ? [clusterDonut] : []));
+
+    // 6. Points de vigilance : ce qui peut mal tourner pendant la campagne (clic : VMs concernées)
+    const risks = patchRisks(all, state.patchClusters ?? {});
+    const RISK_ICON = { critical: "🔴", warning: "🟠", info: "ℹ" };
+    const riskList = h("div", "dash-risks");
+    for (const r of risks) {
+        const row = h("div", `dash-risk ${r.level}`);
+        row.append(h("span", "dash-risk-icon", RISK_ICON[r.level]), h("span", "dash-risk-text", r.text));
+        // Libellé de la sélection : le cluster ou la VM concernés (début du texte)
+        riskList.append(drillable(row, r.vms, `⚠ ${r.text.split(/ : | \(/)[0]}`));
+    }
+    const riskCard = card(`Points de vigilance (${risks.length})`, risks.length ? riskList : h("p", "hint", "🟢 Rien à signaler : un nœud à la fois, PRIMARY en dernier, recette avant production."));
+
+    // 7. Ordre de patch proposé : 7 prochains jours et retard, cluster par cluster
+    const plan = patchPlan(all);
+    const planBox = h("div", "dash-plan");
+    plan.forEach((g, i) => {
+        const group = h("div", `dash-plan-group env-${g.env}`);
+        const title = h("span", "dash-plan-name", g.cluster ? `⬡ ${g.cluster}` : g.vms[0]);
+        title.dataset.noI18n = "";
+        const head = h("div", "dash-plan-head");
+        head.append(h("span", "dash-plan-num", String(i + 1)), title, h("span", `patch-env env-${g.env}`, g.env), h("span", "dash-plan-when", patchLabel(g.urgency)));
+        group.append(drillable(head, g.vms, g.cluster ? `⬡ ${g.cluster}` : g.vms[0]));
+        if (g.warning) group.append(h("p", "dash-plan-warn", g.warning));
+        const ol = h("ol", "dash-plan-steps");
+        for (const st of g.steps) {
+            const li = h("li", st.kind === "switch" ? "switch" : st.due ? "" : "early");
+            if (st.kind === "switch") li.append(h("span", "", `↻ Basculer le PRIMARY de ${st.from} vers ${st.to} (touche « changer PRIMARY »)`));
+            else {
+                const name = h("strong", "", st.vm);
+                name.dataset.noI18n = "";
+                li.append(name);
+                if (st.role) li.append(h("span", `patch-role role-${st.role}`, st.role === "primary" ? "★ PRIMARY" : "SECONDARY"));
+                if (st.note) li.append(h("span", "dash-plan-note", st.note));
+                li.append(h("span", "dash-plan-when", st.due ? patchLabel(st.days) : `pas encore dû · ${patchLabel(st.days)}`));
+            }
+            ol.append(li);
+        }
+        group.append(ol);
+        if (g.cluster) group.append(h("p", "hint", "Entre deux nœuds : cluster status, tous les membres ONLINE avant le suivant."));
+        planBox.append(group);
+    });
+    const copyPlan = h("button", "dash-copy", "Copier le plan (Markdown)", { type: "button", title: "Pour une demande de changement, un mail ou un ticket (texte en français)" });
+    copyPlan.addEventListener("click", () => navigator.clipboard.writeText(planMarkdown(plan)).then(() => toast("plan copié (Markdown)", "ok"), () => toast("copie refusée par le navigateur")));
+    const planCard = card("Ordre de patch proposé · 7 jours et retard", ...(plan.length ? [planBox, copyPlan] : [h("p", "hint", "Rien à patcher dans les 7 prochains jours.")]));
+    const top = h("div", "dash-grid");
+    top.append(riskCard, planCard);
+
     const grid = h("div", "dash-grid");
     grid.append(
         card("Patch par environnement", legend, envRows, envTable),
@@ -4009,7 +4111,63 @@ function renderPatchDash() {
         card(`Clusters (${clusters.length})`, ...(clusterRows.length ? clusterRows : [h("p", "hint", "Aucun cluster : renseigne le champ Cluster de tes VMs.")])),
         card("Tags les plus fréquents", ...(topTags.length ? [tags] : [h("p", "hint", "Aucun tag.")]))
     );
-    $("#dash-body").replaceChildren(tiles, grid);
+    $("#dash-body").replaceChildren(tiles, donuts, top, grid);
+}
+
+/** Environnements dans l'anneau : ordre fixe (la couleur suit l'environnement, jamais son rang), teintes non réservées. */
+const DASH_ENVS = ["production", "recette", "développement", "qualification", "autre"];
+
+/**
+ * Anneau (camembert évidé) : un tout en 6 parts au plus, lu d'un coup d'œil. Parts séparées par un liseré, nombre
+ * imprimé sur les parts assez grandes, chiffre clé au centre, légende avec nombre et pourcentage, détail au survol,
+ * clic (ou Entrée) vers l'inventaire filtré, vue tableau. parts : [{ label, value, color, names }].
+ */
+function dashDonut(title, center, centerLabel, parts, unit = "VMs") {
+    const NS = "http://www.w3.org/2000/svg";
+    const R = 52, W = 20, C = 2 * Math.PI * R;
+    const total = parts.reduce((n, p) => n + p.value, 0);
+    const shown = parts.filter((p) => p.value);
+    const pct = (v) => (total ? Math.round((v / total) * 100) : 0);
+    const svg = document.createElementNS(NS, "svg");
+    svg.setAttribute("viewBox", "0 0 140 140");
+    svg.setAttribute("class", "dash-donut-svg");
+    svg.setAttribute("role", "img");
+    svg.setAttribute("aria-label", `${tr(title)} : ${shown.map((p) => `${tr(p.label)} ${p.value}`).join(", ")}`);
+    const ring = (attrs) => { const c = document.createElementNS(NS, "circle"); for (const [k, v] of Object.entries({ cx: 70, cy: 70, r: R, fill: "none", "stroke-width": W, ...attrs })) c.setAttribute(k, v); return c; };
+    svg.append(ring({ class: "dash-donut-track" }));
+    const gap = shown.length > 1 ? 2.5 : 0;   // liseré de la couleur du fond entre deux parts
+    let offset = 0;
+    for (const p of shown) {
+        const len = (p.value / total) * C;
+        const slice = ring({ class: "dash-donut-slice", style: `stroke:${p.color}`, "stroke-dasharray": `${Math.max(len - gap, 0.6)} ${C}`, "stroke-dashoffset": `${-offset}`, transform: "rotate(-90 70 70)" });
+        slice.dataset.tip = `${tr(p.label)} : ${p.value} · ${pct(p.value)} %${p.names.length ? `\n${p.names.slice(0, 8).join(", ")}${p.names.length > 8 ? "…" : ""}` : ""}`;
+        svg.append(drillable(slice, p.names, tr(p.label)));
+        // Nombre sur la part si elle est assez grande (au moins 9 %)
+        if (p.value / total >= 0.09) {
+            const mid = ((offset + len / 2) / C) * 2 * Math.PI - Math.PI / 2;
+            const t = document.createElementNS(NS, "text");
+            for (const [k, v] of Object.entries({ x: 70 + R * Math.cos(mid), y: 70 + R * Math.sin(mid), class: "dash-donut-num" })) t.setAttribute(k, v);
+            t.textContent = String(p.value);
+            svg.append(t);
+        }
+        offset += len;
+    }
+    const chart = h("div", "dash-donut-chart");
+    const mid = h("div", "dash-donut-center");
+    mid.append(h("span", "dash-donut-value", String(center)), h("span", "dash-donut-label", centerLabel));
+    chart.append(svg, mid);
+    const legend = h("div", "dash-donut-legend");
+    for (const p of parts) {
+        if (!p.value) continue;
+        const row = h("div", "dash-donut-item");
+        row.append(h("i", "dash-swatch", null, { style: `background:${p.color}` }), h("span", "dash-donut-name", p.label), h("span", "dash-donut-count", String(p.value)), h("span", "dash-donut-pct", `${pct(p.value)} %`));
+        legend.append(drillable(row, p.names, tr(p.label)));
+    }
+    const body = h("div", "dash-donut");
+    body.append(chart, legend);
+    const c = h("section", "dash-card dash-donut-card");
+    c.append(h("h3", "", title), body, dashTable(["", unit, "%"], parts.filter((p) => p.value).map((p) => [p.label, p.value, `${pct(p.value)} %`])));
+    return c;
 }
 
 /** Vue tableau d'un graphique (accessibilité, copie), repliée par défaut. */
@@ -4159,6 +4317,7 @@ function renderPatches() {
         .filter((v) => !patchFilter.env || v.env === patchFilter.env)
         .filter((v) => [...patchFilter.tags].every((t) => (v.tags ?? []).includes(t)))
         .filter((v) => !patchFilter.state || PATCH_STATES.find(([k]) => k === patchFilter.state)?.[2](v))
+        .filter((v) => !patchFilter.pick || patchFilter.pick.names.has(v.name))
         .sort((a, b) => (a.decommissioned === true) - (b.decommissioned === true)
             || (patchSort.desc ? -1 : 1) * PATCH_SORTS[patchSort.key][1](a, b) || a.name.localeCompare(b.name, "fr", { numeric: true }));
     // Titres de colonnes : flèche sur la colonne triée
@@ -4329,14 +4488,17 @@ function renderPatchFilters(vms) {
         b.addEventListener("click", click);
         return b;
     };
-    const all = chip("Toutes", vms.length, !patchFilter.env && !patchFilter.tags.size && !patchFilter.state, "all", () => { patchFilter.env = null; patchFilter.tags.clear(); patchFilter.state = null; renderPatches(); });
+    const all = chip("Toutes", vms.length, !patchFilter.env && !patchFilter.tags.size && !patchFilter.state && !patchFilter.pick, "all", () => { patchFilter.env = null; patchFilter.tags.clear(); patchFilter.state = null; patchFilter.pick = null; renderPatches(); });
+    // Sélection venue du tableau de bord : retirée d'un clic
+    const pick = patchFilter.pick ? Object.assign(document.createElement("button"), { type: "button", className: "patch-chip pick on", textContent: `Sélection : ${patchFilter.pick.label} (${count((v) => patchFilter.pick.names.has(v.name))}) ✕`, title: "Retirer la sélection du tableau de bord" }) : null;
+    pick?.addEventListener("click", () => { patchFilter.pick = null; renderPatches(); });
     const envChips = envs.map((e) => chip(e, count((v) => v.env === e), patchFilter.env === e, `env env-${e}`, () => { patchFilter.env = patchFilter.env === e ? null : e; renderPatches(); }));
     const tagChips = tags.map((t) => chip(`#${t}`, count((v) => (v.tags ?? []).includes(t)), patchFilter.tags.has(t), "tag", () => { patchFilter.tags.has(t) ? patchFilter.tags.delete(t) : patchFilter.tags.add(t); renderPatches(); }));
     // Filtre devenu sans objet (tag supprimé) : oublié
     for (const t of patchFilter.tags) if (!tags.includes(t)) patchFilter.tags.delete(t);
     if (patchFilter.env && !envs.includes(patchFilter.env)) patchFilter.env = null;
     const row1 = Object.assign(document.createElement("div"), { className: "patch-filter-row" });
-    row1.append(all, ...envChips, ...(tagChips.length ? [Object.assign(document.createElement("span"), { className: "patch-sep" }), ...tagChips] : []));
+    row1.append(all, ...(pick ? [pick] : []), ...envChips, ...(tagChips.length ? [Object.assign(document.createElement("span"), { className: "patch-sep" }), ...tagChips] : []));
     // États : un à la fois (re-cliquer le retire) ; seuls ceux qui concernent au moins une VM, ou celui choisi
     const states = PATCH_STATES.filter(([k, , pred]) => count(pred) || patchFilter.state === k)
         .map(([k, label, pred]) => chip(label, count(pred), patchFilter.state === k, `state state-${k}`, () => { patchFilter.state = patchFilter.state === k ? null : k; renderPatches(); }));

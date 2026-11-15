@@ -12,6 +12,8 @@ bouton **?** de l'en-tête :
 
 ![La documentation dans le deck](img/documentation-dans-le-deck.jpg)
 
+> English version: [docs/en/](en/README.md) (le bouton **?** l'ouvre quand l'interface est en anglais).
+
 ## Sommaire
 
 1. [Prise en main](01-prise-en-main.md) : installation (macOS, Windows sans droits admin), lancement en service, premier démarrage.

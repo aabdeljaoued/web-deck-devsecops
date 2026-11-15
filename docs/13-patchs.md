@@ -91,6 +91,10 @@ jour en direct, des VMs suivies (les décommissionnées sont comptées à part) 
 
 - **chiffres clés** : VMs suivies (dont production), en retard ou J-1, sous 7 jours (et sans date), clusters (et ceux
   sans PRIMARY), VIP, décommissionnées ;
+- **trois anneaux** (camemberts évidés) pour voir la répartition d'un coup d'œil : **état du parc** (en retard ou J-1,
+  sous 7 jours, à planifier, à jour ; au centre, le pourcentage à jour), **VMs par environnement** (couleur fixe par
+  environnement) et **état des clusters** (état le plus urgent de chaque cluster). Nombre sur les parts, légende avec
+  nombre et pourcentage, détail au survol, **Voir en tableau** ;
 - **patch par environnement** : une barre par environnement, découpée par statut (en retard ou J-1, sous 7 jours, à
   planifier, à jour), avec la légende, le nombre dans chaque segment, le détail au survol (les VMs concernées) et
   **Voir en tableau** pour les chiffres ;
@@ -98,9 +102,43 @@ jour en direct, des VMs suivies (les décommissionnées sont comptées à part) 
   retard et des VMs sans date ;
 - **clusters** : environnement, carte des nœuds (couleur du statut, cercle doré pour le PRIMARY, pointillés pour un
   nœud décommissionné), nœuds, PRIMARY, VIP et état du cluster ;
-- **tags les plus fréquents**.
+- **tags les plus fréquents** ;
+- **points de vigilance** et **ordre de patch proposé** (ci-dessous).
+
+**Tout est cliquable** : une tuile, un segment de barre, un environnement, une semaine, un cluster, un tag ou un point
+de vigilance ouvre l'**inventaire filtré sur ses VMs**, avec un filtre **Sélection** (ex. « Sélection :
+⚠ CL-MYSQL-APP-REC (2) ») qu'on retire avec ✕ ou **Toutes**. Au clavier : Tab puis Entrée.
+
+![Inventaire ouvert depuis le tableau de bord](img/patchs-dashboard-selection.jpg)
 
 **Inventaire** (en-tête) revient à la liste des VMs.
+
+### Points de vigilance
+
+Ce qui peut mal tourner pendant une campagne, du plus grave au moins grave (🔴, 🟠, ℹ), avec les VMs concernées :
+
+- **deux nœuds d'un même cluster prévus le même jour** : un nœud à la fois (🔴 en production) ;
+- **la majorité des nœuds d'un cluster en retard** : un nœud à la fois, quorum vérifié entre chaque ;
+- **le PRIMARY prévu avant ses SECONDARY** : il se patche en dernier ;
+- **PRIMARY non renseigné** dans un cluster de plusieurs nœuds ;
+- **la production prévue avant sa recette** : rapprochées par le nom, sans les mots d'environnement (`app-prod-01` et
+  `app-rec-01`, `CL-MYSQL-APP-PROD` et `CL-MYSQL-APP-REC`) ;
+- ℹ **cluster MySQL sans VIP** renseignée.
+
+### Ordre de patch proposé
+
+Pour les VMs **en retard ou dues dans les 7 jours**, l'ordre à suivre, numéroté :
+
+- **la recette avant la production** : développement, qualification, recette, puis production ; dans un même
+  environnement, le plus urgent d'abord ;
+- **un cluster = un bloc**, avec tous ses nœuds suivis (ils se patchent ensemble ; ceux qui ne sont pas encore dus
+  sont en gris) : **les SECONDARY d'abord**, un nœud à la fois, puis **↻ bascule du PRIMARY** vers un nœud déjà patché
+  (touche **changer PRIMARY** de [MySQL Cluster](#mysql-cluster--les-commandes-de-la-session-js)), et **l'ancien
+  PRIMARY en dernier** ; rappel « cluster status » entre deux nœuds ;
+- PRIMARY non renseigné : signalé en tête du bloc, à vérifier avant de commencer.
+
+**Copier le plan (Markdown)** le met dans le presse-papiers pour une demande de changement, un mail ou un ticket
+(étapes numérotées, commande de bascule ; texte en français). Un clic sur un bloc ouvre ses VMs dans l'inventaire.
 
 ## Clusters (MySQL InnoDB Cluster…)
 

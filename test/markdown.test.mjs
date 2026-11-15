@@ -67,3 +67,9 @@ test("code en ligne : doubles backquotes pour un code qui contient un backquote"
     assert.match(toHtml("lance `` mysqlsh root@`hostname` --js `` ici"), /<code>mysqlsh root@`hostname` --js<\/code> ici/);
     assert.match(toHtml("simple `ls -l` et `pwd`"), /<code>ls -l<\/code> et <code>pwd<\/code>/);
 });
+
+test("documentation anglaise (docs/en/) : images partagées « ../img/ » affichées depuis /docs/img", () => {
+    const html = toHtml("![Home](../img/accueil.jpg)", { docs: true });
+    assert.match(html, /<img src="\/docs\/img\/accueil\.jpg" alt="Home" loading="lazy">/);
+    assert.doesNotMatch(toHtml("![x](../secret/a.jpg)", { docs: true }), /<img/);
+});

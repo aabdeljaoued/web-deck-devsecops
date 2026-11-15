@@ -185,6 +185,7 @@ const STATIC = {
     "/": [path.join(ROOT, "public", "index.html"), "text/html; charset=utf-8"],
     "/app.js": [path.join(ROOT, "public", "app.js"), "text/javascript; charset=utf-8"],
     "/markdown.js": [path.join(ROOT, "public", "markdown.js"), "text/javascript; charset=utf-8"],
+    "/patch-plan.js": [path.join(ROOT, "public", "patch-plan.js"), "text/javascript; charset=utf-8"],
     "/i18n.js": [path.join(ROOT, "public", "i18n.js"), "text/javascript; charset=utf-8"],
     "/i18n-core.js": [path.join(ROOT, "public", "i18n-core.js"), "text/javascript; charset=utf-8"],
     "/i18n/en.js": [path.join(ROOT, "public", "i18n", "en.js"), "text/javascript; charset=utf-8"],
@@ -241,8 +242,8 @@ const server = http.createServer((req, res) => {
         if (!existsSync(SIGNATURE_FILE)) return send(res, 404, "Introuvable");
         return send(res, 200, readFileSync(SIGNATURE_FILE), "image/png", { "Cache-Control": "no-cache" });
     }
-    // Documentation (docs/, Doc as Code) : pages .md et images, noms contrôlés (aucun chemin)
-    const doc = req.method === "GET" && /^\/docs\/([A-Za-z0-9_-]+\.md|img\/[A-Za-z0-9_.-]+\.(?:jpe?g|png|svg|gif))$/.exec(url.pathname);
+    // Documentation (docs/, Doc as Code ; version anglaise dans docs/en/) : pages .md et images, noms contrôlés (aucun chemin)
+    const doc = req.method === "GET" && /^\/docs\/((?:en\/)?[A-Za-z0-9_-]+\.md|img\/[A-Za-z0-9_.-]+\.(?:jpe?g|png|svg|gif))$/.exec(url.pathname);
     if (doc) {
         const file = path.join(ROOT, "docs", ...doc[1].split("/"));
         if (doc[1].includes("..") || !existsSync(file)) return send(res, 404, "Introuvable");

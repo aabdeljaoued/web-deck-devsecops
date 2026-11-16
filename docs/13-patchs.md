@@ -15,11 +15,15 @@ Active-la dans **Réglages › Rubriques** (case **Patchs**). Elle contient :
 - **ssh VM** : choisis la VM dans la liste ;
 - **ssh -i VM** : choisis la VM, sa **clé** est reprise de l'inventaire (sinon choisis-la parmi tes clés privées de
   `~/.ssh`) → `ssh -i <clé> <hôte>` ;
+- **déconnexion** : quitte la session ssh de la VM (`exit`) ; sans effet dans un terminal local (rien à quitter : le
+  terminal n'est pas fermé par erreur) ;
 - **relevé patch** / **relevé Windows** : l'état réel de la VM connectée (dernier patch, mises à jour, sécurité,
   redémarrage), qui met l'inventaire à jour, voir [Relevé patch](#relevé-patch--létat-réel-de-la-vm) ;
 - **vérifs VM** : la sous-page des vérifications détaillées à lancer **sur la VM** (après le ssh ; le relevé les
-  résume) : mises à jour en attente (**MAJ (apt)**, **MAJ (dnf)**), **sécurité seule**, **reboot requis ?**, **noyau
-  et boot**, **historique** des derniers paquets ; sous Windows, elles s'activent une fois le terminal connecté en ssh ;
+  résume) : **infos VM** (`hostnamectl`, `/etc/os-release`, noyau en cours `uname -r`, dernier redémarrage
+  `uptime -s`, toutes distributions), mises à jour en attente (**MAJ (apt)**, **MAJ (dnf)**, **MAJ (yum)** pour RHEL / CentOS 7 et plus
+  anciennes), **sécurité seule** et **historique** des derniers paquets (apt, dnf ou yum, détecté sur la VM),
+  **reboot requis ?**, **noyau et boot** ; sous Windows, elles s'activent une fois le terminal connecté en ssh ;
 - **redémarrer** : redémarre la VM dans 1 min (tapée, à valider) ;
 - **correctifs Windows** : les 10 derniers KB installés (PowerShell) ;
 - **MySQL InnoDB Cluster**, depuis un terminal connecté à un nœud du cluster (lecture seule, mysqlsh demande le mot

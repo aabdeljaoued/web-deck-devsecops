@@ -15,11 +15,14 @@ Enable it in **Settings › Sections** (**Patches** box). It contains:
 - **ssh VM**: pick the VM in the list;
 - **ssh -i VM**: pick the VM; its **key** is taken from the inventory (otherwise pick one of your private keys in
   `~/.ssh`) → `ssh -i <key> <host>`;
+- **logout**: leaves the VM's ssh session (`exit`); no effect in a local terminal (nothing to leave: the terminal is
+  not closed by mistake);
 - **patch survey** / **Windows survey**: the connected VM's real state (last patch, updates, security, reboot), which
   updates the inventory, see [Patch survey](#patch-survey-the-vms-real-state);
-- **VM checks**: the sub-page of detailed checks to run **on the VM** (after the ssh; the survey sums them up): pending
-  updates (**updates (apt)**, **updates (dnf)**), **security only**, **reboot needed?**, **kernel & boot**, **history**
-  of the latest packages; on Windows, they are enabled once the terminal is connected over ssh;
+- **VM checks**: the sub-page of detailed checks to run **on the VM** (after the ssh; the survey sums them up): **VM
+  info** (`hostnamectl`, `/etc/os-release`, running kernel `uname -r`, last reboot `uptime -s`, any distribution), pending
+  updates (**updates (apt)**, **updates (dnf)**, **updates (yum)** for RHEL / CentOS 7 and older), **security only** and
+  **history** of the latest packages (apt, dnf or yum, detected on the VM), **reboot needed?**, **kernel & boot**; on Windows, they are enabled once the terminal is connected over ssh;
 - **reboot**: reboots the VM in 1 min (typed, to confirm);
 - **Windows hotfixes**: the last 10 KBs installed (PowerShell);
 - **MySQL InnoDB Cluster**, from a terminal connected to a node of the cluster (read only; mysqlsh asks for the root
